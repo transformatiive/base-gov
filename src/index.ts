@@ -16,7 +16,14 @@ async function main(): Promise<void> {
 
   const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
   await app.register(fastifyCookie, { secret: config.sessionSecret });
-  await app.register(fastifyStatic, { root: path.join(__dirname, '..', 'public') });
+  // Sem cache agressiva: garante que o browser recebe sempre a versão atual da SPA.
+  await app.register(fastifyStatic, {
+    root: path.join(__dirname, '..', 'public'),
+    cacheControl: true,
+    maxAge: 0,
+    etag: true,
+    lastModified: true,
+  });
   await registerRoutes(app);
   await registerRoutesV2(app);
 

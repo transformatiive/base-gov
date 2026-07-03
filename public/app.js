@@ -293,37 +293,9 @@ const PROFILE_TABS = [
   ['seasonality', 'Sazonalidade'], ['map', 'Mapa'], ['competitors', 'Concorrentes'], ['runs', 'Execuções'],
 ];
 
-async function renderProfile(id, tab = 'opportunities') {
-  const p = await api(`/api/profiles/${id}`);
-  const running = p.runs.some((r) => ['pending', 'running'].includes(r.status));
-  app.innerHTML = `
-    <div class="toolbar">
-      <div>
-        <h2 style="margin:0">${esc(p.name)} ${running ? badge('running') : ''}</h2>
-        <div class="muted">Termos: ${p.terms.map(esc).join(', ')} · agenda: ${esc(p.schedule)}</div>
-      </div>
-      <div>
-        <button id="run-btn" ${running ? 'disabled' : ''}>▶ Executar agora</button>
-        <button class="btn-secondary" onclick="location.hash='#/profiles'">← Perfis</button>
-      </div>
-    </div>
-    <div class="cards">
-      <div class="stat"><div class="n">${p.totals.n_contracts}</div><div class="l">Contratos</div></div>
-      <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
-      <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
-      <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>
-    </div>
-    <div class="tabs">${PROFILE_TABS.map(([k, l]) =>
-      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/profiles/${id}/${k}'">${l}</button>`).join('')}</div>
-    <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
 
-  document.getElementById('run-btn').onclick = async () => {
-    try { await api(`/api/profiles/${id}/run`, { method: 'POST', body: '{}' }); renderProfile(id, tab); }
-    catch (err) { alert(err.message); }
-  };
-
-  const el = document.getElementById('tab-content');
-  const q = `?profile_id=${id}`;
+/* Conteúdo das tabs de insights — usado no dashboard de perfil e na página global. */
+async function renderInsightTab(el, q, tab, p) {
 
   if (tab === 'opportunities') {
     const d = await api(`/api/insights/opportunities${q}`);
@@ -411,6 +383,40 @@ async function renderProfile(id, tab = 'opportunities') {
       </tbody></table>`;
   }
 
+}
+
+async function renderProfile(id, tab = 'opportunities') {
+  const p = await api(`/api/profiles/${id}`);
+  const running = p.runs.some((r) => ['pending', 'running'].includes(r.status));
+  app.innerHTML = `
+    <div class="toolbar">
+      <div>
+        <h2 style="margin:0">${esc(p.name)} ${running ? badge('running') : ''}</h2>
+        <div class="muted">Termos: ${p.terms.map(esc).join(', ')} · agenda: ${esc(p.schedule)}</div>
+      </div>
+      <div>
+        <button id="run-btn" ${running ? 'disabled' : ''}>▶ Executar agora</button>
+        <button class="btn-secondary" onclick="location.hash='#/profiles'">← Perfis</button>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="stat"><div class="n">${p.totals.n_contracts}</div><div class="l">Contratos</div></div>
+      <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
+      <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
+      <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>
+    </div>
+    <div class="tabs">${PROFILE_TABS.map(([k, l]) =>
+      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/profiles/${id}/${k}'">${l}</button>`).join('')}</div>
+    <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
+
+  document.getElementById('run-btn').onclick = async () => {
+    try { await api(`/api/profiles/${id}/run`, { method: 'POST', body: '{}' }); renderProfile(id, tab); }
+    catch (err) { alert(err.message); }
+  };
+
+  const el = document.getElementById('tab-content');
+  await renderInsightTab(el, `?profile_id=${id}`, tab, p);
+
   if (running) {
     stopPolling();
     pollTimer = setInterval(() => renderProfile(id, tab).catch(() => stopPolling()), 6000);
@@ -456,6 +462,22 @@ function districtMapSvg(items) {
     <text x="60" y="300" text-anchor="middle" font-size="9" fill="#5a6b7b">Açores ↓</text>
     <text x="60" y="382" text-anchor="middle" font-size="9" fill="#5a6b7b">Madeira ↓</text>
   </svg>`;
+}
+
+/* ---------- Insights globais (todos os dados, sem perfil) ---------- */
+async function renderInsights(tab = 'opportunities') {
+  const tabs = PROFILE_TABS.filter(([k]) => k !== 'runs');
+  app.innerHTML = `
+    <div class="toolbar">
+      <div>
+        <h2 style="margin:0">Insights globais</h2>
+        <div class="muted">Sobre todos os contratos e anúncios recolhidos (todas as pesquisas e perfis). Para análise focada, usa um perfil.</div>
+      </div>
+    </div>
+    <div class="tabs">${tabs.map(([k, l]) =>
+      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/insights/${k}'">${l}</button>`).join('')}</div>
+    <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
+  await renderInsightTab(document.getElementById('tab-content'), '?profile_id=', tab, null);
 }
 
 /* ---------- Entidades ---------- */
@@ -532,11 +554,13 @@ async function route() {
   const contract = hash.match(/^#\/contracts\/(\d+)$/);
   const profile = hash.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
   const entity = hash.match(/^#\/entities\/(\d+)$/);
+  const insights = hash.match(/^#\/insights(?:\/(\w+))?$/);
   try {
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
     if (profile) return await renderProfile(Number(profile[1]), profile[2] || 'opportunities');
     if (hash === '#/profiles') return await renderProfiles();
+    if (insights) return await renderInsights(insights[1] || 'opportunities');
     if (entity) return await renderEntity(Number(entity[1]));
     if (hash === '#/entities') return await renderEntities();
     return await renderSearches();

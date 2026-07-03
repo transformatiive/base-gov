@@ -21,6 +21,41 @@ header nav a:hover { color: #fff; }
 .bar-chart .bar b { position: absolute; top: -1.2rem; left: 0; right: 0; text-align: center; font-size: 0.7rem; color: #1a2733; font-weight: 600; }
 .chart-wrap { padding: 2rem 0.5rem 2rem; }
 .map-wrap { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+
+/* ---------- Responsivo: tablet e mobile ---------- */
+.card { overflow-x: auto; }        /* tabelas largas fazem scroll dentro do cartão */
+.card table { min-width: 560px; }
+
+@media (max-width: 900px) {        /* tablet */
+  main { margin: 1rem auto; }
+  header { flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 0.8rem; }
+  header nav { gap: 0.8rem; flex-wrap: wrap; }
+  dl.detail { grid-template-columns: 160px 1fr; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar > div:last-child { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+}
+
+@media (max-width: 600px) {        /* mobile */
+  body { font-size: 15px; }
+  header h1 { font-size: 1rem; }
+  header #whoami { display: none; }
+  main { padding: 0 0.5rem; }
+  .card { padding: 0.8rem; }
+  .card table { min-width: 480px; font-size: 0.82rem; }
+  th, td { padding: 0.35rem 0.4rem; }
+  form.inline { flex-direction: column; }
+  form.inline button { width: 100%; }
+  dl.detail { grid-template-columns: 1fr; gap: 0.1rem 0; }
+  dl.detail dt { margin-top: 0.5rem; }
+  .cards { gap: 0.5rem; }
+  .stat { min-width: calc(50% - 0.5rem); padding: 0.6rem 0.8rem; }
+  .stat .n { font-size: 1.2rem; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .tabs button { white-space: nowrap; padding: 0.45rem 0.7rem; font-size: 0.85rem; }
+  .bar-chart { height: 120px; }
+  .login-box { margin: 8vh auto; }
+  .pager { justify-content: center; }
+}
 main { max-width: 1200px; margin: 1.5rem auto; padding: 0 1rem; }
 h2 { margin-top: 0; }
 .card { background: #fff; border-radius: 8px; padding: 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin-bottom: 1rem; }
