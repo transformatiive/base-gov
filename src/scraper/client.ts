@@ -1,7 +1,8 @@
 import { config } from '../config.js';
 
 const BASE_URL = 'https://www.base.gov.pt/Base4/pt/resultados/';
-const USER_AGENT = 'basegov-robot/1.0 (+contratos publicos; uso nao comercial)';
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 export interface ListItem {
   id: number;
@@ -66,6 +67,39 @@ export interface DownloadedDocument {
   contentType: string;
 }
 
+export interface AnnouncementListItem {
+  id: number;
+  type?: string;                    // "Anúncio de procedimento"
+  contractingProcedureType?: string;
+  contractingEntity?: string;
+  contractDesignation?: string;
+  basePrice?: string;
+  drPublicationDate?: string;
+  proposalDeadline?: string;        // na listagem vem como data DD-MM-YYYY
+  [k: string]: unknown;
+}
+
+export interface AnnouncementSearchPage {
+  total: number;
+  items: AnnouncementListItem[];
+}
+
+export interface AnnouncementDetail {
+  id: number;
+  announcementNumber?: string;
+  modelType?: string;
+  contractType?: string;
+  contractDesignation?: string;
+  contractingEntities?: EntityRef[];
+  basePrice?: string;
+  drPublicationDate?: string;
+  proposalDeadline?: string;        // no detalhe vem como "17 dias."
+  cpvs?: string;
+  contractingProcedureUrl?: string;
+  reference?: string;
+  [k: string]: unknown;
+}
+
 /**
  * Interface de acesso ao Portal BASE. v1: HttpBaseGovClient (API JSON direta).
  * Fase 2: PlaywrightBaseGovClient com a mesma interface, se a API mudar.
@@ -74,12 +108,20 @@ export interface BaseGovClient {
   search(term: string, page: number, size: number): Promise<SearchPage>;
   getDetail(basegovId: number): Promise<ContractDetail>;
   downloadDocument(documentId: number): Promise<DownloadedDocument>;
+  searchAnnouncements(term: string, page: number, size: number): Promise<AnnouncementSearchPage>;
+  getAnnouncementDetail(basegovId: number): Promise<AnnouncementDetail>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Erros de rate limiting / anti-bot (o BASE devolve 999 quando bloqueia). */
+function isRateLimit(err: unknown): boolean {
+  return /HTTP (999|429|503)/.test(String(err));
+}
+
 async function withRetry<T>(fn: () => Promise<T>, what: string): Promise<T> {
   const delays = [2000, 4000, 8000];
+  const rateLimitDelays = [30_000, 60_000, 120_000];
   let lastErr: unknown;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     try {
@@ -87,8 +129,9 @@ async function withRetry<T>(fn: () => Promise<T>, what: string): Promise<T> {
     } catch (err) {
       lastErr = err;
       if (attempt < delays.length) {
-        console.warn(`[scraper] ${what} falhou (tentativa ${attempt + 1}): ${err}. Retry em ${delays[attempt]}ms`);
-        await sleep(delays[attempt]);
+        const wait = isRateLimit(err) ? rateLimitDelays[attempt] : delays[attempt];
+        console.warn(`[scraper] ${what} falhou (tentativa ${attempt + 1}): ${err}. Retry em ${wait}ms`);
+        await sleep(wait);
       }
     }
   }
@@ -144,6 +187,37 @@ export class HttpBaseGovClient implements BaseGovClient {
       }
       return data;
     }, `detail ${basegovId}`);
+  }
+
+  async searchAnnouncements(term: string, page: number, size: number): Promise<AnnouncementSearchPage> {
+    return withRetry(async () => {
+      const data = (await this.post({
+        type: 'search_anuncios',
+        version: config.basegovApiVersion,
+        query: `texto=${term}&tipoacto=0&tipomodelo=0&tipocontrato=0&cpv=&numeroanuncio=&emissora=&desdedatapublicacao=&atedatapublicacao=&desdeprecobase=&ateprecobase=`,
+        sort: '-drPublicationDate',
+        page: String(page),
+        size: String(size),
+      })) as AnnouncementSearchPage | null;
+      if (typeof data?.total !== 'number' || !Array.isArray(data?.items)) {
+        throw new Error('Formato inesperado na resposta de pesquisa de anúncios (API mudou?)');
+      }
+      return data;
+    }, `search_anuncios "${term}" page ${page}`);
+  }
+
+  async getAnnouncementDetail(basegovId: number): Promise<AnnouncementDetail> {
+    return withRetry(async () => {
+      const data = (await this.post({
+        type: 'detail_anuncios',
+        version: config.basegovApiVersion,
+        id: String(basegovId),
+      })) as AnnouncementDetail;
+      if (typeof data?.id !== 'number') {
+        throw new Error('Formato inesperado no detalhe de anúncio (API mudou?)');
+      }
+      return data;
+    }, `detail_anuncios ${basegovId}`);
   }
 
   async downloadDocument(documentId: number): Promise<DownloadedDocument> {

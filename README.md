@@ -6,6 +6,29 @@ A partir de um termo de pesquisa, percorre a listagem paginada de contratos do B
 
 Especificação completa: [SPEC.md](./SPEC.md).
 
+## Funcionalidades v2 — radar comercial
+
+- **Perfis de pesquisa** multi-termo (ex.: "pirotecnia, fogo de artifício") com deduplicação automática, execução manual/diária/semanal e contagem de novidades por run.
+- **Anúncios DR** (concursos abertos) via `search_anuncios`/`detail_anuncios`, com prazo de propostas.
+- **Radar de renovações**: data prevista de fim de cada contrato (celebração + prazo) e data sugerida de contacto (4 meses antes).
+- **Oportunidades com scoring** (0-100): concursos abertos + renovações, ponderando valor, urgência e recorrência da entidade.
+- **Sazonalidade**: contratos/anúncios por mês do ano (nº e valor).
+- **Mapa por distrito**: valor e densidade de contratos (bolhas sobre Portugal).
+- **Fichas de entidade**: histórico como adjudicante/adjudicatária, por ano, tipos de procedimento, fornecedores/clientes.
+- **Inteligência competitiva**: adjudicatários da área com quota de mercado, valores médios e clientes.
+- **Resiliência anti-bloqueio**: o BASE devolve HTTP 999 sob carga; backoff longo (30/60/120s), retoma automática de pesquisas interrompidas (idempotente, até 5 tentativas com cooldown crescente) e `POST /api/searches/:id/retry`.
+
+### Endpoints v2 (mesma autenticação)
+
+- `GET/POST /api/profiles`, `GET /api/profiles/:id`, `POST /api/profiles/:id/run`, `DELETE /api/profiles/:id`
+- `GET /api/announcements?profile_id=&open=1`
+- `GET /api/insights/opportunities?profile_id=`
+- `GET /api/insights/renewals?profile_id=&months=6`
+- `GET /api/insights/seasonality?profile_id=`
+- `GET /api/insights/map?profile_id=`
+- `GET /api/insights/competitors?profile_id=`
+- `GET /api/entities?role=contracting|contracted&q=`, `GET /api/entities/:id`
+
 ## Arranque rápido (local)
 
 Requisitos: Node 20+, PostgreSQL 16.

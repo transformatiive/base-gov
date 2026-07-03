@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
+import { registerRoutesV2 } from './routes-v2.js';
 import { startWorker } from './scraper/worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,7 @@ async function main(): Promise<void> {
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   await app.register(fastifyStatic, { root: path.join(__dirname, '..', 'public') });
   await registerRoutes(app);
+  await registerRoutesV2(app);
 
   app.get('/health', async () => ({ ok: true }));
 

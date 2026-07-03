@@ -404,6 +404,10 @@ MAX_RESULTS_PER_SEARCH=5000
 - Agendamento periódico de pesquisas (cron) — considerar para v2.
 - Armazenamento de documentos fora do Postgres (S3/filesystem) — v2 se o volume crescer.
 
+## 11-A. Implementado na v2 (radar comercial)
+
+A v2 implementa as opções A e B do planeamento comercial: perfis de pesquisa multi-termo com agendamento e novidades por run; anúncios DR (`type=search_anuncios` / `detail_anuncios`, com `proposalDeadline` na listagem); radar de renovações (fim previsto = celebração + prazo de execução, contacto sugerido 4 meses antes); scoring de oportunidades; sazonalidade mensal; mapa por distrito (parse de `executionPlace`); fichas de entidade e inteligência competitiva. Inclui ainda mitigação do anti-bot do BASE (HTTP 999): backoff 30/60/120s e retoma automática idempotente de pesquisas interrompidas.
+
 ## 12. Notas legais e de cortesia
 
 Os dados do Portal BASE são públicos (contratação pública). O scraper deve respeitar rate limits conservadores (secção 3.4), identificar-se com User-Agent honesto e nunca paralelizar agressivamente contra o site.
