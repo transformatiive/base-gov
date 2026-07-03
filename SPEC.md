@@ -9,7 +9,7 @@
 
 Criar uma aplicação web ("robot") que, a partir de um **termo de pesquisa** introduzido pelo utilizador:
 
-1. Vai ao site **https://www.base.gov.pt** (Portal BASE — contratos públicos portugueses) usando **Playwright**;
+1. Consulta o site **https://www.base.gov.pt** (Portal BASE — contratos públicos portugueses) através da sua **API JSON não documentada** (chamadas HTTP diretas — ver secção 3);
 2. Executa a pesquisa de **contratos** com esse termo;
 3. Percorre a **listagem paginada completa** de resultados;
 4. Para **cada linha** da listagem, abre/consulta o **detalhe** do contrato e extrai todos os campos;
@@ -18,6 +18,8 @@ Criar uma aplicação web ("robot") que, a partir de um **termo de pesquisa** in
 7. Disponibiliza um **UI web simples** (login, histórico de pesquisas, resultados, detalhe, nova pesquisa, exportação Excel);
 8. Expõe uma **API REST** para aplicações externas obterem os resultados, detalhes e documentos (links ou binário).
 
+> **Faseamento**: a **v1 não usa Playwright** — todo o scraping é feito por chamadas HTTP diretas à API JSON do BASE, verificada e funcional sem browser. O Playwright fica reservado para uma **fase 2** como fallback DOM, caso a API mude ou passe a exigir contexto de browser. A camada `BaseGovClient` (secção 3.4) é desenhada para essa troca ser transparente.
+
 ---
 
 ## 2. Stack tecnológica (obrigatória/recomendada)
@@ -25,7 +27,7 @@ Criar uma aplicação web ("robot") que, a partir de um **termo de pesquisa** in
 | Camada | Tecnologia |
 |---|---|
 | Runtime | Node.js 20+ com TypeScript |
-| Scraper | **Playwright** (Chromium headless) |
+| Scraper | **Cliente HTTP direto** (`undici`/`fetch` nativo) contra a API JSON do BASE — sem browser na v1 |
 | Backend / API | Fastify (ou Express) + Zod para validação |
 | Base de dados | **PostgreSQL 16** (documentos em `BYTEA`) |
 | Acesso a dados | Prisma ORM (ou Knex; escolher um e ser consistente) |
@@ -41,7 +43,7 @@ Criar uma aplicação web ("robot") que, a partir de um **termo de pesquisa** in
 
 O Portal BASE é uma SPA. A página de pesquisa é `https://www.base.gov.pt/Base4/pt/pesquisa/` e os dados são carregados via **pedidos AJAX POST** para `https://www.base.gov.pt/Base4/pt/resultados/`.
 
-> **⚡ Serviço "escondido" — caminho simples.** Este endpoint AJAX é, na prática, uma API JSON não documentada que devolve tudo o que precisamos (listagem, detalhe e binário dos documentos) **sem necessidade de fazer parsing de HTML**. Foi verificado ao vivo em 2026-07-03 e **funciona mesmo com `curl` puro, sem browser e sem cookies**. Isto significa que o scraping em si não precisa de renderizar a UI: o Playwright serve como camada de robustez (contexto de browser real, cookies, fallback DOM se a API mudar), mas o trabalho pesado faz-se por chamadas diretas a esta API. Ver estratégia híbrida em 3.4.
+> **⚡ Serviço "escondido" — caminho adotado na v1.** Este endpoint AJAX é, na prática, uma API JSON não documentada que devolve tudo o que precisamos (listagem, detalhe e binário dos documentos) **sem necessidade de fazer parsing de HTML**. Foi verificado ao vivo em 2026-07-03 e **funciona com `curl` puro, sem browser e sem cookies**. A v1 usa exclusivamente esta API via cliente HTTP; ver estratégia em 3.4.
 
 ### 3.1 Endpoint de listagem (pesquisa de contratos)
 
@@ -103,14 +105,13 @@ GET https://www.base.gov.pt/Base4/pt/resultados/?type=doc_documentos&id=<documen
 
 Guardar: nome (`description`), content-type devolvido, tamanho e binário.
 
-### 3.4 Estratégia de scraping (Playwright)
+### 3.4 Estratégia de scraping (v1: API direta, sem browser)
 
-**Requisito do produto: usar Playwright.** Estratégia híbrida recomendada:
-
-1. O worker abre um browser Chromium (headless) com Playwright e navega para `https://www.base.gov.pt/Base4/pt/pesquisa/` — isto estabelece cookies/sessão e um contexto de browser real (User-Agent, TLS, etc.).
-2. As chamadas de listagem/detalhe/documentos fazem-se **dentro do contexto Playwright** via `context.request.post(...)` / `context.request.get(...)` (APIRequestContext), que reutiliza cookies do browser. Isto é muito mais robusto e rápido do que fazer parsing do DOM.
-3. **Fallback DOM**: se os endpoints AJAX mudarem (ex.: `version` deixar de ser aceite), o scraper deve degradar para interação com a UI: preencher o campo de pesquisa, clicar "PESQUISAR", ler as linhas da tabela de resultados, clicar em cada linha para abrir o detalhe e extrair os campos por seletores. Encapsular as duas estratégias atrás de uma interface `BaseGovClient` (`search(term, page)`, `getDetail(id)`, `downloadDocument(id)`).
+1. Todo o acesso ao BASE faz-se por **chamadas HTTP diretas** (fetch/undici) aos três endpoints acima — listagem, detalhe e documentos. Não há renderização de página nem parsing de HTML.
+2. As três operações ficam encapsuladas atrás de uma interface **`BaseGovClient`** (`search(term, page, size)`, `getDetail(id)`, `downloadDocument(id)`), com a implementação v1 `HttpBaseGovClient`.
+3. **Fase 2 (fora de âmbito da v1)**: se os endpoints AJAX mudarem ou passarem a exigir contexto de browser (cookies, anti-bot), implementar `PlaywrightBaseGovClient` com a mesma interface — quer via `APIRequestContext` (reutilizando cookies do browser), quer, em último recurso, por interação DOM com a UI de pesquisa. O resto da aplicação não muda.
 4. O parâmetro `version` (atualmente `91.0`) deve estar em configuração (env var `BASEGOV_API_VERSION`), não hardcoded espalhado pelo código.
+5. Validar as respostas JSON com Zod (`total`/`items` presentes, tipos esperados); uma resposta com formato inesperado deve falhar a pesquisa com `error_message` claro — é o sinal de que a API mudou e é altura de ativar a fase 2.
 
 **Boas práticas de cortesia / robustez:**
 
@@ -234,7 +235,7 @@ Notas:
 
 1. Utilizador cria pesquisa (UI ou API) → linha em `searches` com `status=pending`.
 2. Worker (loop em processo, uma pesquisa de cada vez) apanha a pesquisa → `status=running`, `started_at=now()`.
-3. Playwright: abre contexto → chama `search_contratos` página a página até esgotar `total` (ou `MAX_RESULTS_PER_SEARCH`).
+3. `BaseGovClient`: chama `search_contratos` página a página até esgotar `total` (ou `MAX_RESULTS_PER_SEARCH`).
 4. Para cada item: upsert em `contracts` (por `basegov_id`) + insert em `search_results`.
 5. Para cada contrato **sem `raw_detail_json` ou com detalhe mais antigo que 7 dias**: chama `detail_contratos`, atualiza campos + entidades + `documents` (metadados).
 6. Para cada documento ainda sem `content`: faz o download (`doc_documentos`) e guarda binário, content-type e tamanho. Falhas de download **não** falham a pesquisa — registam-se em `download_error`.
@@ -341,10 +342,9 @@ BASEGOV_API_VERSION=91.0
 SCRAPE_DELAY_MS=500
 SCRAPE_CONCURRENCY=3
 MAX_RESULTS_PER_SEARCH=5000
-HEADLESS=true
 ```
 
-`docker-compose.yml` com `postgres:16` (volume persistente) e `app` (imagem com browsers Playwright — usar base `mcr.microsoft.com/playwright:v<versão>-jammy`). Migrations e seed (utilizador admin) correm automaticamente no arranque.
+`docker-compose.yml` com `postgres:16` (volume persistente) e `app` (imagem `node:20-slim` — sem browsers na v1; na fase 2, trocar a base para `mcr.microsoft.com/playwright:v<versão>-jammy`). Migrations e seed (utilizador admin) correm automaticamente no arranque.
 
 ---
 
@@ -364,10 +364,10 @@ HEADLESS=true
 │   │   └── export/excel.ts
 │   ├── scraper/
 │   │   ├── client.ts               # interface BaseGovClient
-│   │   ├── ajaxClient.ts           # estratégia principal (APIRequestContext)
-│   │   ├── domClient.ts            # fallback DOM (seletores da UI)
+│   │   ├── httpClient.ts           # implementação v1: API JSON via fetch/undici
 │   │   ├── worker.ts               # loop de processamento de pesquisas
 │   │   └── parse.ts                # datas, preços, normalização
+│   │   # fase 2: playwrightClient.ts (mesma interface)
 │   └── shared/types.ts
 ├── web/                            # frontend React (Vite)
 │   └── src/pages/{Login,Searches,SearchResults,ContractDetail}.tsx
@@ -398,6 +398,7 @@ HEADLESS=true
 
 ## 11. Fora de âmbito (v1)
 
+- **Playwright / fallback de browser** — fase 2: implementar `PlaywrightBaseGovClient` (mesma interface `BaseGovClient`) se a API JSON mudar ou passar a exigir contexto de browser/anti-bot.
 - Gestão de utilizadores (apenas o admin seed).
 - Pesquisa avançada com todos os filtros do BASE (entidades, CPV, datas, preços…) — a arquitetura do `query` já o permite; expor apenas `texto` na v1, mas manter o campo `query` extensível.
 - Agendamento periódico de pesquisas (cron) — considerar para v2.
