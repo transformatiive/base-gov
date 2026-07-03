@@ -307,7 +307,7 @@ async function tick(client: BaseGovClient): Promise<void> {
     const { rows: requeued } = await pool.query(
       `UPDATE searches SET status = 'pending', retries = 0, next_attempt_at = now(), finished_at = NULL
        WHERE status = 'failed'
-         AND error_message ~* 'HTTP (999|429|5[0-9][0-9])|fetch failed|timeout|ECONNRESET|ETIMEDOUT'
+         AND error_message ~* 'HTTP (999|429|404|5[0-9][0-9])|fetch failed|timeout|ECONNRESET|ETIMEDOUT'
          AND finished_at < now() - interval '15 minutes'
        RETURNING id, profile_run_id`
     );
@@ -345,7 +345,7 @@ async function tick(client: BaseGovClient): Promise<void> {
         }
         console.log(`[worker] pesquisa #${id} concluída`);
       } catch (err) {
-        const transient = /HTTP (999|429|5\d\d)|fetch failed|timeout|ECONNRESET|ETIMEDOUT/i.test(String(err));
+        const transient = /HTTP (999|429|404|5\d\d)|fetch failed|timeout|ECONNRESET|ETIMEDOUT/i.test(String(err));
         if (transient && retries < 5) {
           // O processamento é idempotente: ao retomar, os detalhes já extraídos são saltados.
           const cooldownMin = 5 * (retries + 1);
