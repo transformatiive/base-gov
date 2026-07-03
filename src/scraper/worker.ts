@@ -302,6 +302,25 @@ async function tick(client: BaseGovClient): Promise<void> {
   try {
     await scheduleDueProfiles();
 
+    // Retoma automática: pesquisas falhadas por erros transitórios (anti-bot 999,
+    // timeouts, 5xx) voltam à fila após 15 min — sem intervenção manual.
+    const { rows: requeued } = await pool.query(
+      `UPDATE searches SET status = 'pending', retries = 0, next_attempt_at = now(), finished_at = NULL
+       WHERE status = 'failed'
+         AND error_message ~* 'HTTP (999|429|5[0-9][0-9])|fetch failed|timeout|ECONNRESET|ETIMEDOUT'
+         AND finished_at < now() - interval '15 minutes'
+       RETURNING id, profile_run_id`
+    );
+    for (const r of requeued) {
+      console.log(`[worker] pesquisa #${r.id} reagendada automaticamente após falha transitória`);
+      if (r.profile_run_id) {
+        await pool.query(
+          `UPDATE profile_runs SET status = 'running', finished_at = NULL WHERE id = $1`,
+          [r.profile_run_id]
+        );
+      }
+    }
+
     const { rows } = await pool.query(
       `UPDATE searches SET status = 'running', started_at = COALESCE(started_at, now())
        WHERE id = (SELECT id FROM searches
