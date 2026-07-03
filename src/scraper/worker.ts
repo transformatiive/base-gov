@@ -1,7 +1,16 @@
 import { pool } from '../db.js';
 import { config } from '../config.js';
-import { BaseGovClient, ContractDetail, EntityRef, HttpBaseGovClient, ListItem } from './client.js';
+import {
+  AnnouncementDetail,
+  AnnouncementListItem,
+  BaseGovClient,
+  ContractDetail,
+  EntityRef,
+  HttpBaseGovClient,
+  ListItem,
+} from './client.js';
 import { parseBaseDate, parseBasePrice } from './parse.js';
+import { reconcileProfileRuns, scheduleDueProfiles } from '../profiles.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -129,6 +138,109 @@ async function downloadPendingDocuments(client: BaseGovClient, contractId: numbe
   }
 }
 
+async function upsertAnnouncementFromList(item: AnnouncementListItem): Promise<number> {
+  const { rows } = await pool.query(
+    `INSERT INTO announcements (basegov_id, announcement_type, contracting_procedure_type,
+       contracting_entity, contract_designation, base_price, dr_publication_date,
+       proposal_deadline_date, raw_list_json, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+     ON CONFLICT (basegov_id) DO UPDATE SET
+       announcement_type = EXCLUDED.announcement_type,
+       contracting_procedure_type = EXCLUDED.contracting_procedure_type,
+       contracting_entity = EXCLUDED.contracting_entity,
+       contract_designation = EXCLUDED.contract_designation,
+       base_price = EXCLUDED.base_price,
+       dr_publication_date = EXCLUDED.dr_publication_date,
+       proposal_deadline_date = EXCLUDED.proposal_deadline_date,
+       raw_list_json = EXCLUDED.raw_list_json,
+       updated_at = now()
+     RETURNING id`,
+    [
+      item.id,
+      item.type ?? null,
+      item.contractingProcedureType ?? null,
+      item.contractingEntity ?? null,
+      item.contractDesignation ?? null,
+      parseBasePrice(item.basePrice),
+      parseBaseDate(item.drPublicationDate),
+      parseBaseDate(item.proposalDeadline),
+      JSON.stringify(item),
+    ]
+  );
+  return rows[0].id;
+}
+
+async function saveAnnouncementDetail(announcementId: number, detail: AnnouncementDetail): Promise<void> {
+  await pool.query(
+    `UPDATE announcements SET
+       model_type = $2, announcement_number = $3, contract_type = $4,
+       cpvs = $5, contracting_procedure_url = $6, reference_url = $7,
+       raw_detail_json = $8, detail_scraped_at = now(), updated_at = now()
+     WHERE id = $1`,
+    [
+      announcementId,
+      detail.modelType ?? null,
+      detail.announcementNumber ?? null,
+      detail.contractType ?? null,
+      detail.cpvs ?? null,
+      detail.contractingProcedureUrl ?? null,
+      detail.reference ?? null,
+      JSON.stringify(detail),
+    ]
+  );
+}
+
+async function processAnnouncementSearch(client: BaseGovClient, searchId: number, term: string): Promise<void> {
+  let page = 0;
+  let scraped = 0;
+  let total = Infinity;
+  let truncated = false;
+
+  while (page * config.pageSize < total) {
+    const result = await client.searchAnnouncements(term, page, config.pageSize);
+    total = result.total;
+    if (page === 0) {
+      await pool.query('UPDATE searches SET total_reported = $2 WHERE id = $1', [searchId, total]);
+    }
+
+    for (const item of result.items) {
+      const announcementId = await upsertAnnouncementFromList(item);
+      await pool.query(
+        `INSERT INTO search_announcements (search_id, announcement_id, position) VALUES ($1,$2,$3)
+         ON CONFLICT DO NOTHING`,
+        [searchId, announcementId, scraped]
+      );
+
+      const { rows } = await pool.query(
+        `SELECT 1 FROM announcements WHERE id = $1
+           AND (detail_scraped_at IS NULL OR detail_scraped_at < now() - interval '7 days')`,
+        [announcementId]
+      );
+      if (rows.length > 0) {
+        await sleep(config.scrapeDelayMs);
+        const detail = await client.getAnnouncementDetail(item.id);
+        await saveAnnouncementDetail(announcementId, detail);
+      }
+
+      scraped++;
+      if (scraped >= config.maxResultsPerSearch) {
+        truncated = true;
+        break;
+      }
+    }
+
+    await pool.query('UPDATE searches SET total_scraped = $2 WHERE id = $1', [searchId, scraped]);
+    if (truncated || result.items.length === 0) break;
+    page++;
+    await sleep(config.scrapeDelayMs);
+  }
+
+  await pool.query(
+    `UPDATE searches SET status = $2, total_scraped = $3, error_message = NULL, finished_at = now() WHERE id = $1`,
+    [searchId, truncated ? 'completed_truncated' : 'completed', scraped]
+  );
+}
+
 async function processSearch(client: BaseGovClient, searchId: number, term: string): Promise<void> {
   let page = 0;
   let scraped = 0;
@@ -177,7 +289,7 @@ async function processSearch(client: BaseGovClient, searchId: number, term: stri
   }
 
   await pool.query(
-    `UPDATE searches SET status = $2, total_scraped = $3, finished_at = now() WHERE id = $1`,
+    `UPDATE searches SET status = $2, total_scraped = $3, error_message = NULL, finished_at = now() WHERE id = $1`,
     [searchId, truncated ? 'completed_truncated' : 'completed', scraped]
   );
 }
@@ -188,24 +300,53 @@ async function tick(client: BaseGovClient): Promise<void> {
   if (running) return;
   running = true;
   try {
+    await scheduleDueProfiles();
+
     const { rows } = await pool.query(
-      `UPDATE searches SET status = 'running', started_at = now()
-       WHERE id = (SELECT id FROM searches WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-       RETURNING id, term`
+      `UPDATE searches SET status = 'running', started_at = COALESCE(started_at, now())
+       WHERE id = (SELECT id FROM searches
+                   WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                   ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+       RETURNING id, term, kind, profile_run_id, retries`
     );
-    if (rows.length === 0) return;
-    const { id, term } = rows[0];
-    console.log(`[worker] a processar pesquisa #${id} "${term}"`);
-    try {
-      await processSearch(client, id, term);
-      console.log(`[worker] pesquisa #${id} concluída`);
-    } catch (err) {
-      console.error(`[worker] pesquisa #${id} falhou:`, err);
-      await pool.query(
-        `UPDATE searches SET status = 'failed', error_message = $2, finished_at = now() WHERE id = $1`,
-        [id, String(err)]
-      );
+    if (rows.length > 0) {
+      const { id, term, kind, profile_run_id, retries } = rows[0];
+      if (profile_run_id) {
+        await pool.query(
+          `UPDATE profile_runs SET status = 'running', started_at = COALESCE(started_at, now()) WHERE id = $1`,
+          [profile_run_id]
+        );
+      }
+      console.log(`[worker] a processar pesquisa #${id} "${term}" (${kind})`);
+      try {
+        if (kind === 'anuncios') {
+          await processAnnouncementSearch(client, id, term);
+        } else {
+          await processSearch(client, id, term);
+        }
+        console.log(`[worker] pesquisa #${id} concluída`);
+      } catch (err) {
+        const transient = /HTTP (999|429|5\d\d)|fetch failed|timeout|ECONNRESET|ETIMEDOUT/i.test(String(err));
+        if (transient && retries < 5) {
+          // O processamento é idempotente: ao retomar, os detalhes já extraídos são saltados.
+          const cooldownMin = 5 * (retries + 1);
+          console.warn(`[worker] pesquisa #${id} interrompida (${err}); retoma em ${cooldownMin} min (tentativa ${retries + 1}/5)`);
+          await pool.query(
+            `UPDATE searches SET status = 'pending', retries = retries + 1,
+               next_attempt_at = now() + ($2 || ' minutes')::interval, error_message = $3 WHERE id = $1`,
+            [id, String(cooldownMin), `retoma agendada: ${String(err).slice(0, 300)}`]
+          );
+        } else {
+          console.error(`[worker] pesquisa #${id} falhou:`, err);
+          await pool.query(
+            `UPDATE searches SET status = 'failed', error_message = $2, finished_at = now() WHERE id = $1`,
+            [id, String(err)]
+          );
+        }
+      }
     }
+
+    await reconcileProfileRuns();
   } finally {
     running = false;
   }

@@ -97,6 +97,69 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS idx_contracts_basegov ON contracts(basegov_id);
 CREATE INDEX IF NOT EXISTS idx_search_results_search ON search_results(search_id);
 CREATE INDEX IF NOT EXISTS idx_documents_contract ON documents(contract_id);
+
+-- v2: perfis de pesquisa multi-termo com agendamento
+CREATE TABLE IF NOT EXISTS profiles (
+  id                    SERIAL PRIMARY KEY,
+  name                  TEXT UNIQUE NOT NULL,
+  terms                 TEXT[] NOT NULL,
+  schedule              TEXT NOT NULL DEFAULT 'manual',  -- manual | daily | weekly
+  include_announcements BOOLEAN NOT NULL DEFAULT true,
+  last_run_at           TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS profile_runs (
+  id                SERIAL PRIMARY KEY,
+  profile_id        INT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  status            TEXT NOT NULL DEFAULT 'pending',  -- pending | running | completed | failed
+  new_contracts     INT DEFAULT 0,
+  new_announcements INT DEFAULT 0,
+  error_message     TEXT,
+  started_at        TIMESTAMPTZ,
+  finished_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'contratos';
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS profile_run_id INT REFERENCES profile_runs(id) ON DELETE SET NULL;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS retries INT NOT NULL DEFAULT 0;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
+
+-- v2: anúncios de procedimento (concursos abertos)
+CREATE TABLE IF NOT EXISTS announcements (
+  id                         SERIAL PRIMARY KEY,
+  basegov_id                 BIGINT UNIQUE NOT NULL,
+  announcement_type          TEXT,
+  model_type                 TEXT,
+  announcement_number        TEXT,
+  contract_designation       TEXT,
+  contract_type              TEXT,
+  contracting_procedure_type TEXT,
+  contracting_entity         TEXT,
+  base_price                 NUMERIC(15,2),
+  dr_publication_date        DATE,
+  proposal_deadline_date     DATE,
+  cpvs                       TEXT,
+  contracting_procedure_url  TEXT,
+  reference_url              TEXT,
+  raw_list_json              JSONB NOT NULL,
+  raw_detail_json            JSONB,
+  detail_scraped_at          TIMESTAMPTZ,
+  created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS search_announcements (
+  search_id       INT NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+  announcement_id INT NOT NULL REFERENCES announcements(id),
+  position        INT NOT NULL,
+  PRIMARY KEY (search_id, announcement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
+CREATE INDEX IF NOT EXISTS idx_search_announcements_search ON search_announcements(search_id);
+CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
 `;
 
 export async function migrateAndSeed(): Promise<void> {

@@ -144,6 +144,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return rows[0];
   });
 
+  // Reagenda uma pesquisa falhada; o processamento é idempotente e retoma onde ficou.
+  app.post('/api/searches/:id/retry', { preHandler: requireAuth }, async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const { rows } = await pool.query(
+      `UPDATE searches SET status = 'pending', retries = 0, next_attempt_at = NULL, finished_at = NULL
+       WHERE id = $1 AND status = 'failed' RETURNING id`,
+      [id]
+    );
+    if (rows.length === 0) {
+      return reply.code(409).send({ error: { code: 'not_retryable', message: 'A pesquisa não está em estado failed' } });
+    }
+    return { ok: true };
+  });
+
   app.get('/api/searches/:id/results', { preHandler: requireAuth }, async (req) => {
     const id = Number((req.params as { id: string }).id);
     const { page, size } = paging(req.query as Record<string, unknown>);

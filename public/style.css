@@ -4,6 +4,23 @@ header { display: flex; justify-content: space-between; align-items: center; bac
 header h1 { font-size: 1.1rem; margin: 0; }
 header a { color: #fff; text-decoration: none; }
 header #whoami { margin-right: 0.8rem; opacity: 0.85; }
+header nav { display: flex; gap: 1.2rem; }
+header nav a { color: #cfe3ff; font-weight: 600; }
+header nav a:hover { color: #fff; }
+.tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 1rem; border-bottom: 2px solid #e3e8ee; }
+.tabs button { background: none; color: #41505e; border-radius: 6px 6px 0 0; border-bottom: 3px solid transparent; }
+.tabs button.active { color: #0b5394; border-bottom-color: #0b5394; font-weight: 700; background: #eef5fc; }
+.cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.stat { background: #fff; border-radius: 8px; padding: 0.8rem 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); min-width: 140px; }
+.stat .n { font-size: 1.5rem; font-weight: 700; color: #0b5394; }
+.stat .l { font-size: 0.8rem; color: #5a6b7b; }
+.score { display: inline-block; min-width: 2.4rem; text-align: center; padding: 0.15rem 0.4rem; border-radius: 6px; font-weight: 700; color: #fff; }
+.bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 160px; }
+.bar-chart .bar { flex: 1; background: #0b5394; border-radius: 3px 3px 0 0; position: relative; min-height: 2px; }
+.bar-chart .bar span { position: absolute; bottom: -1.4rem; left: 0; right: 0; text-align: center; font-size: 0.7rem; color: #5a6b7b; }
+.bar-chart .bar b { position: absolute; top: -1.2rem; left: 0; right: 0; text-align: center; font-size: 0.7rem; color: #1a2733; font-weight: 600; }
+.chart-wrap { padding: 2rem 0.5rem 2rem; }
+.map-wrap { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
 main { max-width: 1200px; margin: 1.5rem auto; padding: 0 1rem; }
 h2 { margin-top: 0; }
 .card { background: #fff; border-radius: 8px; padding: 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin-bottom: 1rem; }
