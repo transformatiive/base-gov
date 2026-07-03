@@ -1,0 +1,36 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f4f6f8; color: #1a2733; }
+header { display: flex; justify-content: space-between; align-items: center; background: #0b5394; color: #fff; padding: 0.6rem 1.2rem; }
+header h1 { font-size: 1.1rem; margin: 0; }
+header a { color: #fff; text-decoration: none; }
+header #whoami { margin-right: 0.8rem; opacity: 0.85; }
+main { max-width: 1200px; margin: 1.5rem auto; padding: 0 1rem; }
+h2 { margin-top: 0; }
+.card { background: #fff; border-radius: 8px; padding: 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin-bottom: 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #e3e8ee; vertical-align: top; }
+th { background: #f0f4f8; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #eef5fc; }
+input[type=text], input[type=password] { padding: 0.55rem 0.7rem; border: 1px solid #c4cdd6; border-radius: 6px; font-size: 1rem; width: 100%; }
+button { padding: 0.55rem 1rem; border: 0; border-radius: 6px; background: #0b5394; color: #fff; font-size: 0.95rem; cursor: pointer; }
+button:hover { background: #094578; }
+button.btn-secondary { background: #5a6b7b; }
+button:disabled { opacity: 0.5; cursor: default; }
+form.inline { display: flex; gap: 0.6rem; }
+.badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge.pending { background: #ffe9b0; color: #7a5b00; }
+.badge.running { background: #cfe3ff; color: #0b3d7a; }
+.badge.completed { background: #cdf0d8; color: #14622d; }
+.badge.completed_truncated { background: #ffe0c2; color: #8a4b00; }
+.badge.failed { background: #ffd2d2; color: #8f1414; }
+.login-box { max-width: 380px; margin: 12vh auto; }
+.login-box label { display: block; margin: 0.7rem 0 0.25rem; font-weight: 600; }
+.error { color: #b00020; margin-top: 0.6rem; }
+.muted { color: #5a6b7b; font-size: 0.85rem; }
+.pager { display: flex; gap: 0.6rem; align-items: center; margin-top: 0.8rem; }
+dl.detail { display: grid; grid-template-columns: 240px 1fr; gap: 0.35rem 1rem; margin: 0; }
+dl.detail dt { font-weight: 600; color: #41505e; }
+dl.detail dd { margin: 0; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+a { color: #0b5394; }

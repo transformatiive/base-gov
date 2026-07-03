@@ -1,0 +1,30 @@
+import Fastify from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config } from './config.js';
+import { migrateAndSeed } from './db.js';
+import { registerRoutes } from './routes.js';
+import { startWorker } from './scraper/worker.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function main(): Promise<void> {
+  await migrateAndSeed();
+
+  const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+  await app.register(fastifyCookie, { secret: config.sessionSecret });
+  await app.register(fastifyStatic, { root: path.join(__dirname, '..', 'public') });
+  await registerRoutes(app);
+
+  app.get('/health', async () => ({ ok: true }));
+
+  await app.listen({ port: config.port, host: '0.0.0.0' });
+  startWorker();
+}
+
+main().catch((err) => {
+  console.error('Erro fatal no arranque:', err);
+  process.exit(1);
+});

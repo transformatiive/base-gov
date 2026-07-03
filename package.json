@@ -1,0 +1,29 @@
+{
+  "name": "basegov-robot",
+  "version": "1.0.0",
+  "description": "Robot de pesquisa e scraping de contratos públicos do Portal BASE (base.gov.pt)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch & node --watch dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^10.0.1",
+    "@fastify/static": "^8.0.3",
+    "bcryptjs": "^2.4.3",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
+  }
+}
