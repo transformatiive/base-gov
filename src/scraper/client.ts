@@ -114,9 +114,9 @@ export interface BaseGovClient {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Erros de rate limiting / anti-bot (o BASE devolve 999 quando bloqueia). */
+/** Erros de rate limiting / anti-bot (o BASE devolve 999 e, em bloqueios de IP, 404). */
 function isRateLimit(err: unknown): boolean {
-  return /HTTP (999|429|503)/.test(String(err));
+  return /HTTP (999|429|503|404)/.test(String(err));
 }
 
 async function withRetry<T>(fn: () => Promise<T>, what: string): Promise<T> {
