@@ -21,8 +21,14 @@ header nav a:hover { color: #fff; }
 .bar-chart .bar b { position: absolute; top: -1.2rem; left: 0; right: 0; text-align: center; font-size: 0.7rem; color: #1a2733; font-weight: 600; }
 .chart-wrap { padding: 2rem 0.5rem 2rem; }
 .map-wrap { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+#osm-map { height: 480px; width: 560px; max-width: 100%; border-radius: 8px; flex: 1 1 360px; z-index: 0; }
+.map-table { flex: 1 1 280px; max-width: 460px; overflow-x: auto; }
 
 /* ---------- Responsivo: tablet e mobile ---------- */
+html, body { max-width: 100%; overflow-x: hidden; }
+img, svg { max-width: 100%; }
+td, th { overflow-wrap: break-word; }
+th { white-space: nowrap; }
 .card { overflow-x: auto; }        /* tabelas largas fazem scroll dentro do cartão */
 .card table { min-width: 560px; }
 
@@ -37,24 +43,37 @@ header nav a:hover { color: #fff; }
 
 @media (max-width: 600px) {        /* mobile */
   body { font-size: 15px; }
-  header h1 { font-size: 1rem; }
+  header { padding: 0.45rem 0.6rem; }
+  header h1 { font-size: 0.95rem; }
   header #whoami { display: none; }
-  main { padding: 0 0.5rem; }
+  header nav { width: 100%; order: 3; overflow-x: auto; gap: 1rem; padding-bottom: 0.15rem; }
+  header nav a { white-space: nowrap; font-size: 0.9rem; }
+  header button { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+  main { padding: 0 0.5rem; margin: 0.8rem auto; }
+  h2 { font-size: 1.15rem; }
+  h3 { font-size: 1rem; }
   .card { padding: 0.8rem; }
-  .card table { min-width: 480px; font-size: 0.82rem; }
+  .card table { min-width: 640px; font-size: 0.82rem; }
   th, td { padding: 0.35rem 0.4rem; }
+  button { padding: 0.5rem 0.8rem; font-size: 0.9rem; }
   form.inline { flex-direction: column; }
   form.inline button { width: 100%; }
   dl.detail { grid-template-columns: 1fr; gap: 0.1rem 0; }
   dl.detail dt { margin-top: 0.5rem; }
   .cards { gap: 0.5rem; }
-  .stat { min-width: calc(50% - 0.5rem); padding: 0.6rem 0.8rem; }
-  .stat .n { font-size: 1.2rem; }
-  .tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .stat { flex: 1 1 calc(50% - 0.5rem); min-width: 0; padding: 0.6rem 0.8rem; }
+  .stat .n { font-size: 1.15rem; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
   .tabs button { white-space: nowrap; padding: 0.45rem 0.7rem; font-size: 0.85rem; }
   .bar-chart { height: 120px; }
+  .bar-chart .bar b { font-size: 0.55rem; }
+  .bar-chart .bar span { font-size: 0.55rem; }
   .login-box { margin: 8vh auto; }
-  .pager { justify-content: center; }
+  .pager { justify-content: center; flex-wrap: wrap; }
+  .toolbar h2 { font-size: 1.05rem; }
+  #osm-map { height: 320px; width: 100%; }
+  .map-wrap { flex-direction: column; }
+  .map-table { max-width: 100%; }
 }
 main { max-width: 1200px; margin: 1.5rem auto; padding: 0 1rem; }
 h2 { margin-top: 0; }

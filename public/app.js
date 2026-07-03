@@ -356,11 +356,14 @@ async function renderInsightTab(el, q, tab, p) {
   } else if (tab === 'map') {
     const d = await api(`/api/insights/map${q}`);
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
-      <p class="muted">Dimensão da bolha = valor total contratado; útil para decidir onde alocar esforço comercial.</p>
-      <div class="map-wrap"><div>${districtMapSvg(d.items)}</div>
-      <table style="max-width:420px"><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
-      ${d.items.map((r) => `<tr><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
-      </tbody></table></div>`;
+      <p class="muted">Dimensão do círculo = valor total contratado; útil para decidir onde alocar esforço comercial.</p>
+      <div class="map-wrap">
+        <div id="osm-map"></div>
+        <div class="map-table"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
+        ${d.items.map((r) => `<tr><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
+        </tbody></table></div>
+      </div>`;
+    renderLeafletMap(d.items);
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
     el.innerHTML = `<h2>Inteligência competitiva — adjudicatários nesta área</h2>
@@ -432,36 +435,47 @@ const DISTRICT_COORDS = {
   Portalegre: [39.3, -7.43], Lisboa: [38.72, -9.14], 'Setúbal': [38.52, -8.9],
   'Évora': [38.57, -7.9], Beja: [38.02, -7.86], Faro: [37.02, -7.93],
 };
-const ISLANDS = { 'Região Autónoma dos Açores': [60, 320], Açores: [60, 320], 'Região Autónoma da Madeira': [60, 400], Madeira: [60, 400] };
+const ISLANDS = {
+  'Região Autónoma dos Açores': [37.74, -25.67], Açores: [37.74, -25.67],
+  'Região Autónoma da Madeira': [32.65, -16.91], Madeira: [32.65, -16.91],
+};
 
-const deaccent = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const deaccent = (str) => String(str ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const COORDS_NORM = Object.fromEntries(
-  [...Object.entries(DISTRICT_COORDS).map(([k, v]) => [deaccent(k), { proj: true, v }]),
-   ...Object.entries(ISLANDS).map(([k, v]) => [deaccent(k), { proj: false, v }])]
+  [...Object.entries(DISTRICT_COORDS), ...Object.entries(ISLANDS)].map(([k, v]) => [deaccent(k), v])
 );
 
-function districtMapSvg(items) {
-  const W = 300, H = 460;
-  const proj = ([lat, lon]) => [((lon + 9.6) / 3.6) * (W - 60) + 30, ((42.3 - lat) / 5.4) * (H - 80) + 20];
+/* Mapa real (OpenStreetMap via Leaflet) com círculos por distrito. */
+let leafletMap = null;
+function renderLeafletMap(items) {
+  const el = document.getElementById('osm-map');
+  if (!el || typeof L === 'undefined') return;
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  leafletMap = L.map(el, { scrollWheelZoom: false });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(leafletMap);
+
   const maxV = Math.max(1, ...items.map((i) => i.total_value));
-  const bubbles = items.map((i) => {
-    const hit = COORDS_NORM[deaccent(i.district)];
-    const xy = hit ? (hit.proj ? proj(hit.v) : hit.v) : null;
-    if (!xy) return '';
-    const r = 4 + Math.sqrt(i.total_value / maxV) * 26;
-    return `<circle cx="${xy[0]}" cy="${xy[1]}" r="${r}" fill="#0b5394" fill-opacity="0.55" stroke="#0b5394">
-        <title>${esc(i.district)}: ${i.count} contratos, ${fmtCompact(i.total_value)}</title></circle>
-      <text x="${xy[0]}" y="${xy[1] - r - 3}" text-anchor="middle" font-size="9" fill="#1a2733">${esc(i.district)}</text>`;
-  }).join('');
-  const labels = Object.entries(DISTRICT_COORDS).map(([name, c]) => {
-    const [x, y] = proj(c);
-    return `<circle cx="${x}" cy="${y}" r="1.5" fill="#9db2c4"/>`;
-  }).join('');
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="background:#f0f4f8;border-radius:8px">
-    ${labels}${bubbles}
-    <text x="60" y="300" text-anchor="middle" font-size="9" fill="#5a6b7b">Açores ↓</text>
-    <text x="60" y="382" text-anchor="middle" font-size="9" fill="#5a6b7b">Madeira ↓</text>
-  </svg>`;
+  const bounds = [];
+  for (const i of items) {
+    const c = COORDS_NORM[deaccent(i.district)];
+    if (!c) continue;
+    const radius = 8 + Math.sqrt(i.total_value / maxV) * 32;
+    L.circleMarker(c, {
+      radius,
+      color: '#0b5394',
+      weight: 2,
+      fillColor: '#0b5394',
+      fillOpacity: 0.45,
+    }).addTo(leafletMap).bindPopup(
+      `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}`
+    );
+    bounds.push(c);
+  }
+  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
+  else leafletMap.setView([39.5, -8.0], 6);
 }
 
 /* ---------- Insights globais (todos os dados, sem perfil) ---------- */
