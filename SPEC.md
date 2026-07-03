@@ -31,7 +31,7 @@ Criar uma aplicação web ("robot") que, a partir de um **termo de pesquisa** in
 | Backend / API | Fastify (ou Express) + Zod para validação |
 | Base de dados | **PostgreSQL 16** (documentos em `BYTEA`) |
 | Acesso a dados | Prisma ORM (ou Knex; escolher um e ser consistente) |
-| Frontend | React + Vite (SPA simples) servida pelo backend; UI minimalista (pode usar Tailwind) |
+| Frontend | SPA estática leve (HTML + JS vanilla, sem build) servida pelo backend; migrar para React/Vite só se a UI crescer |
 | Exportação Excel | `exceljs` |
 | Autenticação | Sessão por cookie (UI) + API key/Basic Auth (API externa) |
 | Jobs | Fila em processo (worker interno) — sem dependências externas tipo Redis |
@@ -369,8 +369,8 @@ MAX_RESULTS_PER_SEARCH=5000
 │   │   └── parse.ts                # datas, preços, normalização
 │   │   # fase 2: playwrightClient.ts (mesma interface)
 │   └── shared/types.ts
-├── web/                            # frontend React (Vite)
-│   └── src/pages/{Login,Searches,SearchResults,ContractDetail}.tsx
+├── public/                         # frontend estático (SPA vanilla JS)
+│   └── index.html, app.js, style.css
 └── tests/
 ```
 
