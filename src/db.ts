@@ -178,6 +178,16 @@ CREATE TABLE IF NOT EXISTS opendata_imports (
 );
 ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 
+-- Catálogo CPV construído a partir do corpus (código + designação PT + frequência)
+CREATE TABLE IF NOT EXISTS cpv_catalog (
+  code             TEXT PRIMARY KEY,
+  designation      TEXT NOT NULL,
+  designation_norm TEXT NOT NULL,
+  n_contracts      INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cpv_norm ON cpv_catalog(designation_norm text_pattern_ops);
+CREATE INDEX IF NOT EXISTS idx_cpv_n ON cpv_catalog(n_contracts DESC);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);

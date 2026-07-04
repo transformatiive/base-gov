@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth } from './auth.js';
 import { createProfileRun } from './profiles.js';
+import { normalize } from './cpv.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -165,6 +166,37 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       created.push(rows[0].id);
     }
     return reply.code(201).send({ created });
+  });
+
+  // ---------- Catálogo CPV (pesquisa por nome de atividade ou código) ----------
+  app.get('/api/cpv', { preHandler: requireAuth }, async (req) => {
+    const q = String((req.query as Record<string, unknown>).q ?? '').trim();
+    if (!q) {
+      const { rows } = await pool.query(
+        `SELECT code, designation, n_contracts FROM cpv_catalog ORDER BY n_contracts DESC LIMIT 40`);
+      return { items: rows };
+    }
+    if (/^\d{2,}/.test(q)) {
+      const { rows } = await pool.query(
+        `SELECT code, designation, n_contracts FROM cpv_catalog
+         WHERE code LIKE $1 ORDER BY n_contracts DESC LIMIT 40`,
+        [`${q.split('-')[0]}%`]
+      );
+      return { items: rows };
+    }
+    // pesquisa por nome: todas as palavras têm de aparecer (sem acentos, qualquer ordem)
+    const words = normalize(q).split(/\s+/).filter((w) => w.length >= 2);
+    const params: unknown[] = [];
+    const where = words.map((w) => {
+      params.push(`%${w}%`);
+      return `designation_norm LIKE $${params.length}`;
+    }).join(' AND ');
+    const { rows } = await pool.query(
+      `SELECT code, designation, n_contracts FROM cpv_catalog
+       ${where ? `WHERE ${where}` : ''} ORDER BY n_contracts DESC LIMIT 40`,
+      params
+    );
+    return { items: rows };
   });
 
   // ---------- Anúncios ----------

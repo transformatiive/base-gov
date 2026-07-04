@@ -9,6 +9,7 @@ import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
+import { ensureCpvCatalog } from './cpv.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   await app.listen({ port: config.port, host: '0.0.0.0' });
   startWorker();
   startOpendataWorker();
+  ensureCpvCatalog();
 }
 
 // Rede de segurança: um stream sem handler não deve derrubar o serviço inteiro.

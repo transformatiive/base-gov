@@ -297,7 +297,15 @@ async function renderProfiles() {
       <form id="new-profile-form">
         <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Pirotecnia" required></p>
         <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: pirotecnia, fogo de artifício" required></p>
-        <p><input type="text" name="cpv" placeholder="Códigos CPV oficiais, opcional — ex.: 24613000, 92360000 (apanha contratos classificados na atividade mesmo sem as palavras-chave no texto)"></p>
+        <div style="margin:0.6rem 0">
+          <div id="cpv-chips" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: pirotecnia, limpeza, construção…" style="flex:1;min-width:220px">
+            <button type="button" class="btn-secondary" id="cpv-search-btn">${ico('search')} Procurar CPV</button>
+          </div>
+          <div id="cpv-results" class="muted" style="margin-top:0.4rem"></div>
+          <p class="muted" style="margin:0.3rem 0 0">Os códigos CPV apanham contratos classificados na atividade mesmo sem as palavras-chave no texto. Se não souberes o código, pesquisa pelo nome da atividade e clica para adicionar.</p>
+        </div>
         <p>
           <label>Agendamento:
             <select name="schedule"><option value="manual">Manual</option><option value="daily">Diário</option><option value="weekly">Semanal</option></select>
@@ -317,6 +325,41 @@ async function renderProfiles() {
       </table>
     </div>`;
 
+  const cpvSelected = [];
+  const renderCpvChips = () => {
+    const holder = document.getElementById('cpv-chips');
+    if (!holder) return;
+    holder.innerHTML = cpvSelected.map((c, i) => `
+      <span style="display:inline-flex;align-items:center;gap:0.3rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:0.15rem 0.6rem;font-size:0.8rem">
+        <strong>${esc(c.code)}</strong> ${esc((c.designation || '').slice(0, 40))}
+        <a href="#" onclick="event.preventDefault(); window._cpvRemove(${i})" aria-label="Remover" style="font-weight:700">&times;</a>
+      </span>`).join('');
+  };
+  window._cpvRemove = (i) => { cpvSelected.splice(i, 1); renderCpvChips(); };
+  window._cpvAdd = (code, designation) => {
+    if (!cpvSelected.some((c) => c.code === code)) cpvSelected.push({ code, designation });
+    renderCpvChips();
+  };
+  const cpvSearch = async () => {
+    const q = document.getElementById('cpv-search').value.trim();
+    const box = document.getElementById('cpv-results');
+    box.innerHTML = 'A pesquisar no catálogo…';
+    try {
+      const d = await api(`/api/cpv?q=${encodeURIComponent(q)}`);
+      box.innerHTML = d.items.length
+        ? `<table style="min-width:0"><thead><tr><th>Código</th><th>Atividade</th><th>Contratos</th><th></th></tr></thead><tbody>
+           ${d.items.map((c) => `<tr class="clickable" onclick="window._cpvAdd('${esc(c.code)}', '${esc(String(c.designation).replace(/'/g, ''))}')">
+             <td><strong>${esc(c.code)}</strong></td><td>${esc(c.designation)}</td>
+             <td>${Number(c.n_contracts).toLocaleString('pt-PT')}</td><td><a href="#" onclick="event.preventDefault()">adicionar</a></td></tr>`).join('')}
+           </tbody></table>`
+        : 'Nada encontrado — tenta outra palavra (ex.: "limpeza", "software", "fogo").';
+    } catch (err) { box.textContent = err.message; }
+  };
+  document.getElementById('cpv-search-btn').onclick = cpvSearch;
+  document.getElementById('cpv-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); cpvSearch(); }
+  });
+
   document.getElementById('new-profile-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -326,7 +369,7 @@ async function renderProfiles() {
         body: JSON.stringify({
           name: fd.get('name'),
           terms: String(fd.get('terms')).split(',').map((t) => t.trim()).filter(Boolean),
-          cpv_codes: String(fd.get('cpv') || '').split(',').map((t) => t.trim()).filter(Boolean),
+          cpv_codes: cpvSelected.map((c) => c.code.split('-')[0]),
           schedule: fd.get('schedule'),
           include_announcements: fd.get('ann') === 'on',
           fetch_documents: fd.get('docs') === 'on',
