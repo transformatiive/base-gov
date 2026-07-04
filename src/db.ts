@@ -186,6 +186,15 @@ CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
 
 export async function migrateAndSeed(): Promise<void> {
   await pool.query(SCHEMA);
+
+  // Recuperação pós-restart (single replica): trabalho que ficou 'running'
+  // quando o processo morreu é órfão — volta à fila (processamento idempotente).
+  const orphanSearches = await pool.query(
+    `UPDATE searches SET status = 'pending', next_attempt_at = now() WHERE status = 'running' RETURNING id`);
+  const orphanImports = await pool.query(
+    `UPDATE opendata_imports SET status = 'pending' WHERE status = 'running' RETURNING id, year`);
+  if (orphanSearches.rowCount) console.log(`[recovery] ${orphanSearches.rowCount} pesquisa(s) órfã(s) reagendada(s)`);
+  if (orphanImports.rowCount) console.log(`[recovery] ${orphanImports.rowCount} import(s) órfão(s) reagendado(s)`);
   const { rows } = await pool.query('SELECT 1 FROM users WHERE username = $1', ['admin']);
   if (rows.length === 0) {
     const hash = await bcrypt.hash('admin123', 10);
