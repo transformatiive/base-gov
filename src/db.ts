@@ -127,6 +127,7 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS profile_run_id INT REFERENCES prof
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS retries INT NOT NULL DEFAULT 0;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 
 -- v2: anúncios de procedimento (concursos abertos)
 CREATE TABLE IF NOT EXISTS announcements (
@@ -174,6 +175,7 @@ CREATE TABLE IF NOT EXISTS opendata_imports (
   finished_at   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));

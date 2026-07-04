@@ -229,7 +229,7 @@ async function processAnnouncementSearch(client: BaseGovClient, searchId: number
       }
     }
 
-    await pool.query('UPDATE searches SET total_scraped = $2 WHERE id = $1', [searchId, scraped]);
+    await pool.query('UPDATE searches SET total_scraped = $2, heartbeat_at = now() WHERE id = $1', [searchId, scraped]);
     if (truncated || result.items.length === 0) break;
     page++;
     await sleep(config.scrapeDelayMs);
@@ -306,7 +306,7 @@ async function processSearch(client: BaseGovClient, searchId: number, term: stri
       }
     }
 
-    await pool.query('UPDATE searches SET total_scraped = $2 WHERE id = $1', [searchId, scraped]);
+    await pool.query('UPDATE searches SET total_scraped = $2, heartbeat_at = now() WHERE id = $1', [searchId, scraped]);
     if (truncated || result.items.length === 0) break;
     page++;
     await sleep(config.scrapeDelayMs);
@@ -345,8 +345,16 @@ async function tick(client: BaseGovClient): Promise<void> {
       }
     }
 
+    // Auto-cura: pesquisas 'running' sem heartbeat recente pertencem a processos mortos.
+    const { rows: staleSearches } = await pool.query(
+      `UPDATE searches SET status = 'pending', next_attempt_at = now()
+       WHERE status = 'running' AND coalesce(heartbeat_at, started_at, created_at) < now() - interval '20 minutes'
+       RETURNING id`
+    );
+    for (const r of staleSearches) console.log(`[worker] pesquisa #${r.id} órfã reagendada (sem heartbeat)`);
+
     const { rows } = await pool.query(
-      `UPDATE searches SET status = 'running', started_at = COALESCE(started_at, now())
+      `UPDATE searches SET status = 'running', heartbeat_at = now(), started_at = COALESCE(started_at, now())
        WHERE id = (SELECT id FROM searches
                    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now())
                    ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)

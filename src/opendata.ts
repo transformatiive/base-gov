@@ -285,7 +285,7 @@ async function runImport(importId: number, year: number): Promise<void> {
     await upsertOpenDataContract(rec);
     imported++;
     if (imported % 2000 === 0) {
-      await pool.query('UPDATE opendata_imports SET imported_rows = $2 WHERE id = $1', [importId, imported]);
+      await pool.query('UPDATE opendata_imports SET imported_rows = $2, heartbeat_at = now() WHERE id = $1', [importId, imported]);
       console.log(`[opendata] ${year}: ${imported} contratos importados`);
     }
   };
@@ -324,8 +324,18 @@ async function tick(): Promise<void> {
   if (importing) return;
   importing = true;
   try {
+    // Auto-cura: imports 'running' sem heartbeat recente são de processos mortos
+    // (ex.: deploys sobrepostos em que o recovery de arranque corre antes de o
+    // contentor antigo morrer) — voltam à fila.
+    const { rows: stale } = await pool.query(
+      `UPDATE opendata_imports SET status = 'pending'
+       WHERE status = 'running' AND coalesce(heartbeat_at, started_at, created_at) < now() - interval '10 minutes'
+       RETURNING year`
+    );
+    for (const r of stale) console.log(`[opendata] import ${r.year} órfão reagendado (sem heartbeat)`);
+
     const { rows } = await pool.query(
-      `UPDATE opendata_imports SET status = 'running', started_at = now()
+      `UPDATE opendata_imports SET status = 'running', started_at = now(), heartbeat_at = now()
        WHERE id = (SELECT id FROM opendata_imports WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
        RETURNING id, year`
     );
