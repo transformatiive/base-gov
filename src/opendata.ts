@@ -90,6 +90,21 @@ function openZipEntryStream(buffer: Buffer): Promise<Readable> {
   });
 }
 
+async function withDeadlockRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      // 40P01 = deadlock com outro worker (upserts concorrentes em entities) — repetir resolve
+      if (attempt < 3 && /deadlock/i.test(String(err))) {
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 async function upsertOpenDataContract(rec: OpenDataContract): Promise<number | null> {
   const basegovId = Number(rec.idcontrato);
   if (!Number.isFinite(basegovId)) return null;
@@ -283,7 +298,7 @@ async function runImport(importId: number, year: number): Promise<void> {
 
   let imported = 0;
   const onRecord = async (rec: OpenDataContract) => {
-    await upsertOpenDataContract(rec);
+    await withDeadlockRetry(() => upsertOpenDataContract(rec));
     imported++;
     if (imported % 2000 === 0) {
       await pool.query('UPDATE opendata_imports SET imported_rows = $2, heartbeat_at = now() WHERE id = $1', [importId, imported]);
@@ -347,6 +362,15 @@ async function tick(): Promise<void> {
   if (importing) return;
   importing = true;
   try {
+    // Deadlocks com o worker de pesquisas são transitórios — voltar a tentar
+    const { rows: dead } = await pool.query(
+      `UPDATE opendata_imports SET status = 'pending', error_message = NULL
+       WHERE status = 'failed' AND error_message ~* 'deadlock'
+         AND finished_at < now() - interval '5 minutes'
+       RETURNING year`
+    );
+    for (const r of dead) console.log(`[opendata] import ${r.year} reagendado após deadlock`);
+
     // Auto-cura: imports 'running' sem heartbeat recente são de processos mortos
     // (ex.: deploys sobrepostos em que o recovery de arranque corre antes de o
     // contentor antigo morrer) — voltam à fila.
