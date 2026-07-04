@@ -175,6 +175,11 @@ CREATE TABLE IF NOT EXISTS opendata_imports (
 
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
+CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);
+CREATE INDEX IF NOT EXISTS idx_ce_role_contract ON contract_entities(role, contract_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_pubdate ON contracts(publication_date);
+CREATE INDEX IF NOT EXISTS idx_contracts_end_date ON contracts ((signing_date + (substring(execution_deadline from '(\\d+)')::int)))
+  WHERE signing_date IS NOT NULL AND execution_deadline ~ '\\d+';
 CREATE INDEX IF NOT EXISTS idx_search_announcements_search ON search_announcements(search_id);
 CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
 `;

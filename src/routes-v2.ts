@@ -291,7 +291,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
        FROM contracts c ${scope.join}
        WHERE ${HAS_END}
          AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + (${m} || ' months')::interval
-       ORDER BY end_date`,
+       ORDER BY end_date
+       LIMIT 500`,
       params
     );
     return {
@@ -539,20 +540,29 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       annParams
     );
 
-    // Renovações nos próximos 6 meses, com recorrência da entidade no scope
+    // Renovações nos próximos 6 meses. Recorrência = nº de contratos registados
+    // da entidade adjudicante (lookup direto por índice; contar dentro do scope
+    // completo degenerava em planos de segundos com 100k+ contratos).
     const { rows: renewals } = await pool.query(
-      `WITH scoped AS (SELECT c.* FROM contracts c ${scope.join})
-       SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
-         ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left,
+      `WITH win AS (
+         SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
+           ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left
+         FROM contracts c ${scope.join}
+         WHERE ${HAS_END}
+           AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '6 months'
+         ORDER BY ${END_DATE} LIMIT 300
+       )
+       SELECT w.*,
          (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
-           WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting,
-         (SELECT count(DISTINCT c2.id) FROM scoped c2
-            JOIN contract_entities ce2 ON ce2.contract_id = c2.id AND ce2.role = 'contracting'
-           WHERE ce2.entity_id IN (SELECT ce3.entity_id FROM contract_entities ce3
-             WHERE ce3.contract_id = c.id AND ce3.role = 'contracting')) AS entity_recurrence
-       FROM scoped c
-       WHERE ${HAS_END}
-         AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '6 months'`,
+           WHERE ce.contract_id = w.id AND ce.role = 'contracting') AS contracting,
+         coalesce((SELECT max(cnt) FROM (
+             SELECT count(*) AS cnt FROM contract_entities ce2
+             WHERE ce2.role = 'contracting' AND ce2.entity_id IN (
+               SELECT ce3.entity_id FROM contract_entities ce3
+               WHERE ce3.contract_id = w.id AND ce3.role = 'contracting')
+             GROUP BY ce2.entity_id) t), 1) AS entity_recurrence
+       FROM win w
+       ORDER BY w.end_date`,
       scope.params
     );
 
