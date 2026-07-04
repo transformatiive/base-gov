@@ -157,7 +157,24 @@ CREATE TABLE IF NOT EXISTS search_announcements (
   PRIMARY KEY (search_id, announcement_id)
 );
 
+-- v3: dados abertos do IMPIC (dados.gov.pt) como fonte primária do histórico
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS raw_opendata_json JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS opendata_imported BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS opendata_imports (
+  id            SERIAL PRIMARY KEY,
+  year          INT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending',  -- pending | running | completed | failed
+  total_rows    INT,
+  imported_rows INT DEFAULT 0,
+  error_message TEXT,
+  started_at    TIMESTAMPTZ,
+  finished_at   TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
+CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_search_announcements_search ON search_announcements(search_id);
 CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
 `;

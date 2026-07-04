@@ -241,7 +241,26 @@ async function processAnnouncementSearch(client: BaseGovClient, searchId: number
   );
 }
 
+/**
+ * Liga o corpus local (histórico dos dados abertos + contratos já conhecidos)
+ * aos resultados da pesquisa — instantâneo e sem tocar no site.
+ */
+async function matchLocalCorpus(searchId: number, term: string): Promise<number> {
+  const { rowCount } = await pool.query(
+    `INSERT INTO search_results (search_id, contract_id, position)
+     SELECT $1, c.id, 500000 + row_number() OVER (ORDER BY c.publication_date DESC NULLS LAST)
+     FROM contracts c
+     WHERE (c.object_brief_description ILIKE $2 OR c.description ILIKE $2)
+     ON CONFLICT DO NOTHING`,
+    [searchId, `%${term}%`]
+  );
+  return rowCount ?? 0;
+}
+
 async function processSearch(client: BaseGovClient, searchId: number, term: string): Promise<void> {
+  const localMatches = await matchLocalCorpus(searchId, term);
+  if (localMatches > 0) console.log(`[worker] pesquisa #${searchId}: ${localMatches} contratos do corpus local`);
+
   let page = 0;
   let scraped = 0;
   let total = Infinity;
