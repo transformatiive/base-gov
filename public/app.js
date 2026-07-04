@@ -648,7 +648,6 @@ async function renderInsightTab(el, q, tab, p) {
         <span><span class="sw" style="background:${MAP_COLORS[1]}"></span>Baixo</span>
         <span><span class="sw" style="background:${MAP_COLORS[2]}"></span>Médio</span>
         <span><span class="sw" style="background:${MAP_COLORS[3]}"></span>Alto</span>
-        <span><span class="sw" style="background:${MAP_COLORS[4]}"></span>Muito alto</span>
         <span>· dimensão do círculo = valor contratado</span>
       </div>`;
 
@@ -940,17 +939,18 @@ function renderPriorityMatrix(items, fits) {
 }
 
 /* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
-const MAP_COLORS = ['#e7ebf1', '#dbe4f5', '#8fb0f2', '#2952e3', '#1a2f8f'];
+/* Rampa azul do design v2: 4 níveis visíveis sobre o basemap claro
+   (os tons mais claros da rampa completa desapareciam com opacidade baixa). */
+const MAP_COLORS = ['#dbe4f5', '#8fb0f2', '#2952e3', '#1a2f8f'];
 const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
 const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
 
 function mapColor(value, maxV) {
   if (!value || value <= 0) return MAP_COLORS[0];
   const r = value / Math.max(1, maxV);
-  if (r < 0.25) return MAP_COLORS[1];
-  if (r < 0.5) return MAP_COLORS[2];
-  if (r < 0.75) return MAP_COLORS[3];
-  return MAP_COLORS[4];
+  if (r < 0.33) return MAP_COLORS[1];
+  if (r < 0.7) return MAP_COLORS[2];
+  return MAP_COLORS[3];
 }
 // Raio ancorado ao máximo do período completo, limitado a 4-22px.
 const mapRadius = (value, refV) => (value > 0 ? Math.min(22, 4 + Math.sqrt(value / Math.max(1, refV)) * 18) : 3);
@@ -972,7 +972,10 @@ const MAP_STYLE_FALLBACK = {
 };
 
 function districtsToGeoJSON(items, refV) {
-  const maxV = Math.max(1, ...items.map((i) => i.total_value));
+  // escala de cor só sobre distritos desenháveis — "Desconhecido" (sem coordenadas)
+  // esmagava a rampa e deixava tudo no tom mais claro
+  const mappable = items.filter((i) => COORDS_NORM[deaccent(i.district)]);
+  const maxV = Math.max(1, ...mappable.map((i) => i.total_value));
   return {
     type: 'FeatureCollection',
     features: items.flatMap((i) => {
@@ -1010,10 +1013,10 @@ function glSetupLayers() {
     paint: {
       'circle-radius': ['get', 'radius'],
       'circle-color': ['get', 'color'],
-      'circle-opacity': 0.32,
+      'circle-opacity': 0.45,
       'circle-stroke-width': 2,
       'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-opacity': 0.6,
+      'circle-stroke-opacity': 0.85,
     },
   });
   glMap.on('click', 'district-circles', (e) => {
@@ -1461,16 +1464,21 @@ async function route() {
       : hash.startsWith(href) || (href === '#/config' && hash.startsWith('#/profiles'));
     a.classList.toggle('active', on);
   });
-  if (hash === '#/login') return renderLogin();
+  if (hash === '#/login') { window._me = null; return renderLogin(); }
 
-  let me;
-  try {
-    me = await api('/api/auth/me');
-  } catch {
-    return; /* api() já redirecionou para login */
+  // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
+  // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
+  if (!window._me) {
+    try {
+      window._me = await api('/api/auth/me');
+    } catch {
+      return; /* api() já redirecionou para login */
+    }
   }
   topbar.hidden = false;
-  whoami.textContent = me.username;
+  whoami.textContent = window._me.username;
+  // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
+  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
   const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
   const contract = hash.match(/^#\/contracts\/(\d+)$/);
@@ -1505,6 +1513,7 @@ async function route() {
 }
 
 document.getElementById('logout-btn').onclick = async () => {
+  window._me = null;
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   location.hash = '#/login';
 };
