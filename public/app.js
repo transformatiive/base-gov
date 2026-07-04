@@ -13,11 +13,21 @@ const endDaysBadge = (d) => {
   const diff = Math.round((new Date(d) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
   if (Number.isNaN(diff)) return '';
   return diff >= 0
-    ? ` <span class="badge running">faltam ${diff} dia(s)</span>`
-    : ` <span class="badge completed">terminou há ${-diff} dia(s)</span>`;
+    ? ` <span class="badge" style="background:#dcfae6;color:#067647;border-color:#a9efc5">faltam ${diff} dia(s)</span>`
+    : ` <span class="badge" style="background:#f2f4f7;color:#475467">terminou há ${-diff} dia(s)</span>`;
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
-const scoreColor = (s) => (s >= 70 ? '#14622d' : s >= 45 ? '#8a4b00' : '#5a6b7b');
+/* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
+const scorePair = (s) => (s >= 70 ? ['#dcfae6', '#067647'] : s >= 45 ? ['#fef0c7', '#b54708'] : ['#f2f4f7', '#475467']);
+const scoreChip = (s, title) => {
+  const [bg, fg] = scorePair(s);
+  return `<span class="score" style="background:${bg};color:${fg}"${title ? ` title="${title}"` : ''}>${s}</span>`;
+};
+const FIT_BG = '#eff4ff', FIT_FG = '#175cd3';
+const fitChip = (f, title) => `<span class="score" style="background:${FIT_BG};color:${FIT_FG}"${title ? ` title="${title}"` : ''}>${f}</span>`;
+const typeChip = (t) => (t === 'anuncio_aberto'
+  ? '<span class="badge" style="background:#fffaeb;color:#b54708;border-color:#fedf89">Concurso</span>'
+  : '<span class="badge" style="background:#eff4ff;color:#175cd3;border-color:#d1e0ff">Renovação</span>');
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 /* Ícones SVG inline (traço, 24x24). */
@@ -76,6 +86,7 @@ function renderLogin() {
         <div class="error" id="login-error"></div>
         <p><button type="submit">Entrar</button></p>
       </form>
+      <p class="login-foot">Acesso reservado · dados do Portal BASE</p>
     </div>`;
   document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -240,52 +251,76 @@ async function renderContract(id) {
       <td>${d.download_ok ? `<span style="color:var(--ok)">${ico('check')}</span>` : `<span style="color:var(--bad)">${ico('x')}</span> <span class="muted">${esc(d.download_error ?? 'pendente')}</span>`}</td>
     </tr>`).join('');
 
+  const kv = (label, value) => `<div class="kv"><span>${label}</span><b>${value}</b></div>`;
   app.innerHTML = `
-    <div class="card">
+    <div class="page-head">
+      <div class="eyebrow">Contrato BASE #${c.basegov_id}</div>
       <div class="toolbar">
-        <h2>Contrato BASE #${c.basegov_id}</h2>
+        <h2 class="page-title">${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h2>
         <div>
           <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
           <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
         </div>
       </div>
-      <dl class="detail">
-        <dt>Objeto</dt><dd>${esc(c.object_brief_description ?? '—')}</dd>
-        <dt>Descrição</dt><dd>${esc(c.description ?? '—')}</dd>
-        <dt>Adjudicante</dt><dd>${ent('contracting')}</dd>
-        <dt>Adjudicatário</dt><dd>${ent('contracted')}</dd>
-        <dt>Concorrentes</dt><dd>${ent('contestant')}</dd>
-        <dt>Tipo de procedimento</dt><dd>${esc(c.contracting_procedure_type ?? '—')}</dd>
-        <dt>Tipo de contrato</dt><dd>${esc(c.contract_types ?? '—')}</dd>
-        <dt>Preço contratual</dt><dd>${fmtPrice(c.initial_contractual_price)}</dd>
-        <dt>Preço efetivo</dt><dd>${fmtPrice(c.total_effective_price)}</dd>
-        <dt>Data de publicação</dt><dd>${fmtDate(c.publication_date)}</dd>
-        <dt>Data de celebração</dt><dd>${fmtDate(c.signing_date)}</dd>
-        <dt>Data de fecho</dt><dd>${fmtDate(c.close_date)}</dd>
-        <dt>Prazo de execução</dt><dd>${esc(c.execution_deadline ?? '—')}</dd>
-        <dt>Fim previsto</dt><dd>${c.estimated_end_date
-          ? `<strong>${fmtDate(c.estimated_end_date)}</strong>${endDaysBadge(c.estimated_end_date)}
-             <span class="muted">— estimado: celebração (${fmtDate(c.signing_date)}) + ${esc(c.execution_deadline)}. É esta a data "Termina" das renovações, mapa e digest.</span>`
-          : '<span class="muted">— (sem data de celebração ou prazo em dias no BASE)</span>'}</dd>
-        <dt>Local de execução</dt><dd>${esc(c.execution_place ?? '—')}</dd>
-        <dt>CPV</dt><dd>${esc(c.cpvs ?? '—')} ${c.cpvs_designation ? '· ' + esc(c.cpvs_designation) : ''}</dd>
-        <dt>Fundamentação</dt><dd>${esc(c.contract_fundamentation ?? '—')}</dd>
-        <dt>Regime</dt><dd>${esc(c.regime ?? '—')}</dd>
-        <dt>Peças do procedimento</dt><dd>${c.contracting_procedure_url ? `<a href="${esc(c.contracting_procedure_url)}" target="_blank" rel="noopener">${esc(c.contracting_procedure_url)}</a>` : '—'}</dd>
-      </dl>
+      <div class="chip-row">
+        ${c.contracting_procedure_type ? `<span class="badge" style="background:#f2f4f7;color:#475467">${esc(c.contracting_procedure_type)}</span>` : ''}
+        ${c.contract_types ? `<span class="badge" style="background:#f2f4f7;color:#475467">${esc(c.contract_types)}</span>` : ''}
+        ${c.estimated_end_date ? endDaysBadge(c.estimated_end_date) : ''}
+      </div>
     </div>
-    <div class="card">
-      <h2>Documentos (${(c.documents ?? []).length})</h2>
-      <table>
-        <thead><tr><th>Ficheiro</th><th>Tipo</th><th>Tamanho</th><th>Download</th></tr></thead>
-        <tbody>${docs || '<tr><td colspan="4" class="muted">Sem documentos.</td></tr>'}</tbody>
-      </table>
-    </div>
-    <div class="card">
-      <div class="toolbar"><h2 style="margin:0">Preparar renovação (IA)</h2>
-        <button id="ai-contract-btn">${ico('search')} Analisar com IA</button></div>
-      <p class="muted">Analisa este contrato e os seus documentos (quando descarregados) no contexto da tua atividade: critérios usados, requisitos, e o que preparar desde já para vencer a renovação.</p>
-      <div id="ai-contract-result"></div>
+    <div class="detail-grid">
+      <div>
+        <div class="card">
+          <h2>Objeto e partes</h2>
+          <dl class="detail">
+            <dt>Descrição</dt><dd>${esc(c.description ?? '—')}</dd>
+            <dt>Adjudicante</dt><dd>${ent('contracting')}</dd>
+            <dt>Adjudicatário</dt><dd>${ent('contracted')}</dd>
+            <dt>Concorrentes</dt><dd>${ent('contestant')}</dd>
+            <dt>Local de execução</dt><dd>${esc(c.execution_place ?? '—')}</dd>
+            <dt>CPV</dt><dd>${esc(c.cpvs ?? '—')} ${c.cpvs_designation ? '· ' + esc(c.cpvs_designation) : ''}</dd>
+            <dt>Fundamentação</dt><dd>${esc(c.contract_fundamentation ?? '—')}</dd>
+            <dt>Peças do procedimento</dt><dd>${c.contracting_procedure_url ? `<a href="${esc(c.contracting_procedure_url)}" target="_blank" rel="noopener">${esc(c.contracting_procedure_url)}</a>` : '—'}</dd>
+          </dl>
+        </div>
+        <div class="card">
+          <h2>Documentos (${(c.documents ?? []).length})</h2>
+          <table>
+            <thead><tr><th>Ficheiro</th><th>Tipo</th><th>Tamanho</th><th>Download</th></tr></thead>
+            <tbody>${docs || '<tr><td colspan="4" class="muted">Sem documentos.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="toolbar"><h2 style="margin:0">Preparar renovação (IA)</h2>
+            <button id="ai-contract-btn">${ico('search')} Analisar com IA</button></div>
+          <p class="muted">Analisa este contrato e os seus documentos (quando descarregados) no contexto da tua atividade: critérios usados, requisitos, e o que preparar desde já para vencer a renovação.</p>
+          <div id="ai-contract-result"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card side-card">
+          <div class="side-label">Preço contratual</div>
+          <div class="price-hero">${fmtPrice(c.initial_contractual_price)}</div>
+          <div class="muted">Preço efetivo: ${fmtPrice(c.total_effective_price)}</div>
+          <hr class="hairline">
+          ${kv('Publicação', fmtDate(c.publication_date))}
+          ${kv('Celebração', fmtDate(c.signing_date))}
+          ${kv('Prazo de execução', esc(c.execution_deadline ?? '—'))}
+          ${kv('Fecho', fmtDate(c.close_date))}
+        </div>
+        <div class="card side-card tint">
+          <div class="side-label">Fim previsto</div>
+          ${c.estimated_end_date
+            ? `<div class="side-num">${fmtDate(c.estimated_end_date)}</div>
+               <div style="margin:0.25rem 0 0.45rem">${endDaysBadge(c.estimated_end_date).trim()}</div>
+               <p class="small-print">Estimado: celebração (${fmtDate(c.signing_date)}) + ${esc(c.execution_deadline)}. É esta a data "Termina" das renovações, mapa e digest.</p>`
+            : '<p class="small-print">Sem data de celebração ou prazo em dias no BASE — não é possível estimar.</p>'}
+        </div>
+        <div class="card side-card">
+          <div class="side-label">Regime</div>
+          <div style="font-size:0.86rem">${esc(c.regime ?? '—')}</div>
+        </div>
+      </div>
     </div>`;
 
   document.getElementById('ai-contract-btn').onclick = async () => {
@@ -457,10 +492,10 @@ async function renderInsightTab(el, q, tab, p) {
       ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.4rem 0" id="fit-status">Fit IA: calculado automaticamente para oportunidades nos próximos 12 meses.</p>` : ''}
       <table><thead><tr><th>Score</th><th>Fit IA</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
       ${d.items.map((o) => `<tr>
-        <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
-        <td>${fits[fitKey(o)] ? `<span class="score" style="background:${fitColor(fits[fitKey(o)].fit)}" title="${esc(fits[fitKey(o)].reason)}">${fits[fitKey(o)].fit}</span>`
-          : `<button class="btn-secondary fit-one" style="padding:0.2rem 0.45rem" title="Calcular fit desta oportunidade (a mais de 12 meses, não é automático)" onclick="window._fitOne('${o.type}', ${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id})">${ico('refresh', 13)}</button>`}</td>
-        <td>${o.type === 'anuncio_aberto' ? `${ico('bell')} Concurso` : `${ico('rotate')} Renovação`}</td>
+        <td>${scoreChip(o.score)}</td>
+        <td>${fits[fitKey(o)] ? fitChip(fits[fitKey(o)].fit, esc(fits[fitKey(o)].reason))
+          : `<button class="btn-secondary fit-one" title="Calcular fit desta oportunidade (a mais de 12 meses, não é automático)" onclick="window._fitOne('${o.type}', ${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id})">${ico('refresh', 13)}</button>`}</td>
+        <td>${typeChip(o.type)}</td>
         <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span>${(fits[fitKey(o)]?.reasons ?? []).length ? `<ul class="fit-reasons">${fits[fitKey(o)].reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}</td>
         <td>${esc(o.entity ?? '—')}</td>
         <td>${fmtPrice(o.value)}</td>
@@ -582,7 +617,7 @@ async function renderInsightTab(el, q, tab, p) {
     });
 
     const rowsHtml = (items) => items.map((r) =>
-      `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
+      `<tr class="clickable" data-district="${esc(r.district)}" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
     ).join('') || '<tr><td colspan="4" class="muted">Sem contratos neste período.</td></tr>';
 
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
@@ -633,7 +668,11 @@ async function renderInsightTab(el, q, tab, p) {
       renderInsightTab(el, q, tab, p);
     };
 
-    window._loadRegion = (district) => loadRegionPanel(district, q);
+    window._loadRegion = (district) => {
+      document.querySelectorAll('#map-district-tbody tr').forEach((tr) =>
+        tr.classList.toggle('sel', tr.dataset.district === district));
+      return loadRegionPanel(district, q);
+    };
     window._annReloadMap = () => renderInsightTab(el, q, tab, p);
     renderLeafletMap(dataFor(0), (district) => loadRegionPanel(district, q), radiusRef);
     applySelection();
@@ -679,7 +718,7 @@ async function renderProfile(id, tab = 'opportunities') {
       <div class="stat"><div class="n">${p.totals.n_contracts}</div><div class="l">Contratos</div></div>
       <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
       <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
-      <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>
+      <div class="stat accent"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>
     </div>
     <div class="tabs">${PROFILE_TABS.map(([k, l]) =>
       `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/profiles/${id}/${k}'">${l}</button>`).join('')}</div>
@@ -755,9 +794,7 @@ async function loadRegionPanel(district, q) {
 
 /* Popover rico da matriz (substitui o tooltip nativo do browser). */
 function matrixTipHtml(o, fit) {
-  const kind = o.type === 'anuncio_aberto'
-    ? '<span class="badge running">Concurso aberto</span>'
-    : '<span class="badge completed">Renovação</span>';
+  const kind = typeChip(o.type);
   const keyDate = o.key_date ? String(o.key_date).slice(0, 10) : '—';
   return `
     ${kind}
@@ -768,7 +805,7 @@ function matrixTipHtml(o, fit) {
       <li>Data-chave: <strong>${keyDate}</strong> (${o.days_left} dias)</li>
       ${o.recurrence ? `<li>Entidade com <strong>${o.recurrence}</strong> contrato(s) na área</li>` : ''}
     </ul>
-    ${fit ? `<div class="mt-fit"><span class="score" style="background:${fitColor(fit.fit)}">${fit.fit}</span> fit com a atividade
+    ${fit ? `<div class="mt-fit">${fitChip(fit.fit)} fit com a atividade
       ${(fit.reasons ?? []).length ? `<ul class="mt-list">${fit.reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : (fit.reason ? `<div class="muted">${esc(fit.reason)}</div>` : '')}</div>` : ''}
     <div class="muted" style="margin-top:0.3rem">clique para abrir o detalhe</div>`;
 }
@@ -851,7 +888,7 @@ function aiModalClose() {
   }
 }
 
-const fitColor = (f) => (f >= 75 ? '#15803d' : f >= 45 ? '#b45309' : '#94a3b8');
+const fitColor = (f) => (f >= 75 ? '#067647' : f >= 45 ? '#b54708' : '#98a2b3');
 
 /* Matriz de priorização: X = dias até à data-chave, Y = valor, bolha = recorrência, cor = fit IA ou tipo. */
 function renderPriorityMatrix(items, fits) {
@@ -882,7 +919,7 @@ function renderPriorityMatrix(items, fits) {
   window._matrixFits = fits ?? {};
   const dot = (o, i) => {
     const fit = fits?.[key(o)];
-    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#dc2626' : '#2563eb');
+    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#b42318' : '#2952e3');
     const r = 3 + Math.min(11, Math.sqrt(o.value / maxVal) * 11);
     return `<a href="${esc(o.internal_url ?? '#')}"><circle data-mi="${i}" cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
       fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
@@ -903,7 +940,7 @@ function renderPriorityMatrix(items, fits) {
 }
 
 /* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
-const MAP_COLORS = ['#cbd5e1', '#93c5fd', '#3b82f6', '#1d4ed8', '#dc2626'];
+const MAP_COLORS = ['#e7ebf1', '#dbe4f5', '#8fb0f2', '#2952e3', '#1a2f8f'];
 const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
 const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
 
@@ -973,9 +1010,10 @@ function glSetupLayers() {
     paint: {
       'circle-radius': ['get', 'radius'],
       'circle-color': ['get', 'color'],
-      'circle-opacity': 0.45,
-      'circle-stroke-width': 1.5,
+      'circle-opacity': 0.32,
+      'circle-stroke-width': 2,
       'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-opacity': 0.6,
     },
   });
   glMap.on('click', 'district-circles', (e) => {
@@ -1115,7 +1153,7 @@ async function renderRadar(tab = 'opportunities') {
         <div class="stat"><div class="n">${p.totals.n_contracts.toLocaleString('pt-PT')}</div><div class="l">Contratos</div></div>
         <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
         <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
-        <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>` +
+        <div class="stat accent"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>` +
         (p.totals.n_contracts === 0 && running
           ? `<p class="hint" style="flex-basis:100%">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>`
           : '');
@@ -1414,6 +1452,15 @@ async function route() {
   stopPolling();
   hideMatrixTip();
   const hash = location.hash || '#/';
+  document.body.classList.toggle('login-bg', hash === '#/login');
+  // Estado ativo da navegação (aspeto de segmented control)
+  document.querySelectorAll('header nav a').forEach((a) => {
+    const href = a.getAttribute('href');
+    const on = href === '#/'
+      ? !(hash.startsWith('#/entities') || hash.startsWith('#/config') || hash.startsWith('#/profiles') || hash === '#/login')
+      : hash.startsWith(href) || (href === '#/config' && hash.startsWith('#/profiles'));
+    a.classList.toggle('active', on);
+  });
   if (hash === '#/login') return renderLogin();
 
   let me;
