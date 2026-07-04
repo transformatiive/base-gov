@@ -363,6 +363,28 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // ---------- Insights: timeline mensal por distrito (slider do mapa) ----------
+  app.get('/api/insights/map-timeline', { preHandler: requireAuth }, async (req) => {
+    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    const scope = contractScope(profileId);
+    const { rows } = await pool.query(
+      `SELECT coalesce(${DISTRICT}, 'Desconhecido') AS district,
+              to_char(c.publication_date, 'YYYY-MM') AS month,
+              count(*) AS n, coalesce(sum(c.initial_contractual_price),0) AS total
+       FROM contracts c ${scope.join}
+       WHERE c.publication_date IS NOT NULL
+       GROUP BY 1, 2`,
+      scope.params
+    );
+    const monthsSet = new Set<string>();
+    const districts: Record<string, Record<string, { count: number; total_value: number }>> = {};
+    for (const r of rows) {
+      monthsSet.add(r.month);
+      (districts[r.district] ??= {})[r.month] = { count: Number(r.n), total_value: Number(r.total) };
+    }
+    return { months: [...monthsSet].sort(), districts };
+  });
+
   // ---------- Entidades ----------
   app.get('/api/entities', { preHandler: requireAuth }, async (req) => {
     const q = req.query as Record<string, unknown>;
