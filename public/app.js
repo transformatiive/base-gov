@@ -642,11 +642,7 @@ async function loadRegionPanel(district, q) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/* Mapa real (OpenStreetMap via Leaflet) com círculos por distrito. */
-let leafletMap = null;
-let mapMarkers = {};
-
-/* Escala sequencial por potencial (valor relativo ao máximo visível). */
+/* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
 const MAP_COLORS = ['#cbd5e1', '#93c5fd', '#3b82f6', '#1d4ed8', '#dc2626'];
 const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
 const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
@@ -659,58 +655,144 @@ function mapColor(value, maxV) {
   if (r < 0.75) return MAP_COLORS[3];
   return MAP_COLORS[4];
 }
-// Raio ancorado ao máximo do período completo (radiusRef), limitado a 4-22px —
-// evita que o maior valor de um mês fraco encha o mapa inteiro.
+// Raio ancorado ao máximo do período completo, limitado a 4-22px.
 const mapRadius = (value, refV) => (value > 0 ? Math.min(22, 4 + Math.sqrt(value / Math.max(1, refV)) * 18) : 3);
 const mapPopup = (i) =>
   `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`;
 
-function renderLeafletMap(items, onDistrictClick, radiusRef) {
-  const el = document.getElementById('osm-map');
-  if (!el || typeof L === 'undefined') return;
-  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-  mapMarkers = {};
-  leafletMap = L.map(el, { scrollWheelZoom: false });
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(leafletMap);
+let glMap = null;
+let glReady = false;
+let glPendingData = null;
+let glOnDistrictClick = null;
+let glPopup = null;
 
+const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+// Fallback autónomo caso o estilo remoto não carregue (rede restrita):
+const MAP_STYLE_FALLBACK = {
+  version: 8,
+  sources: {},
+  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#e8edf3' } }],
+};
+
+function districtsToGeoJSON(items, refV) {
   const maxV = Math.max(1, ...items.map((i) => i.total_value));
-  const refV = radiusRef ?? maxV;
-  const bounds = [];
-  for (const i of items) {
-    const c = COORDS_NORM[deaccent(i.district)];
-    if (!c) continue;
-    const color = mapColor(i.total_value, maxV);
-    const marker = L.circleMarker(c, {
-      radius: mapRadius(i.total_value, refV),
-      color,
-      weight: 2,
-      fillColor: color,
-      fillOpacity: 0.5,
-    }).addTo(leafletMap).bindPopup(mapPopup(i));
-    if (onDistrictClick) marker.on('click', () => onDistrictClick(i.district));
-    mapMarkers[i.district] = marker;
-    bounds.push(c);
-  }
-  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
-  else leafletMap.setView([39.5, -8.0], 6);
+  return {
+    type: 'FeatureCollection',
+    features: items.flatMap((i) => {
+      const c = COORDS_NORM[deaccent(i.district)];
+      if (!c) return [];
+      return [{
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [c[1], c[0]] },
+        properties: {
+          district: i.district,
+          count: i.count,
+          total_value: i.total_value,
+          avg_value: i.avg_value,
+          radius: mapRadius(i.total_value, refV ?? maxV),
+          color: mapColor(i.total_value, maxV),
+        },
+      }];
+    }),
+  };
 }
 
-/* Atualiza raio/cor/popup dos círculos existentes sem reinicializar o Leaflet. */
+function glApplyData(geojson) {
+  if (!glMap) return;
+  if (!glReady) { glPendingData = geojson; return; }
+  const src = glMap.getSource('districts');
+  if (src) src.setData(geojson);
+}
+
+function glSetupLayers() {
+  glMap.addSource('districts', { type: 'geojson', data: glPendingData ?? { type: 'FeatureCollection', features: [] } });
+  glMap.addLayer({
+    id: 'district-circles',
+    type: 'circle',
+    source: 'districts',
+    paint: {
+      'circle-radius': ['get', 'radius'],
+      'circle-color': ['get', 'color'],
+      'circle-opacity': 0.45,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': ['get', 'color'],
+    },
+  });
+  glMap.on('click', 'district-circles', (e) => {
+    const f = e.features?.[0];
+    if (!f) return;
+    const props = f.properties;
+    if (glPopup) glPopup.remove();
+    glPopup = new maplibregl.Popup({ closeButton: false, offset: 10 })
+      .setLngLat(e.lngLat)
+      .setHTML(mapPopup({
+        district: props.district,
+        count: Number(props.count),
+        total_value: Number(props.total_value),
+        avg_value: Number(props.avg_value),
+      }))
+      .addTo(glMap);
+    if (glOnDistrictClick) glOnDistrictClick(props.district);
+  });
+  glMap.on('mouseenter', 'district-circles', () => { glMap.getCanvas().style.cursor = 'pointer'; });
+  glMap.on('mouseleave', 'district-circles', () => { glMap.getCanvas().style.cursor = ''; });
+  glReady = true;
+  if (glPendingData) { glApplyData(glPendingData); glPendingData = null; }
+}
+
+function renderLeafletMap(items, onDistrictClick, radiusRef) {
+  const el = document.getElementById('osm-map');
+  if (!el || typeof maplibregl === 'undefined') return;
+  if (glMap) { glMap.remove(); glMap = null; }
+  glReady = false;
+  glPendingData = null;
+  glOnDistrictClick = onDistrictClick ?? null;
+
+  const coords = items
+    .map((i) => COORDS_NORM[deaccent(i.district)])
+    .filter(Boolean)
+    .map((c) => [c[1], c[0]]);
+  const bounds = coords.length
+    ? coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]))
+    : null;
+
+  const create = (style) => {
+    glMap = new maplibregl.Map({
+      container: el,
+      style,
+      center: [-8.0, 39.5],
+      zoom: 5,
+      attributionControl: { compact: true },
+    });
+    glMap.scrollZoom.disable();
+    glMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    glMap.on('load', () => {
+      glSetupLayers();
+      if (bounds) glMap.fitBounds(bounds, { padding: 40, animate: false });
+    });
+  };
+
+  create(MAP_STYLE_URL);
+  // se o estilo remoto não carregar (rede restrita), recria com fundo neutro
+  const fallbackTimer = setTimeout(() => {
+    if (!glReady && glMap) {
+      const pending = glPendingData;
+      glMap.remove();
+      glMap = null;
+      glReady = false;
+      create(MAP_STYLE_FALLBACK);
+      glPendingData = pending;
+    }
+  }, 6000);
+  glMap.once('load', () => clearTimeout(fallbackTimer));
+
+  glApplyData(districtsToGeoJSON(items, radiusRef));
+}
+
+/* Atualiza os círculos sem reinicializar o mapa (slider temporal). */
 function updateLeafletMarkers(items, radiusRef) {
-  if (!leafletMap) return;
-  const maxV = Math.max(1, ...items.map((i) => i.total_value));
-  const refV = radiusRef ?? maxV;
-  const byDistrict = Object.fromEntries(items.map((i) => [i.district, i]));
-  for (const [district, marker] of Object.entries(mapMarkers)) {
-    const i = byDistrict[district] ?? { district, count: 0, total_value: 0, avg_value: 0 };
-    const color = mapColor(i.total_value, maxV);
-    marker.setRadius(mapRadius(i.total_value, refV));
-    marker.setStyle({ color, fillColor: color });
-    marker.setPopupContent(mapPopup(i));
-  }
+  if (glPopup) { glPopup.remove(); glPopup = null; }
+  glApplyData(districtsToGeoJSON(items, radiusRef));
 }
 
 /* ---------- Radar: vista principal, sempre no contexto da atividade escolhida ---------- */

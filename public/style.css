@@ -132,7 +132,7 @@ dl.detail dd { margin: 0; font-size: 0.92rem; }
 
 /* ---------- Mapa ---------- */
 .map-wrap { display: flex; gap: 1.4rem; flex-wrap: wrap; align-items: flex-start; }
-#osm-map { height: 520px; width: 560px; max-width: 100%; border-radius: 10px; border: 1px solid var(--border); flex: 0 0 auto; z-index: 0; }
+#osm-map { height: 520px; width: 560px; max-width: 100%; border-radius: 10px; border: 1px solid var(--border); flex: 0 0 auto; z-index: 0; overflow: hidden; }
 .map-table { flex: 1 1 320px; min-width: 0; overflow-x: auto; }
 .map-table table { min-width: 0 !important; }
 .map-controls { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; margin: 0.6rem 0 0.9rem; }
