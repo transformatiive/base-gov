@@ -70,6 +70,17 @@ async function contractEntities(contractId: number) {
   return byRole;
 }
 
+/* Fim previsto do contrato: celebração + N dias do prazo de execução — a mesma
+   regra do END_DATE em SQL (renovações, mapa, digest), para a data apresentada
+   no detalhe bater certo com as listagens. */
+function estimatedEndDate(c: Record<string, unknown>): string | null {
+  const days = typeof c.execution_deadline === 'string' ? c.execution_deadline.match(/\d+/) : null;
+  if (!c.signing_date || !days) return null;
+  const signing = new Date(c.signing_date as string | Date);
+  if (Number.isNaN(signing.getTime())) return null;
+  return new Date(signing.getTime() + Number(days[0]) * 86400000).toISOString().slice(0, 10);
+}
+
 function contractToJson(c: Record<string, unknown>, extra: Record<string, unknown> = {}) {
   return {
     id: c.id,
@@ -82,6 +93,7 @@ function contractToJson(c: Record<string, unknown>, extra: Record<string, unknow
     signing_date: c.signing_date,
     close_date: c.close_date,
     execution_deadline: c.execution_deadline,
+    estimated_end_date: estimatedEndDate(c),
     execution_place: c.execution_place,
     initial_contractual_price: c.initial_contractual_price != null ? Number(c.initial_contractual_price) : null,
     total_effective_price: c.total_effective_price != null ? Number(c.total_effective_price) : null,
