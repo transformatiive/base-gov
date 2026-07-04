@@ -403,23 +403,51 @@ async function renderInsightTab(el, q, tab, p) {
     const kw = window._oppFilter ?? '';
     const d = await api(`/api/insights/opportunities${q}${kw ? `&q=${encodeURIComponent(kw)}` : ''}`);
     window._oppReload = () => renderInsightTab(el, q, tab, p);
+    const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
+    const fits = window._fitCache?.[q] ?? {};
+    const matrix = renderPriorityMatrix(d.items, fits);
     el.innerHTML = `<div class="toolbar"><h2 style="margin:0">Oportunidades priorizadas</h2>
       <form class="inline" style="margin:0" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
         <input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por palavra-chave (objeto ou entidade)" style="min-width:230px">
         <button type="submit">${ico('search')} Filtrar</button>
       </form></div>
+      ${matrix}
       <p class="muted">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência e recorrência da entidade).</p>
       <div class="hint">Score (0-100): para concursos abertos soma 25 pontos base, até 35 pelo valor (escala logarítmica) e até 40 de urgência à medida que o prazo de propostas se aproxima. Para renovações soma até 35 pelo valor, até 30 pela proximidade do fim do contrato e até 15 pela recorrência de compra da entidade. &ge;70 = prioridade alta, 45-69 = média, &lt;45 = baixa.</div>
-      <table><thead><tr><th>Score</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
+      ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p style="margin:0.4rem 0"><button class="btn-secondary" id="fit-btn">${ico('search')} Calcular fit com a atividade (IA)</button> <span class="muted" id="fit-status"></span></p>` : ''}
+      <table><thead><tr><th>Score</th><th>Fit IA</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
       ${d.items.map((o) => `<tr>
         <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
+        <td>${fits[fitKey(o)] ? `<span class="score" style="background:${fitColor(fits[fitKey(o)].fit)}" title="${esc(fits[fitKey(o)].reason)}">${fits[fitKey(o)].fit}</span>` : '<span class="muted">—</span>'}</td>
         <td>${o.type === 'anuncio_aberto' ? `${ico('bell')} Concurso` : `${ico('rotate')} Renovação`}</td>
         <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span></td>
         <td>${esc(o.entity ?? '—')}</td>
         <td>${fmtPrice(o.value)}</td>
         <td>${fmtDate(o.key_date)} <span class="muted">(${o.days_left}d)</span></td>
-        <td>${esc(o.action)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sem oportunidades ativas — executa o perfil ou alarga os termos.</td></tr>'}
+        <td>${esc(o.action)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Sem oportunidades ativas — executa o perfil ou alarga os termos.</td></tr>'}
       </tbody></table>`;
+    const fitBtn = el.querySelector('#fit-btn');
+    if (fitBtn) {
+      fitBtn.onclick = async () => {
+        const status = el.querySelector('#fit-status');
+        fitBtn.disabled = true;
+        status.textContent = 'A avaliar com IA…';
+        try {
+          const pid = new URLSearchParams(q.slice(1)).get('profile_id');
+          const items = d.items.map((o) => ({
+            type: o.type,
+            id: o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id,
+            title: o.title, entity: o.entity, value: o.value,
+          }));
+          const r = await api(`/api/profiles/${pid}/fit-scores`, { method: 'POST', body: JSON.stringify({ items }) });
+          (window._fitCache ??= {})[q] = r.scores;
+          renderInsightTab(el, q, tab, p);
+        } catch (err) {
+          status.textContent = err.message;
+          fitBtn.disabled = false;
+        }
+      };
+    }
   } else if (tab === 'renewals') {
     const d = await api(`/api/insights/renewals${q}&months=12`);
     el.innerHTML = `<h2>Radar de renovações (próximos 12 meses)</h2>
@@ -469,47 +497,61 @@ async function renderInsightTab(el, q, tab, p) {
       ${chart(d.announcements, 'count', 'Anúncios por mês (nº)')}`;
   } else if (tab === 'map') {
     document.querySelector('main').classList.add('wide');
-    const tl = await api(`/api/insights/map-timeline${q}`);
-    const allMonths = tl.months ?? [];
-    const nowMonth = new Date().toISOString().slice(0, 7);
-    // Por defeito só o período relevante para prospeção: mês atual em diante.
-    let months = allMonths.filter((m) => m >= nowMonth);
-    const monthsFor = (period) => (period === 'all' ? allMonths : allMonths.filter((m) => m >= nowMonth));
-    /* Agrega os dados client-side: sel = 0 → soma dos meses do período; 1..N → mês months[sel-1]. */
+    let basis = window._mapBasis ?? 'end';
+    const tl = await api(`/api/insights/map-timeline${q}&basis=${basis === 'end' ? 'end' : 'publication'}`);
+    const months = tl.months ?? [];
+    const monthLabel = (m) => {
+      const [y, mm] = m.split('-');
+      return `${MONTHS[Number(mm) - 1]} ${y.slice(2)}`;
+    };
+    /* sel = 0 → todo o período; 1..N → mês months[sel-1] */
     const dataFor = (sel) => {
       const month = sel > 0 ? months[sel - 1] : null;
-      const set = month ? null : new Set(months);
       return Object.entries(tl.districts ?? {}).map(([district, byMonth]) => {
         let count = 0, total = 0;
         if (month) {
           const m = byMonth[month];
           if (m) { count = m.count; total = m.total_value; }
         } else {
-          for (const [k, m] of Object.entries(byMonth)) {
-            if (set.has(k)) { count += m.count; total += m.total_value; }
-          }
+          for (const m of Object.values(byMonth)) { count += m.count; total += m.total_value; }
         }
         return { district, count, total_value: total, avg_value: count ? total / count : 0 };
       }).sort((a, b) => b.total_value - a.total_value);
     };
-    // Referência de escala fixa do período (soma total) — evita bolhas gigantes
-    // quando o máximo de um mês isolado é pequeno.
-    let radiusRef = 1;
-    const computeRadiusRef = () => { radiusRef = Math.max(1, ...dataFor(0).map((i) => i.total_value)); };
+    let radiusRef = Math.max(1, ...dataFor(0).map((i) => i.total_value));
+
+    // Ticks legíveis: "Tudo" no início; depois inícios de trimestre (Jan/Abr/Jul/Out)
+    const ticks = [];
+    months.forEach((m, i) => {
+      const mm = Number(m.split('-')[1]);
+      if (i === 0 || [1, 4, 7, 10].includes(mm)) ticks.push({ pos: i + 1, label: i === 0 && basis === 'end' ? 'Hoje' : monthLabel(m) });
+    });
+    const maxTicks = 9;
+    const step = Math.ceil(ticks.length / maxTicks);
+    const shownTicks = ticks.filter((_, i) => i % step === 0);
+
     const rowsHtml = (items) => items.map((r) =>
       `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
     ).join('') || '<tr><td colspan="4" class="muted">Sem contratos neste período.</td></tr>';
 
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
-      <p class="muted">Usa o slider (ou o botão de reprodução) para ver a evolução mês a mês. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
+      <p class="muted">${basis === 'end'
+        ? 'A timeline começa hoje e avança pelo fim previsto dos contratos em execução — desliza para veres onde se concentram as renovações em cada período.'
+        : 'Histórico por data de publicação — desliza para veres a evolução do mercado.'}
+        Clica num círculo ou numa linha para o detalhe do distrito.</p>
       <div class="map-controls">
         <select id="map-period" style="width:auto" aria-label="Âmbito temporal">
-          <option value="future" selected>Em curso e futuro</option>
-          <option value="all">Histórico completo</option>
+          <option value="end" ${basis === 'end' ? 'selected' : ''}>Renovações futuras (fim de contrato)</option>
+          <option value="publication" ${basis === 'publication' ? 'selected' : ''}>Histórico (publicação)</option>
         </select>
-        <button id="map-play" class="btn-secondary" title="Reproduzir evolução mensal" aria-label="Reproduzir" ${months.length ? '' : 'disabled'}>${MAP_PLAY_ICON}</button>
-        <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período">
-        <span class="month-label" id="map-month-label">Todos</span>
+        <div style="flex:1 1 260px">
+          <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período" style="width:100%">
+          <div class="slider-ticks">
+            <span style="left:0%">Tudo</span>
+            ${shownTicks.map((t) => `<span style="left:${(t.pos / Math.max(1, months.length)) * 100}%">${t.label}</span>`).join('')}
+          </div>
+        </div>
+        <span class="month-label" id="map-month-label">Todo o período</span>
       </div>
       <div class="map-wrap">
         <div id="osm-map"></div>
@@ -526,48 +568,23 @@ async function renderInsightTab(el, q, tab, p) {
 
     const slider = el.querySelector('#map-slider');
     const label = el.querySelector('#map-month-label');
-    const playBtn = el.querySelector('#map-play');
-    const periodSel = el.querySelector('#map-period');
     const applySelection = () => {
       const sel = Number(slider.value);
-      label.textContent = sel > 0 ? months[sel - 1] : 'Todos';
+      label.textContent = sel > 0 ? monthLabel(months[sel - 1]) : 'Todo o período';
       const items = dataFor(sel);
       updateLeafletMarkers(items, radiusRef);
       const tb = document.getElementById('map-district-tbody');
       if (tb) tb.innerHTML = rowsHtml(items);
     };
-    periodSel.onchange = () => {
-      months = monthsFor(periodSel.value);
-      slider.max = String(months.length);
-      slider.value = '0';
-      computeRadiusRef();
-      applySelection();
+    slider.addEventListener('input', applySelection);
+    el.querySelector('#map-period').onchange = (e) => {
+      window._mapBasis = e.target.value;
+      renderInsightTab(el, q, tab, p);
     };
-    let playTimer = null;
-    const stopPlay = () => {
-      if (playTimer) { clearInterval(playTimer); playTimer = null; }
-      playBtn.innerHTML = MAP_PLAY_ICON;
-    };
-    playBtn.onclick = () => {
-      if (playTimer) { stopPlay(); return; }
-      if (!months.length) return;
-      if (Number(slider.value) >= months.length) slider.value = '0';
-      playBtn.innerHTML = MAP_PAUSE_ICON;
-      playTimer = setInterval(() => {
-        if (!document.body.contains(slider)) { stopPlay(); return; }
-        const next = Number(slider.value) + 1;
-        if (next > months.length) { stopPlay(); return; }
-        slider.value = String(next);
-        applySelection();
-        if (next >= months.length) stopPlay();
-      }, 700);
-    };
-    slider.addEventListener('input', () => { stopPlay(); applySelection(); });
 
-    window._loadRegion = (district) => { stopPlay(); loadRegionPanel(district, q); };
-    window._annReloadMap = () => { stopPlay(); renderInsightTab(el, q, tab, p); };
-    computeRadiusRef();
-    renderLeafletMap(dataFor(0), (district) => { stopPlay(); loadRegionPanel(district, q); }, radiusRef);
+    window._loadRegion = (district) => loadRegionPanel(district, q);
+    window._annReloadMap = () => renderInsightTab(el, q, tab, p);
+    renderLeafletMap(dataFor(0), (district) => loadRegionPanel(district, q), radiusRef);
     applySelection();
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
@@ -683,6 +700,42 @@ async function loadRegionPanel(district, q) {
         <td>${esc(c.contracting ?? '—')}</td><td>${fmtPrice(c.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem contratos.</td></tr>'}
     </tbody></table>`;
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+const fitColor = (f) => (f >= 75 ? '#15803d' : f >= 45 ? '#b45309' : '#94a3b8');
+
+/* Matriz de priorização: X = dias até à data-chave, Y = valor, bolha = recorrência, cor = fit IA ou tipo. */
+function renderPriorityMatrix(items, fits) {
+  const pts = items.filter((o) => o.days_left != null && o.value != null && o.value > 0).slice(0, 80);
+  if (pts.length < 2) return '';
+  const W = 860, H = 300, padL = 64, padR = 20, padT = 18, padB = 34;
+  const maxDays = Math.max(30, ...pts.map((o) => Number(o.days_left)));
+  const maxVal = Math.max(...pts.map((o) => o.value));
+  const x = (d) => padL + (Math.min(d, maxDays) / maxDays) * (W - padL - padR);
+  const y = (v) => padT + (1 - Math.sqrt(v / maxVal)) * (H - padT - padB);
+  const key = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
+  const dot = (o) => {
+    const fit = fits?.[key(o)];
+    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#dc2626' : '#2563eb');
+    const r = 4 + Math.min(8, (o.recurrence ?? 1));
+    return `<a href="${esc(o.internal_url ?? '#')}"><circle cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
+      fill="${color}" fill-opacity="0.55" stroke="${color}">
+      <title>${esc(o.title ?? '')} — ${esc(o.entity ?? '')} · ${fmtCompact(o.value)} · ${o.days_left}d${fit ? ` · fit ${fit.fit}` : ''}</title></circle></a>`;
+  };
+  const x30 = x(30);
+  return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
+    <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
+    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Bolha maior = entidade compra com mais frequência. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, azul = renovação.'}</p>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
+      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="#e2e8f0"/>
+      <line x1="${x30}" y1="${padT}" x2="${x30}" y2="${H - padB}" stroke="#cbd5e1" stroke-dasharray="4 4"/>
+      <text x="${x30 + 4}" y="${padT + 10}" font-size="10" fill="#94a3b8">30 dias</text>
+      <text x="${W - padR}" y="${H - 10}" font-size="10" fill="#64748b" text-anchor="end">dias até à data-chave →</text>
+      <text x="${padL - 6}" y="${padT + 8}" font-size="10" fill="#64748b" text-anchor="end">${fmtCompact(maxVal)}</text>
+      <text x="${padL - 6}" y="${H - padB}" font-size="10" fill="#64748b" text-anchor="end">0 €</text>
+      ${pts.map(dot).join('')}
+    </svg></div>`;
 }
 
 /* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
@@ -874,6 +927,7 @@ async function renderRadar(tab = 'opportunities') {
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
+        ${ctx ? `<a href="/api/profiles/${ctx}/digest.html" target="_blank" rel="noopener"><button class="btn-secondary">${ico('doc')} Digest semanal</button></a>` : ''}
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
@@ -936,7 +990,51 @@ async function renderAnnouncement(id) {
         <dt>Publicação DR (PDF)</dt><dd>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener">${esc(a.reference_url)}</a>` : '—'}</dd>
         <dt>Nº DR / Série</dt><dd>${esc(raw.dreNumber ?? '—')} / ${esc(raw.dreSeries ?? '—')}</dd>
       </dl>
+    </div>
+    <div class="card" id="ai-card">
+      <div class="toolbar"><h2 style="margin:0">Ficha de oportunidade (IA)</h2>
+        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button></div>
+      <p class="muted" id="ai-hint">Análise do anúncio publicado em DR, contextualizada à atividade selecionada no Radar: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado (só paga uma vez).</p>
+      <div id="ai-result"></div>
     </div>`;
+
+  document.getElementById('ai-analyze-btn').onclick = async () => {
+    const btn = document.getElementById('ai-analyze-btn');
+    const out = document.getElementById('ai-result');
+    btn.disabled = true;
+    out.innerHTML = '<p class="muted">A analisar o anúncio (pode demorar ~30-60s na primeira vez)…</p>';
+    try {
+      const pid = Number(getCtx() || 0);
+      const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model);
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      btn.disabled = false;
+    }
+  };
+}
+
+function renderAiFicha(an, cached, model) {
+  const badgeGo = { go: ['GO', '#15803d'], condicional: ['CONDICIONAL', '#b45309'], 'no-go': ['NO-GO', '#b91c1c'] }[an.go_no_go?.recomendacao] ?? ['?', '#64748b'];
+  const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
+  return `
+    <div class="toolbar" style="margin-top:0.4rem">
+      <span class="score" style="background:${badgeGo[1]};font-size:1rem;padding:0.3rem 0.9rem">${badgeGo[0]}</span>
+      ${an.fit_atividade ? `<span>Fit com a atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
+    </div>
+    <p><strong>${esc(an.go_no_go?.justificacao ?? '')}</strong></p>
+    <dl class="detail">
+      <dt>Resumo</dt><dd>${esc(an.resumo ?? '—')}</dd>
+      <dt>Critérios de adjudicação</dt><dd>${esc(an.criterios_adjudicacao ?? '—')}</dd>
+      <dt>Prazo de propostas</dt><dd>${esc(an.prazos?.propostas ?? '—')}</dd>
+      <dt>Prazo de execução</dt><dd>${esc(an.prazos?.execucao ?? '—')}</dd>
+      <dt>Preço base</dt><dd>${esc(an.preco_base ?? '—')}</dd>
+      <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
+    </dl>
+    <h3>Requisitos de habilitação</h3>${list(an.requisitos_habilitacao)}
+    <h3>Red flags</h3>${list(an.red_flags)}
+    <h3>Checklist para a proposta</h3>${list(an.checklist)}
+    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'} · modelo ${esc(model ?? '')}</p>`;
 }
 
 /* ---------- Dados abertos (histórico oficial IMPIC) ---------- */

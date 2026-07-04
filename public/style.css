@@ -186,3 +186,8 @@ dl.detail dd { margin: 0; font-size: 0.92rem; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
 .dot.open { background: #16a34a; }
 .dot.closed { background: #cbd5e1; }
+
+/* ---------- Timeline do mapa ---------- */
+.slider-ticks { position: relative; height: 16px; font-size: 0.68rem; color: var(--muted); }
+.slider-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.slider-ticks span:first-child { transform: none; }

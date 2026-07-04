@@ -8,4 +8,7 @@ export const config = {
   scrapeConcurrency: parseInt(process.env.SCRAPE_CONCURRENCY || '3', 10),
   maxResultsPerSearch: parseInt(process.env.MAX_RESULTS_PER_SEARCH || '5000', 10),
   pageSize: parseInt(process.env.BASEGOV_PAGE_SIZE || '50', 10),
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  aiModelDeep: process.env.AI_MODEL_DEEP || 'anthropic/claude-sonnet-5',
+  aiModelFast: process.env.AI_MODEL_FAST || 'anthropic/claude-haiku-4.5',
 };
