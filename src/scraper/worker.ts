@@ -244,21 +244,45 @@ async function processAnnouncementSearch(client: BaseGovClient, searchId: number
 /**
  * Liga o corpus local (histórico dos dados abertos + contratos já conhecidos)
  * aos resultados da pesquisa — instantâneo e sem tocar no site.
+ * Combina texto (ILIKE + full-text português, que apanha variações/plurais)
+ * e, quando o perfil os define, códigos CPV oficiais de atividade.
  */
-async function matchLocalCorpus(searchId: number, term: string): Promise<number> {
+export async function matchLocalCorpus(searchId: number, term: string, cpvCodes: string[] = []): Promise<number> {
   const { rowCount } = await pool.query(
     `INSERT INTO search_results (search_id, contract_id, position)
      SELECT $1, c.id, 500000 + row_number() OVER (ORDER BY c.publication_date DESC NULLS LAST)
      FROM contracts c
      WHERE (c.object_brief_description ILIKE $2 OR c.description ILIKE $2)
+        OR to_tsvector('portuguese', coalesce(c.object_brief_description,'') || ' ' || coalesce(c.description,''))
+           @@ websearch_to_tsquery('portuguese', $3)
      ON CONFLICT DO NOTHING`,
-    [searchId, `%${term}%`]
+    [searchId, `%${term}%`, term]
   );
-  return rowCount ?? 0;
+  let cpvMatches = 0;
+  for (const code of cpvCodes) {
+    const clean = code.trim().split('-')[0];
+    if (!/^\d{4,8}$/.test(clean)) continue;
+    const { rowCount: n } = await pool.query(
+      `INSERT INTO search_results (search_id, contract_id, position)
+       SELECT $1, c.id, 700000 + row_number() OVER (ORDER BY c.publication_date DESC NULLS LAST)
+       FROM contracts c WHERE c.cpvs LIKE $2 OR c.cpvs LIKE $3
+       ON CONFLICT DO NOTHING`,
+      [searchId, `${clean}%`, `%; ${clean}%`]
+    );
+    cpvMatches += n ?? 0;
+  }
+  return (rowCount ?? 0) + cpvMatches;
 }
 
 async function processSearch(client: BaseGovClient, searchId: number, term: string, fetchDocuments: boolean): Promise<void> {
-  const localMatches = await matchLocalCorpus(searchId, term);
+  // Se a pesquisa pertence a um perfil, os códigos CPV do perfil entram no match local.
+  const { rows: cpvRows } = await pool.query(
+    `SELECT p.cpv_codes FROM searches s
+     JOIN profile_runs pr ON pr.id = s.profile_run_id
+     JOIN profiles p ON p.id = pr.profile_id WHERE s.id = $1`,
+    [searchId]
+  );
+  const localMatches = await matchLocalCorpus(searchId, term, cpvRows[0]?.cpv_codes ?? []);
   if (localMatches > 0) console.log(`[worker] pesquisa #${searchId}: ${localMatches} contratos do corpus local`);
 
   let page = 0;

@@ -6,6 +6,7 @@ import yauzl from 'yauzl';
 // stream-json não publica types ESM completos — importar via createRequire.
 import { createRequire } from 'node:module';
 import { pool } from './db.js';
+import { matchLocalCorpus } from './scraper/worker.js';
 
 const require = createRequire(import.meta.url);
 // stream-json v1 (CJS): parser + StreamArray clássicos
@@ -316,6 +317,28 @@ async function runImport(importId: number, year: number): Promise<void> {
     [importId, imported]
   );
   console.log(`[opendata] ${year}: concluído — ${imported} contratos`);
+
+  await rematchProfiles();
+}
+
+/** Depois de novos dados entrarem, re-liga o corpus aos perfis existentes. */
+async function rematchProfiles(): Promise<void> {
+  const { rows: profiles } = await pool.query(`SELECT id, terms, cpv_codes FROM profiles`);
+  for (const p of profiles) {
+    for (const term of p.terms as string[]) {
+      // pesquisa mais recente deste termo/perfil (kind contratos) recebe os novos matches
+      const { rows } = await pool.query(
+        `SELECT s.id FROM searches s JOIN profile_runs pr ON pr.id = s.profile_run_id
+         WHERE pr.profile_id = $1 AND s.term = $2 AND s.kind = 'contratos'
+         ORDER BY s.created_at DESC LIMIT 1`,
+        [p.id, term]
+      );
+      if (rows.length > 0) {
+        const n = await matchLocalCorpus(rows[0].id, term, p.cpv_codes ?? []);
+        if (n > 0) console.log(`[opendata] perfil #${p.id} "${term}": +${n} contratos do novo corpus`);
+      }
+    }
+  }
 }
 
 let importing = false;

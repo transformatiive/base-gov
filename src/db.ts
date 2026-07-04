@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cpv_codes TEXT[] NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS profile_runs (
   id                SERIAL PRIMARY KEY,

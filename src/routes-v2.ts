@@ -57,9 +57,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.post('/api/profiles', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as {
-      name?: string; terms?: string[]; schedule?: string; include_announcements?: boolean;
-      fetch_documents?: boolean; run_now?: boolean;
+      name?: string; terms?: string[]; cpv_codes?: string[]; schedule?: string;
+      include_announcements?: boolean; fetch_documents?: boolean; run_now?: boolean;
     };
+    const cpvCodes = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
     const name = body.name?.trim();
     const terms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
     const schedule = ['manual', 'daily', 'weekly'].includes(body.schedule ?? '') ? body.schedule : 'manual';
@@ -68,9 +69,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     }
     try {
       const { rows } = await pool.query(
-        `INSERT INTO profiles (name, terms, schedule, include_announcements, fetch_documents)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [name, terms, schedule, body.include_announcements !== false, body.fetch_documents === true]
+        `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, fetch_documents)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [name, terms, cpvCodes, schedule, body.include_announcements !== false, body.fetch_documents === true]
       );
       const profile = rows[0];
       let runId: number | null = null;
@@ -522,7 +523,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   // ---------- Insights: oportunidades (scoring) ----------
   app.get('/api/insights/opportunities', { preHandler: requireAuth }, async (req) => {
-    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    const query = req.query as Record<string, unknown>;
+    const profileId = parseProfileId(query);
+    const textFilter = String(query.q ?? '').trim().toLowerCase();
     const scope = contractScope(profileId);
 
     // Anúncios abertos no scope
@@ -611,7 +614,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
           basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=contratos&id=${c.basegov_id}`,
         };
       }),
-    ].sort((a, b) => b.score - a.score);
+    ]
+      .filter((o) => !textFilter ||
+        `${o.title ?? ''} ${o.entity ?? ''}`.toLowerCase().includes(textFilter))
+      .sort((a, b) => b.score - a.score);
 
     return { items: opportunities.slice(0, 100) };
   });
