@@ -3,7 +3,7 @@ import { pool } from './db.js';
 /** Cria um profile_run e as pesquisas filhas (contratos + anúncios por termo). */
 export async function createProfileRun(profileId: number, createdBy: number | null): Promise<number> {
   const { rows: profRows } = await pool.query(
-    'SELECT id, terms, include_announcements FROM profiles WHERE id = $1',
+    'SELECT id, terms, include_announcements, fetch_documents FROM profiles WHERE id = $1',
     [profileId]
   );
   if (profRows.length === 0) throw new Error('Perfil não encontrado');
@@ -17,8 +17,8 @@ export async function createProfileRun(profileId: number, createdBy: number | nu
 
   for (const term of profile.terms as string[]) {
     await pool.query(
-      `INSERT INTO searches (term, kind, profile_run_id, created_by) VALUES ($1,'contratos',$2,$3)`,
-      [term, runId, createdBy]
+      `INSERT INTO searches (term, kind, profile_run_id, created_by, fetch_documents) VALUES ($1,'contratos',$2,$3,$4)`,
+      [term, runId, createdBy, profile.fetch_documents === true]
     );
     if (profile.include_announcements) {
       await pool.query(

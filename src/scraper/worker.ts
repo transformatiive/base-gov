@@ -257,7 +257,7 @@ async function matchLocalCorpus(searchId: number, term: string): Promise<number>
   return rowCount ?? 0;
 }
 
-async function processSearch(client: BaseGovClient, searchId: number, term: string): Promise<void> {
+async function processSearch(client: BaseGovClient, searchId: number, term: string, fetchDocuments: boolean): Promise<void> {
   const localMatches = await matchLocalCorpus(searchId, term);
   if (localMatches > 0) console.log(`[worker] pesquisa #${searchId}: ${localMatches} contratos do corpus local`);
 
@@ -281,17 +281,22 @@ async function processSearch(client: BaseGovClient, searchId: number, term: stri
         [searchId, contractId, scraped]
       );
 
-      // Detalhe: buscar se nunca foi buscado ou se tem mais de 7 dias.
+      // Detalhe do site: com o histórico dos dados abertos importado, só vale a pena
+      // ir ao site quando (a) o contrato é uma novidade sem cobertura de dados abertos,
+      // ou (b) a pesquisa pediu documentos PDF (que só existem no site).
       const { rows } = await pool.query(
-        `SELECT detail_scraped_at FROM contracts WHERE id = $1
-           AND (detail_scraped_at IS NULL OR detail_scraped_at < now() - interval '7 days')`,
+        fetchDocuments
+          ? `SELECT 1 FROM contracts WHERE id = $1
+               AND (detail_scraped_at IS NULL OR detail_scraped_at < now() - interval '7 days')`
+          : `SELECT 1 FROM contracts WHERE id = $1
+               AND detail_scraped_at IS NULL AND raw_opendata_json IS NULL`,
         [contractId]
       );
       if (rows.length > 0) {
         await sleep(config.scrapeDelayMs);
         const detail = await client.getDetail(item.id);
         await saveDetail(contractId, detail);
-        await downloadPendingDocuments(client, contractId);
+        if (fetchDocuments) await downloadPendingDocuments(client, contractId);
       }
 
       scraped++;
@@ -345,10 +350,10 @@ async function tick(client: BaseGovClient): Promise<void> {
        WHERE id = (SELECT id FROM searches
                    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now())
                    ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-       RETURNING id, term, kind, profile_run_id, retries`
+       RETURNING id, term, kind, profile_run_id, retries, fetch_documents`
     );
     if (rows.length > 0) {
-      const { id, term, kind, profile_run_id, retries } = rows[0];
+      const { id, term, kind, profile_run_id, retries, fetch_documents } = rows[0];
       if (profile_run_id) {
         await pool.query(
           `UPDATE profile_runs SET status = 'running', started_at = COALESCE(started_at, now()) WHERE id = $1`,
@@ -360,7 +365,7 @@ async function tick(client: BaseGovClient): Promise<void> {
         if (kind === 'anuncios') {
           await processAnnouncementSearch(client, id, term);
         } else {
-          await processSearch(client, id, term);
+          await processSearch(client, id, term, fetch_documents === true);
         }
         console.log(`[worker] pesquisa #${id} concluída`);
       } catch (err) {
