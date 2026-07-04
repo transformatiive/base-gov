@@ -1,4 +1,4 @@
-/* SPA mínima do BASE.gov Robot — sem dependências. */
+/* SPA mínima do BaseRadar — sem dependências. */
 const app = document.getElementById('app');
 const topbar = document.getElementById('topbar');
 const whoami = document.getElementById('whoami');
@@ -11,6 +11,30 @@ const badge = (s) => `<span class="badge ${esc(s)}">${esc(s)}</span>`;
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const scoreColor = (s) => (s >= 70 ? '#14622d' : s >= 45 ? '#8a4b00' : '#5a6b7b');
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+/* Ícones SVG inline (traço, 24x24). */
+const ICON_PATHS = {
+  download: '<path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M4 19h16"/>',
+  back: '<path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/>',
+  next: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/>',
+  external: '<path d="M14 5h5v5"/><path d="M19 5l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
+  pin: '<path d="M12 21s-6.5-5.4-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.6 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/>',
+  doc: '<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/>',
+  check: '<path d="M4 12.5l5 5L20 6.5"/>',
+  x: '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>',
+  bell: '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9"/><path d="M10.3 19.5a2 2 0 0 0 3.4 0"/>',
+  rotate: '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
+  building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+};
+const ico = (name, size = 15) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
+
+/* Wordmark BaseRadar (igual ao do header). */
+const wordmark = (size = 20) =>
+  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Base<span class="accent">Radar</span></span></span>`;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -34,8 +58,8 @@ function renderLogin() {
   topbar.hidden = true;
   app.innerHTML = `
     <div class="card login-box">
-      <h2>BASE.gov Robot</h2>
-      <p class="muted">Pesquisa e arquivo de contratos públicos do Portal BASE.</p>
+      ${wordmark(24)}
+      <p class="muted">Radar comercial de contratos públicos</p>
       <form id="login-form">
         <label>Utilizador</label>
         <input type="text" name="username" autocomplete="username" required>
@@ -136,9 +160,9 @@ async function renderResults(searchId, page = 0) {
             ${search.error_message ? ` · <span class="error">${esc(search.error_message)}</span>` : ''}</div>
         </div>
         <div>
-          ${search.status === 'failed' ? `<button id="retry-btn">↻ Retomar pesquisa</button>` : ''}
-          <a href="/api/searches/${search.id}/export.xlsx"><button>⬇ Exportar Excel</button></a>
-          <button class="btn-secondary" onclick="location.hash='#/'">← Voltar</button>
+          ${search.status === 'failed' ? `<button id="retry-btn">${ico('refresh')} Retomar pesquisa</button>` : ''}
+          <a href="/api/searches/${search.id}/export.xlsx"><button>${ico('download')} Exportar Excel</button></a>
+          <button class="btn-secondary" onclick="location.hash='#/'">${ico('back')} Voltar</button>
         </div>
       </div>
       <table>
@@ -146,9 +170,9 @@ async function renderResults(searchId, page = 0) {
         <tbody>${rows || '<tr><td colspan="5" class="muted">Sem resultados (ainda).</td></tr>'}</tbody>
       </table>
       <div class="pager">
-        <button ${page <= 0 ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page - 1}'">← Anterior</button>
+        <button ${page <= 0 ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page - 1}'">${ico('back')} Anterior</button>
         <span>Página ${page + 1} de ${lastPage + 1}</span>
-        <button ${page >= lastPage ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page + 1}'">Seguinte →</button>
+        <button ${page >= lastPage ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page + 1}'">Seguinte ${ico('next')}</button>
       </div>
     </div>`;
 
@@ -175,7 +199,7 @@ async function renderContract(id) {
       <td>${d.download_ok ? `<a href="${d.download_url}">${esc(d.file_name)}</a>` : esc(d.file_name)}</td>
       <td>${esc(d.content_type ?? '—')}</td>
       <td>${d.size_bytes ? (d.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
-      <td>${d.download_ok ? '✅' : `❌ <span class="muted">${esc(d.download_error ?? 'pendente')}</span>`}</td>
+      <td>${d.download_ok ? `<span style="color:var(--ok)">${ico('check')}</span>` : `<span style="color:var(--bad)">${ico('x')}</span> <span class="muted">${esc(d.download_error ?? 'pendente')}</span>`}</td>
     </tr>`).join('');
 
   app.innerHTML = `
@@ -183,8 +207,8 @@ async function renderContract(id) {
       <div class="toolbar">
         <h2>Contrato BASE #${c.basegov_id}</h2>
         <div>
-          <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ↗</button></a>
-          <button class="btn-secondary" onclick="history.back()">← Voltar</button>
+          <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
+          <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
         </div>
       </div>
       <dl class="detail">
@@ -301,10 +325,11 @@ async function renderInsightTab(el, q, tab, p) {
     const d = await api(`/api/insights/opportunities${q}`);
     el.innerHTML = `<h2>Oportunidades priorizadas</h2>
       <p class="muted">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência e recorrência da entidade).</p>
+      <div class="hint">Score (0-100): para concursos abertos soma 25 pontos base, até 35 pelo valor (escala logarítmica) e até 40 de urgência à medida que o prazo de propostas se aproxima. Para renovações soma até 35 pelo valor, até 30 pela proximidade do fim do contrato e até 15 pela recorrência de compra da entidade. &ge;70 = prioridade alta, 45-69 = média, &lt;45 = baixa.</div>
       <table><thead><tr><th>Score</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
       ${d.items.map((o) => `<tr>
         <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
-        <td>${o.type === 'anuncio_aberto' ? '📢 Concurso' : '🔁 Renovação'}</td>
+        <td>${o.type === 'anuncio_aberto' ? `${ico('bell')} Concurso` : `${ico('rotate')} Renovação`}</td>
         <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span></td>
         <td>${esc(o.entity ?? '—')}</td>
         <td>${fmtPrice(o.value)}</td>
@@ -337,7 +362,7 @@ async function renderInsightTab(el, q, tab, p) {
         const open = a.proposal_deadline_date && a.proposal_deadline_date >= new Date().toISOString().slice(0, 10);
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
         <td>${fmtDate(a.dr_publication_date)}</td>
-        <td>${open ? '🟢' : '⚪'} ${fmtDate(a.proposal_deadline_date)}</td>
+        <td><span class="dot ${open ? 'open' : 'closed'}"></span> ${fmtDate(a.proposal_deadline_date)}</td>
         <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a></td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
@@ -360,18 +385,82 @@ async function renderInsightTab(el, q, tab, p) {
       ${chart(d.announcements, 'count', 'Anúncios por mês (nº)')}`;
   } else if (tab === 'map') {
     document.querySelector('main').classList.add('wide');
-    const d = await api(`/api/insights/map${q}`);
+    const tl = await api(`/api/insights/map-timeline${q}`);
+    const months = tl.months ?? [];
+    /* Agrega os dados client-side: sel = 0 → soma de todos os meses; 1..N → mês months[sel-1]. */
+    const dataFor = (sel) => {
+      const month = sel > 0 ? months[sel - 1] : null;
+      return Object.entries(tl.districts ?? {}).map(([district, byMonth]) => {
+        let count = 0, total = 0;
+        if (month) {
+          const m = byMonth[month];
+          if (m) { count = m.count; total = m.total_value; }
+        } else {
+          for (const m of Object.values(byMonth)) { count += m.count; total += m.total_value; }
+        }
+        return { district, count, total_value: total, avg_value: count ? total / count : 0 };
+      }).sort((a, b) => b.total_value - a.total_value);
+    };
+    const rowsHtml = (items) => items.map((r) =>
+      `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">Sem contratos neste período.</td></tr>';
+
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
-      <p class="muted">Dimensão do círculo = valor total contratado. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
+      <p class="muted">Usa o slider (ou o botão de reprodução) para ver a evolução mês a mês. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
+      <div class="map-controls">
+        <button id="map-play" class="btn-secondary" title="Reproduzir evolução mensal" aria-label="Reproduzir" ${months.length ? '' : 'disabled'}>${MAP_PLAY_ICON}</button>
+        <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período">
+        <span class="month-label" id="map-month-label">Todos</span>
+      </div>
       <div class="map-wrap">
         <div id="osm-map"></div>
-        <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
-        ${d.items.map((r) => `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
-        </tbody></table></div>
+        <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody id="map-district-tbody"></tbody></table></div>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:${MAP_COLORS[0]}"></span>Sem dados</span>
+        <span><span class="sw" style="background:${MAP_COLORS[1]}"></span>Baixo</span>
+        <span><span class="sw" style="background:${MAP_COLORS[2]}"></span>Médio</span>
+        <span><span class="sw" style="background:${MAP_COLORS[3]}"></span>Alto</span>
+        <span><span class="sw" style="background:${MAP_COLORS[4]}"></span>Muito alto</span>
+        <span>· dimensão do círculo = valor contratado</span>
       </div>`;
-    window._loadRegion = (district) => loadRegionPanel(district, q);
-    window._annReloadMap = () => renderInsightTab(el, q, tab, p);
-    renderLeafletMap(d.items, (district) => loadRegionPanel(district, q));
+
+    const slider = el.querySelector('#map-slider');
+    const label = el.querySelector('#map-month-label');
+    const playBtn = el.querySelector('#map-play');
+    const applySelection = () => {
+      const sel = Number(slider.value);
+      label.textContent = sel > 0 ? months[sel - 1] : 'Todos';
+      const items = dataFor(sel);
+      updateLeafletMarkers(items);
+      const tb = document.getElementById('map-district-tbody');
+      if (tb) tb.innerHTML = rowsHtml(items);
+    };
+    let playTimer = null;
+    const stopPlay = () => {
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+      playBtn.innerHTML = MAP_PLAY_ICON;
+    };
+    playBtn.onclick = () => {
+      if (playTimer) { stopPlay(); return; }
+      if (!months.length) return;
+      if (Number(slider.value) >= months.length) slider.value = '0';
+      playBtn.innerHTML = MAP_PAUSE_ICON;
+      playTimer = setInterval(() => {
+        if (!document.body.contains(slider)) { stopPlay(); return; }
+        const next = Number(slider.value) + 1;
+        if (next > months.length) { stopPlay(); return; }
+        slider.value = String(next);
+        applySelection();
+        if (next >= months.length) stopPlay();
+      }, 700);
+    };
+    slider.addEventListener('input', () => { stopPlay(); applySelection(); });
+
+    window._loadRegion = (district) => { stopPlay(); loadRegionPanel(district, q); };
+    window._annReloadMap = () => { stopPlay(); renderInsightTab(el, q, tab, p); };
+    renderLeafletMap(dataFor(0), (district) => { stopPlay(); loadRegionPanel(district, q); });
+    applySelection();
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
     el.innerHTML = `<h2>Inteligência competitiva — adjudicatários nesta área</h2>
@@ -406,8 +495,8 @@ async function renderProfile(id, tab = 'opportunities') {
         <div class="muted">Termos: ${p.terms.map(esc).join(', ')} · agenda: ${esc(p.schedule)}</div>
       </div>
       <div>
-        <button id="run-btn" ${running ? 'disabled' : ''}>▶ Executar agora</button>
-        <button class="btn-secondary" onclick="location.hash='#/profiles'">← Perfis</button>
+        <button id="run-btn" ${running ? 'disabled' : ''}>${ico('play')} Executar agora</button>
+        <button class="btn-secondary" onclick="location.hash='#/profiles'">${ico('back')} Perfis</button>
       </div>
     </div>
     <div class="cards">
@@ -462,8 +551,8 @@ async function loadRegionPanel(district, q) {
   const maxY = Math.max(1, ...d.by_year.map((y) => y.count));
   const maxM = Math.max(1, ...d.by_month.map((m) => m.count));
   panel.innerHTML = `
-    <div class="toolbar"><h3 style="margin:0">📍 ${esc(d.district)}</h3>
-      <button class="btn-secondary" onclick="window._annReloadMap ? window._annReloadMap() : location.reload()">← Todos os distritos</button></div>
+    <div class="toolbar"><h3 style="margin:0">${ico('pin')} ${esc(d.district)}</h3>
+      <button class="btn-secondary" onclick="window._annReloadMap ? window._annReloadMap() : location.reload()">${ico('back')} Todos os distritos</button></div>
     <h4>Evolução anual (nº contratos)</h4>
     <div class="chart-wrap"><div class="bar-chart" style="height:90px">
       ${d.by_year.map((y) => `<div class="bar" style="height:${Math.round((y.count / maxY) * 100)}%"><b>${y.count}</b><span>${y.year}</span></div>`).join('') || '<span class="muted">Sem dados.</span>'}
@@ -472,7 +561,7 @@ async function loadRegionPanel(district, q) {
     <div class="chart-wrap"><div class="bar-chart" style="height:70px">
       ${d.by_month.map((m) => `<div class="bar" style="height:${Math.round((m.count / maxM) * 100)}%"><b>${m.count || ''}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
     </div></div>
-    <h4>🔁 Renovações próximas (${d.renewals.length})</h4>
+    <h4>${ico('rotate')} Renovações próximas (${d.renewals.length})</h4>
     ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
         <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
@@ -490,10 +579,30 @@ async function loadRegionPanel(district, q) {
 
 /* Mapa real (OpenStreetMap via Leaflet) com círculos por distrito. */
 let leafletMap = null;
+let mapMarkers = {};
+
+/* Escala sequencial por potencial (valor relativo ao máximo visível). */
+const MAP_COLORS = ['#cbd5e1', '#93c5fd', '#3b82f6', '#1d4ed8', '#dc2626'];
+const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
+const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
+
+function mapColor(value, maxV) {
+  if (!value || value <= 0) return MAP_COLORS[0];
+  const r = value / Math.max(1, maxV);
+  if (r < 0.25) return MAP_COLORS[1];
+  if (r < 0.5) return MAP_COLORS[2];
+  if (r < 0.75) return MAP_COLORS[3];
+  return MAP_COLORS[4];
+}
+const mapRadius = (value, maxV) => (value > 0 ? 8 + Math.sqrt(value / Math.max(1, maxV)) * 32 : 4);
+const mapPopup = (i) =>
+  `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`;
+
 function renderLeafletMap(items, onDistrictClick) {
   const el = document.getElementById('osm-map');
   if (!el || typeof L === 'undefined') return;
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  mapMarkers = {};
   leafletMap = L.map(el, { scrollWheelZoom: false });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
@@ -505,21 +614,34 @@ function renderLeafletMap(items, onDistrictClick) {
   for (const i of items) {
     const c = COORDS_NORM[deaccent(i.district)];
     if (!c) continue;
-    const radius = 8 + Math.sqrt(i.total_value / maxV) * 32;
+    const color = mapColor(i.total_value, maxV);
     const marker = L.circleMarker(c, {
-      radius,
-      color: '#0b5394',
+      radius: mapRadius(i.total_value, maxV),
+      color,
       weight: 2,
-      fillColor: '#0b5394',
-      fillOpacity: 0.45,
-    }).addTo(leafletMap).bindPopup(
-      `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`
-    );
+      fillColor: color,
+      fillOpacity: 0.5,
+    }).addTo(leafletMap).bindPopup(mapPopup(i));
     if (onDistrictClick) marker.on('click', () => onDistrictClick(i.district));
+    mapMarkers[i.district] = marker;
     bounds.push(c);
   }
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
   else leafletMap.setView([39.5, -8.0], 6);
+}
+
+/* Atualiza raio/cor/popup dos círculos existentes sem reinicializar o Leaflet. */
+function updateLeafletMarkers(items) {
+  if (!leafletMap) return;
+  const maxV = Math.max(1, ...items.map((i) => i.total_value));
+  const byDistrict = Object.fromEntries(items.map((i) => [i.district, i]));
+  for (const [district, marker] of Object.entries(mapMarkers)) {
+    const i = byDistrict[district] ?? { district, count: 0, total_value: 0, avg_value: 0 };
+    const color = mapColor(i.total_value, maxV);
+    marker.setRadius(mapRadius(i.total_value, maxV));
+    marker.setStyle({ color, fillColor: color });
+    marker.setPopupContent(mapPopup(i));
+  }
 }
 
 /* ---------- Insights globais (todos os dados, sem perfil) ---------- */
@@ -544,10 +666,10 @@ async function renderAnnouncement(id) {
   const raw = a.raw_detail_json ?? a.raw_list_json ?? {};
   app.innerHTML = `
     <div class="toolbar">
-      <h2>${a.is_open ? '🟢' : '⚪'} Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</h2>
+      <h2><span class="dot ${a.is_open ? 'open' : 'closed'}"></span> Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</h2>
       <div>
-        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ↗</button></a>
-        <button class="btn-secondary" onclick="history.back()">← Voltar</button>
+        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
+        <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
       </div>
     </div>
     <div class="card">
@@ -680,7 +802,7 @@ async function renderEntity(id) {
   app.innerHTML = `
     <div class="toolbar">
       <h2>${esc(e.name)} ${e.nif ? `<span class="muted">· NIF ${esc(e.nif)}</span>` : ''}</h2>
-      <button class="btn-secondary" onclick="history.back()">← Voltar</button>
+      <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
     </div>
     ${e.as_contracting.n_contracts ? roleBlock(e.as_contracting, 'Como adjudicante (comprador)', 'Fornecedores') : ''}
     ${e.as_contracted.n_contracts ? roleBlock(e.as_contracted, 'Como adjudicatária (fornecedor)', 'Clientes') : ''}`;
