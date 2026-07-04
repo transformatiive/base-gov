@@ -360,18 +360,82 @@ async function renderInsightTab(el, q, tab, p) {
       ${chart(d.announcements, 'count', 'Anúncios por mês (nº)')}`;
   } else if (tab === 'map') {
     document.querySelector('main').classList.add('wide');
-    const d = await api(`/api/insights/map${q}`);
+    const tl = await api(`/api/insights/map-timeline${q}`);
+    const months = tl.months ?? [];
+    /* Agrega os dados client-side: sel = 0 → soma de todos os meses; 1..N → mês months[sel-1]. */
+    const dataFor = (sel) => {
+      const month = sel > 0 ? months[sel - 1] : null;
+      return Object.entries(tl.districts ?? {}).map(([district, byMonth]) => {
+        let count = 0, total = 0;
+        if (month) {
+          const m = byMonth[month];
+          if (m) { count = m.count; total = m.total_value; }
+        } else {
+          for (const m of Object.values(byMonth)) { count += m.count; total += m.total_value; }
+        }
+        return { district, count, total_value: total, avg_value: count ? total / count : 0 };
+      }).sort((a, b) => b.total_value - a.total_value);
+    };
+    const rowsHtml = (items) => items.map((r) =>
+      `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">Sem contratos neste período.</td></tr>';
+
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
-      <p class="muted">Dimensão do círculo = valor total contratado. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
+      <p class="muted">Usa o slider (ou o botão de reprodução) para ver a evolução mês a mês. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
+      <div class="map-controls">
+        <button id="map-play" class="btn-secondary" title="Reproduzir evolução mensal" aria-label="Reproduzir" ${months.length ? '' : 'disabled'}>${MAP_PLAY_ICON}</button>
+        <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período">
+        <span class="month-label" id="map-month-label">Todos</span>
+      </div>
       <div class="map-wrap">
         <div id="osm-map"></div>
-        <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
-        ${d.items.map((r) => `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
-        </tbody></table></div>
+        <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody id="map-district-tbody"></tbody></table></div>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:${MAP_COLORS[0]}"></span>Sem dados</span>
+        <span><span class="sw" style="background:${MAP_COLORS[1]}"></span>Baixo</span>
+        <span><span class="sw" style="background:${MAP_COLORS[2]}"></span>Médio</span>
+        <span><span class="sw" style="background:${MAP_COLORS[3]}"></span>Alto</span>
+        <span><span class="sw" style="background:${MAP_COLORS[4]}"></span>Muito alto</span>
+        <span>· dimensão do círculo = valor contratado</span>
       </div>`;
-    window._loadRegion = (district) => loadRegionPanel(district, q);
-    window._annReloadMap = () => renderInsightTab(el, q, tab, p);
-    renderLeafletMap(d.items, (district) => loadRegionPanel(district, q));
+
+    const slider = el.querySelector('#map-slider');
+    const label = el.querySelector('#map-month-label');
+    const playBtn = el.querySelector('#map-play');
+    const applySelection = () => {
+      const sel = Number(slider.value);
+      label.textContent = sel > 0 ? months[sel - 1] : 'Todos';
+      const items = dataFor(sel);
+      updateLeafletMarkers(items);
+      const tb = document.getElementById('map-district-tbody');
+      if (tb) tb.innerHTML = rowsHtml(items);
+    };
+    let playTimer = null;
+    const stopPlay = () => {
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+      playBtn.innerHTML = MAP_PLAY_ICON;
+    };
+    playBtn.onclick = () => {
+      if (playTimer) { stopPlay(); return; }
+      if (!months.length) return;
+      if (Number(slider.value) >= months.length) slider.value = '0';
+      playBtn.innerHTML = MAP_PAUSE_ICON;
+      playTimer = setInterval(() => {
+        if (!document.body.contains(slider)) { stopPlay(); return; }
+        const next = Number(slider.value) + 1;
+        if (next > months.length) { stopPlay(); return; }
+        slider.value = String(next);
+        applySelection();
+        if (next >= months.length) stopPlay();
+      }, 700);
+    };
+    slider.addEventListener('input', () => { stopPlay(); applySelection(); });
+
+    window._loadRegion = (district) => { stopPlay(); loadRegionPanel(district, q); };
+    window._annReloadMap = () => { stopPlay(); renderInsightTab(el, q, tab, p); };
+    renderLeafletMap(dataFor(0), (district) => { stopPlay(); loadRegionPanel(district, q); });
+    applySelection();
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
     el.innerHTML = `<h2>Inteligência competitiva — adjudicatários nesta área</h2>
@@ -490,10 +554,30 @@ async function loadRegionPanel(district, q) {
 
 /* Mapa real (OpenStreetMap via Leaflet) com círculos por distrito. */
 let leafletMap = null;
+let mapMarkers = {};
+
+/* Escala sequencial por potencial (valor relativo ao máximo visível). */
+const MAP_COLORS = ['#cbd5e1', '#93c5fd', '#3b82f6', '#1d4ed8', '#dc2626'];
+const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
+const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
+
+function mapColor(value, maxV) {
+  if (!value || value <= 0) return MAP_COLORS[0];
+  const r = value / Math.max(1, maxV);
+  if (r < 0.25) return MAP_COLORS[1];
+  if (r < 0.5) return MAP_COLORS[2];
+  if (r < 0.75) return MAP_COLORS[3];
+  return MAP_COLORS[4];
+}
+const mapRadius = (value, maxV) => (value > 0 ? 8 + Math.sqrt(value / Math.max(1, maxV)) * 32 : 4);
+const mapPopup = (i) =>
+  `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`;
+
 function renderLeafletMap(items, onDistrictClick) {
   const el = document.getElementById('osm-map');
   if (!el || typeof L === 'undefined') return;
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  mapMarkers = {};
   leafletMap = L.map(el, { scrollWheelZoom: false });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
@@ -505,21 +589,34 @@ function renderLeafletMap(items, onDistrictClick) {
   for (const i of items) {
     const c = COORDS_NORM[deaccent(i.district)];
     if (!c) continue;
-    const radius = 8 + Math.sqrt(i.total_value / maxV) * 32;
+    const color = mapColor(i.total_value, maxV);
     const marker = L.circleMarker(c, {
-      radius,
-      color: '#0b5394',
+      radius: mapRadius(i.total_value, maxV),
+      color,
       weight: 2,
-      fillColor: '#0b5394',
-      fillOpacity: 0.45,
-    }).addTo(leafletMap).bindPopup(
-      `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`
-    );
+      fillColor: color,
+      fillOpacity: 0.5,
+    }).addTo(leafletMap).bindPopup(mapPopup(i));
     if (onDistrictClick) marker.on('click', () => onDistrictClick(i.district));
+    mapMarkers[i.district] = marker;
     bounds.push(c);
   }
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
   else leafletMap.setView([39.5, -8.0], 6);
+}
+
+/* Atualiza raio/cor/popup dos círculos existentes sem reinicializar o Leaflet. */
+function updateLeafletMarkers(items) {
+  if (!leafletMap) return;
+  const maxV = Math.max(1, ...items.map((i) => i.total_value));
+  const byDistrict = Object.fromEntries(items.map((i) => [i.district, i]));
+  for (const [district, marker] of Object.entries(mapMarkers)) {
+    const i = byDistrict[district] ?? { district, count: 0, total_value: 0, avg_value: 0 };
+    const color = mapColor(i.total_value, maxV);
+    marker.setRadius(mapRadius(i.total_value, maxV));
+    marker.setStyle({ color, fillColor: color });
+    marker.setPopupContent(mapPopup(i));
+  }
 }
 
 /* ---------- Insights globais (todos os dados, sem perfil) ---------- */
