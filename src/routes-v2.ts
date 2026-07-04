@@ -746,16 +746,18 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       annParams
     );
 
-    // Renovações nos próximos 6 meses. Recorrência = nº de contratos registados
-    // da entidade adjudicante (lookup direto por índice; contar dentro do scope
-    // completo degenerava em planos de segundos com 100k+ contratos).
+    // Renovações nos próximos 12 meses — a mesma janela do separador Renovações
+    // e do fit IA automático, para as contagens baterem certo entre vistas.
+    // Recorrência = nº de contratos registados da entidade adjudicante (lookup
+    // direto por índice; contar dentro do scope completo degenerava em planos
+    // de segundos com 100k+ contratos).
     const { rows: renewals } = await pool.query(
       `WITH win AS (
          SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
            ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left
          FROM contracts c ${scope.join}
          WHERE ${HAS_END}
-           AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '6 months'
+           AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '12 months'
          ORDER BY ${END_DATE} LIMIT 300
        )
        SELECT w.*,
