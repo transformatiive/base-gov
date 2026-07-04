@@ -188,6 +188,28 @@ CREATE TABLE IF NOT EXISTS cpv_catalog (
 CREATE INDEX IF NOT EXISTS idx_cpv_norm ON cpv_catalog(designation_norm text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_cpv_n ON cpv_catalog(n_contracts DESC);
 
+-- Análises IA (ficha de oportunidade / go-no-go) e fit scores, com cache
+CREATE TABLE IF NOT EXISTS ai_analyses (
+  id              SERIAL PRIMARY KEY,
+  announcement_id INT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  profile_id      INT NOT NULL DEFAULT 0,   -- 0 = sem contexto de atividade
+  model           TEXT,
+  analysis        JSONB NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (announcement_id, profile_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_fit_scores (
+  profile_id INT NOT NULL,
+  item_type  TEXT NOT NULL,   -- anuncio_aberto | renovacao
+  item_id    INT NOT NULL,
+  fit        INT,
+  reason     TEXT,
+  model      TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (profile_id, item_type, item_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);

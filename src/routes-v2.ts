@@ -3,6 +3,7 @@ import { pool } from './db.js';
 import { requireAuth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
+import { aiEnabled, analyzeAnnouncement, digestIntro, fitScores, FitItem } from './ai.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -166,6 +167,107 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       created.push(rows[0].id);
     }
     return reply.code(201).send({ created });
+  });
+
+  // ---------- IA (OpenRouter): ficha de oportunidade, fit scores, digest ----------
+  app.get('/api/ai/status', { preHandler: requireAuth }, async () => ({ enabled: aiEnabled() }));
+
+  app.post('/api/announcements/:id/analyze', { preHandler: requireAuth }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const id = Number((req.params as { id: string }).id);
+    const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    try {
+      return await analyzeAnnouncement(id, profileId);
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
+  app.post('/api/profiles/:id/fit-scores', { preHandler: requireAuth }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const profileId = Number((req.params as { id: string }).id);
+    const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
+    try {
+      return { scores: await fitScores(profileId, items) };
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
+  // Digest semanal em HTML pronto para email (wordmark, estilos inline)
+  app.get('/api/profiles/:id/digest.html', { preHandler: requireAuth }, async (req, reply) => {
+    const profileId = Number((req.params as { id: string }).id);
+    const { rows: profRows } = await pool.query('SELECT * FROM profiles WHERE id = $1', [profileId]);
+    if (profRows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+    const profile = profRows[0];
+
+    const { rows: newAnns } = await pool.query(
+      `SELECT a.* FROM announcements a JOIN (${PROFILE_ANNOUNCEMENTS}) s ON s.id = a.id
+       WHERE a.created_at >= now() - interval '7 days' ORDER BY a.proposal_deadline_date NULLS LAST`,
+      [profileId]
+    );
+    const { rows: openAnns } = await pool.query(
+      `SELECT a.* FROM announcements a JOIN (${PROFILE_ANNOUNCEMENTS}) s ON s.id = a.id
+       WHERE a.proposal_deadline_date >= CURRENT_DATE ORDER BY a.proposal_deadline_date`,
+      [profileId]
+    );
+    const { rows: renewals } = await pool.query(
+      `SELECT c.id, c.object_brief_description, c.initial_contractual_price,
+         ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left,
+         (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+           WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
+       FROM contracts c JOIN (${PROFILE_CONTRACTS}) s ON s.id = c.id
+       WHERE ${HAS_END} AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '90 days'
+       ORDER BY end_date LIMIT 12`,
+      [profileId]
+    );
+
+    const fmtEur = (v: unknown) =>
+      v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+
+    const statsText = `Novos anúncios (7 dias): ${newAnns.length}. Concursos com prazo a decorrer: ${openAnns.length}. Contratos a terminar nos próximos 90 dias (oportunidades de renovação): ${renewals.length}. Detalhe renovações: ${renewals.map((r) => `${r.contracting} (${fmtEur(r.initial_contractual_price)}, termina ${String(r.end_date).slice(0, 10)})`).slice(0, 6).join('; ')}`;
+    const intro = aiEnabled() ? await digestIntro(profile.name, statsText) : '';
+
+    const row = (cells: string[], bold = false) =>
+      `<tr>${cells.map((c) => `<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;${bold ? 'font-weight:600' : ''}">${c}</td>`).join('')}</tr>`;
+    const th = (cells: string[]) =>
+      `<tr>${cells.map((c) => `<td style="padding:8px 10px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:#64748b;font-weight:700">${c}</td>`).join('')}</tr>`;
+    const section = (title: string, body: string) =>
+      `<h2 style="font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#0f172a;margin:28px 0 8px">${title}</h2>${body}`;
+
+    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>BaseRadar — Digest ${esc(profile.name)}</title></head>
+<body style="margin:0;background:#f6f8fb;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
+<tr><td style="padding:22px 28px;border-bottom:1px solid #e2e8f0">
+  <span style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.5px">Base<span style="color:#2563eb">Radar</span></span>
+  <span style="font-size:11px;color:#64748b;letter-spacing:0.08em;text-transform:uppercase">&nbsp;&nbsp;Digest semanal — ${esc(profile.name)}</span>
+</td></tr>
+<tr><td style="padding:24px 28px">
+  ${intro ? `<p style="font-size:14px;line-height:1.55;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin:0 0 8px">${esc(intro)}</p>` : ''}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
+    ${[[String(openAnns.length), 'Concursos abertos'], [String(newAnns.length), 'Novos (7 dias)'], [String(renewals.length), 'Renovações 90 dias']]
+      .map(([n, l]) => `<td align="center" style="padding:10px;border:1px solid #e2e8f0;border-radius:8px"><div style="font-size:22px;font-weight:700;color:#1e3a8a">${n}</div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b">${l}</div></td><td width="8"></td>`).join('')}
+  </tr></table>
+
+  ${section('Concursos com prazo a decorrer', openAnns.length
+    ? `<table width="100%" cellpadding="0" cellspacing="0">${th(['Prazo', 'Designação', 'Entidade', 'Preço base'])}
+       ${openAnns.slice(0, 10).map((a) => row([String(a.proposal_deadline_date).slice(0, 10), esc(a.contract_designation).slice(0, 90), esc(a.contracting_entity), fmtEur(a.base_price)])).join('')}</table>`
+    : '<p style="font-size:13px;color:#64748b">Sem concursos abertos neste momento.</p>')}
+
+  ${section('Renovações a preparar (próximos 90 dias)', renewals.length
+    ? `<table width="100%" cellpadding="0" cellspacing="0">${th(['Termina', 'Entidade', 'Objeto', 'Valor'])}
+       ${renewals.map((r) => row([`${String(r.end_date).slice(0, 10)} (${r.days_left}d)`, esc(r.contracting), esc(r.object_brief_description).slice(0, 80), fmtEur(r.initial_contractual_price)])).join('')}</table>`
+    : '<p style="font-size:13px;color:#64748b">Sem renovações no horizonte de 90 dias.</p>')}
+</td></tr>
+<tr><td style="padding:16px 28px;border-top:1px solid #e2e8f0">
+  <p style="font-size:11px;color:#94a3b8;margin:0">Gerado por BaseRadar · Fonte: Portal BASE — IMPIC / dados.gov.pt · ${new Date().toLocaleDateString('pt-PT')}</p>
+</td></tr>
+</table></td></tr></table></body></html>`;
+
+    reply.header('Content-Type', 'text/html; charset=utf-8');
+    return reply.send(html);
   });
 
   // ---------- Catálogo CPV (pesquisa por nome de atividade ou código) ----------
@@ -400,17 +502,33 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   // ---------- Insights: timeline mensal por distrito (slider do mapa) ----------
   app.get('/api/insights/map-timeline', { preHandler: requireAuth }, async (req) => {
-    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    const q = req.query as Record<string, unknown>;
+    const profileId = parseProfileId(q);
     const scope = contractScope(profileId);
-    const { rows } = await pool.query(
-      `SELECT coalesce(${DISTRICT}, 'Desconhecido') AS district,
-              to_char(c.publication_date, 'YYYY-MM') AS month,
-              count(*) AS n, coalesce(sum(c.initial_contractual_price),0) AS total
-       FROM contracts c ${scope.join}
-       WHERE c.publication_date IS NOT NULL
-       GROUP BY 1, 2`,
-      scope.params
-    );
+    // basis=end: meses futuros por data de FIM do contrato (renovações previstas por distrito)
+    // basis=publication (default): meses históricos por data de publicação
+    const basis = q.basis === 'end' ? 'end' : 'publication';
+    const { rows } = basis === 'end'
+      ? await pool.query(
+          `SELECT coalesce(${DISTRICT}, 'Desconhecido') AS district,
+                  to_char(${END_DATE}, 'YYYY-MM') AS month,
+                  count(*) AS n, coalesce(sum(c.initial_contractual_price),0) AS total
+           FROM contracts c ${scope.join}
+           WHERE ${HAS_END}
+             AND ${END_DATE} >= date_trunc('month', CURRENT_DATE)
+             AND ${END_DATE} < CURRENT_DATE + interval '24 months'
+           GROUP BY 1, 2`,
+          scope.params
+        )
+      : await pool.query(
+          `SELECT coalesce(${DISTRICT}, 'Desconhecido') AS district,
+                  to_char(c.publication_date, 'YYYY-MM') AS month,
+                  count(*) AS n, coalesce(sum(c.initial_contractual_price),0) AS total
+           FROM contracts c ${scope.join}
+           WHERE c.publication_date IS NOT NULL
+           GROUP BY 1, 2`,
+          scope.params
+        );
     const monthsSet = new Set<string>();
     const districts: Record<string, Record<string, { count: number; total_value: number }>> = {};
     for (const r of rows) {
@@ -613,6 +731,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         return {
           type: 'anuncio_aberto',
           announcement_id: a.id,
+          recurrence: null,
           internal_url: `#/announcements/${a.id}`,
           score,
           title: a.contract_designation,
@@ -634,6 +753,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         return {
           type: 'renovacao',
           contract_id: c.id,
+          recurrence: Number(c.entity_recurrence),
           internal_url: `#/contracts/${c.id}`,
           score,
           title: c.object_brief_description,
