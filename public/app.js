@@ -442,11 +442,12 @@ async function renderInsightTab(el, q, tab, p) {
       ${matrix}
       <p class="muted">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência e recorrência da entidade).</p>
       <div class="hint">Score (0-100): para concursos abertos soma 25 pontos base, até 35 pelo valor (escala logarítmica) e até 40 de urgência à medida que o prazo de propostas se aproxima. Para renovações soma até 35 pelo valor, até 30 pela proximidade do fim do contrato e até 15 pela recorrência de compra da entidade. &ge;70 = prioridade alta, 45-69 = média, &lt;45 = baixa.</div>
-      ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p style="margin:0.4rem 0"><button class="btn-secondary" id="fit-btn">${ico('search')} Calcular fit com a atividade (IA)</button> <span class="muted" id="fit-status"></span></p>` : ''}
+      ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.4rem 0" id="fit-status">Fit IA: calculado automaticamente para oportunidades nos próximos 12 meses.</p>` : ''}
       <table><thead><tr><th>Score</th><th>Fit IA</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
       ${d.items.map((o) => `<tr>
         <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
-        <td>${fits[fitKey(o)] ? `<span class="score" style="background:${fitColor(fits[fitKey(o)].fit)}" title="${esc(fits[fitKey(o)].reason)}">${fits[fitKey(o)].fit}</span>` : '<span class="muted">—</span>'}</td>
+        <td>${fits[fitKey(o)] ? `<span class="score" style="background:${fitColor(fits[fitKey(o)].fit)}" title="${esc(fits[fitKey(o)].reason)}">${fits[fitKey(o)].fit}</span>`
+          : `<button class="btn-secondary fit-one" style="padding:0.2rem 0.45rem" title="Calcular fit desta oportunidade (a mais de 12 meses, não é automático)" onclick="window._fitOne('${o.type}', ${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id})">${ico('refresh', 13)}</button>`}</td>
         <td>${o.type === 'anuncio_aberto' ? `${ico('bell')} Concurso` : `${ico('rotate')} Renovação`}</td>
         <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span>${(fits[fitKey(o)]?.reasons ?? []).length ? `<ul class="fit-reasons">${fits[fitKey(o)].reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}</td>
         <td>${esc(o.entity ?? '—')}</td>
@@ -454,32 +455,37 @@ async function renderInsightTab(el, q, tab, p) {
         <td>${fmtDate(o.key_date)} <span class="muted">(${o.days_left}d)</span></td>
         <td>${esc(o.action)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Sem oportunidades ativas — executa o perfil ou alarga os termos.</td></tr>'}
       </tbody></table>`;
-    const fitBtn = el.querySelector('#fit-btn');
-    if (fitBtn) {
-      fitBtn.onclick = async () => {
+    bindMatrixTooltip(el);
+    const pid = new URLSearchParams(q.slice(1)).get('profile_id');
+    const toFitItem = (o) => ({
+      type: o.type,
+      id: o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id,
+      title: o.title, entity: o.entity, value: o.value,
+    });
+    const mergeFits = (scores) => {
+      (window._fitCache ??= {})[q] = { ...(window._fitCache[q] ?? {}), ...scores };
+    };
+    window._fitOne = async (type, itemId) => {
+      const o = d.items.find((x) => x.type === type && (x.announcement_id === itemId || x.contract_id === itemId));
+      if (!o || !pid) return;
+      aiModalOpen(['A avaliar o fit desta oportunidade com a atividade…', 'A justificar a pontuação…']);
+      try {
+        const r = await api(`/api/profiles/${pid}/fit-scores`, { method: 'POST', body: JSON.stringify({ items: [toFitItem(o)] }) });
+        mergeFits(r.scores);
+        renderInsightTab(el, q, tab, p);
+      } catch (err) { alert(err.message); } finally { aiModalClose(); }
+    };
+    // Automático: oportunidades com data-chave nos próximos 12 meses (são poucas)
+    if (pid) {
+      const missing = d.items.filter((o) => o.days_left != null && Number(o.days_left) <= 365 && !fits[fitKey(o)]);
+      if (missing.length > 0 && window._fitAutoBusy !== q) {
+        window._fitAutoBusy = q;
         const status = el.querySelector('#fit-status');
-        fitBtn.disabled = true;
-        aiModalOpen([
-          'A carregar as oportunidades do teu radar…',
-          'A comparar cada uma com os termos e CPVs da atividade…',
-          'A pontuar o alinhamento (0-100) e a justificar…',
-          'A guardar os resultados em cache…',
-        ]);
-        try {
-          const pid = new URLSearchParams(q.slice(1)).get('profile_id');
-          const items = d.items.map((o) => ({
-            type: o.type,
-            id: o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id,
-            title: o.title, entity: o.entity, value: o.value,
-          }));
-          const r = await api(`/api/profiles/${pid}/fit-scores`, { method: 'POST', body: JSON.stringify({ items }) });
-          (window._fitCache ??= {})[q] = r.scores;
-          renderInsightTab(el, q, tab, p);
-        } catch (err) {
-          status.textContent = err.message;
-          fitBtn.disabled = false;
-        } finally { aiModalClose(); }
-      };
+        if (status) status.textContent = `Fit IA: a calcular automaticamente ${missing.length} oportunidade(s)…`;
+        api(`/api/profiles/${pid}/fit-scores`, { method: 'POST', body: JSON.stringify({ items: missing.map(toFitItem) }) })
+          .then((r) => { mergeFits(r.scores); window._fitAutoBusy = null; if (document.body.contains(el)) renderInsightTab(el, q, tab, p); })
+          .catch((err) => { window._fitAutoBusy = null; if (status) status.textContent = `Fit IA falhou: ${err.message}`; });
+      }
     }
   } else if (tab === 'renewals') {
     const d = await api(`/api/insights/renewals${q}&months=12`);
@@ -734,6 +740,53 @@ async function loadRegionPanel(district, q) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+/* Popover rico da matriz (substitui o tooltip nativo do browser). */
+function matrixTipHtml(o, fit) {
+  const kind = o.type === 'anuncio_aberto'
+    ? '<span class="badge running">Concurso aberto</span>'
+    : '<span class="badge completed">Renovação</span>';
+  const keyDate = o.key_date ? String(o.key_date).slice(0, 10) : '—';
+  return `
+    ${kind}
+    <div class="mt-title">${esc(o.title ?? '')}</div>
+    <ul class="mt-list">
+      <li><strong>${esc(o.entity ?? '—')}</strong></li>
+      <li>Valor: <strong>${fmtPrice(o.value)}</strong></li>
+      <li>Data-chave: <strong>${keyDate}</strong> (${o.days_left} dias)</li>
+      ${o.recurrence ? `<li>Entidade com <strong>${o.recurrence}</strong> contrato(s) na área</li>` : ''}
+    </ul>
+    ${fit ? `<div class="mt-fit"><span class="score" style="background:${fitColor(fit.fit)}">${fit.fit}</span> fit com a atividade
+      ${(fit.reasons ?? []).length ? `<ul class="mt-list">${fit.reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : (fit.reason ? `<div class="muted">${esc(fit.reason)}</div>` : '')}</div>` : ''}
+    <div class="muted" style="margin-top:0.3rem">clique para abrir o detalhe</div>`;
+}
+
+function bindMatrixTooltip(container) {
+  let tipEl = document.getElementById('matrix-tip');
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.id = 'matrix-tip';
+    document.body.appendChild(tipEl);
+  }
+  const hide = () => { tipEl.style.display = 'none'; };
+  container.addEventListener('mousemove', (e) => {
+    const c = e.target.closest?.('circle[data-mi]');
+    if (!c) { hide(); return; }
+    const o = window._matrixPts?.[Number(c.dataset.mi)];
+    if (!o) { hide(); return; }
+    const fkey = `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
+    tipEl.innerHTML = matrixTipHtml(o, window._matrixFits?.[fkey]);
+    tipEl.style.display = 'block';
+    const pad = 14;
+    const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+    let left = e.clientX + pad, top = e.clientY + pad;
+    if (left + w > window.innerWidth - 8) left = e.clientX - w - pad;
+    if (top + h > window.innerHeight - 8) top = e.clientY - h - pad;
+    tipEl.style.left = `${Math.max(8, left)}px`;
+    tipEl.style.top = `${Math.max(8, top)}px`;
+  });
+  container.addEventListener('mouseleave', hide);
+}
+
 /* Modal de progresso das análises IA: barra + passos contextualizados. */
 let _aiModalTimer = null;
 function aiModalOpen(steps) {
@@ -798,13 +851,14 @@ function renderPriorityMatrix(items, fits) {
       <text x="${x(d)}" y="${H - padB + 14}" font-size="10" fill="#64748b" text-anchor="middle">${d}d</text>`;
   }
 
-  const dot = (o) => {
+  window._matrixPts = pts;
+  window._matrixFits = fits ?? {};
+  const dot = (o, i) => {
     const fit = fits?.[key(o)];
     const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#dc2626' : '#2563eb');
     const r = 3 + Math.min(11, Math.sqrt(o.value / maxVal) * 11);
-    return `<a href="${esc(o.internal_url ?? '#')}"><circle cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
-      fill="${color}" fill-opacity="0.55" stroke="${color}">
-      <title>${esc(o.title ?? '')} — ${esc(o.entity ?? '')} · ${fmtCompact(o.value)} · ${o.days_left}d · entidade com ${o.recurrence ?? 1} contrato(s)${fit ? ` · fit ${fit.fit}` : ''}</title></circle></a>`;
+    return `<a href="${esc(o.internal_url ?? '#')}"><circle data-mi="${i}" cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
+      fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
   };
 
   return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
@@ -817,7 +871,7 @@ function renderPriorityMatrix(items, fits) {
       <text x="${x(30) + 4}" y="${padT + 10}" font-size="10" fill="#94a3b8">30 dias</text>
       <text x="${W - padR}" y="${H - 8}" font-size="10" fill="#64748b" text-anchor="end">dias até à data-chave →</text>
       <text x="${padL - 6}" y="${H - padB + 3}" font-size="10" fill="#64748b" text-anchor="end">0 €</text>
-      ${pts.map(dot).join('')}
+      ${pts.map((o, i) => dot(o, i)).join('')}
     </svg></div>`;
 }
 
