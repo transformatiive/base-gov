@@ -3,7 +3,7 @@ import { pool } from './db.js';
 import { requireAuth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { aiEnabled, analyzeAnnouncement, digestIntro, fitScores, FitItem } from './ai.js';
+import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -183,6 +183,29 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     }
   });
 
+  app.post('/api/contracts/:id/analyze', { preHandler: requireAuth }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const id = Number((req.params as { id: string }).id);
+    const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    try {
+      return await analyzeContract(id, profileId);
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
+  // Template de resposta (dossier com placeholders) para um anúncio
+  app.post('/api/announcements/:id/response-template', { preHandler: requireAuth }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const id = Number((req.params as { id: string }).id);
+    const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    try {
+      return await responseTemplate(id, profileId);
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
   app.post('/api/profiles/:id/fit-scores', { preHandler: requireAuth }, async (req, reply) => {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const profileId = Number((req.params as { id: string }).id);
@@ -194,11 +217,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Digest semanal em HTML pronto para email (wordmark, estilos inline)
-  app.get('/api/profiles/:id/digest.html', { preHandler: requireAuth }, async (req, reply) => {
-    const profileId = Number((req.params as { id: string }).id);
+  // Dados do digest (partilhados pela página da app e pelo layout de email)
+  async function digestData(profileId: number) {
     const { rows: profRows } = await pool.query('SELECT * FROM profiles WHERE id = $1', [profileId]);
-    if (profRows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+    if (profRows.length === 0) return null;
     const profile = profRows[0];
 
     const { rows: newAnns } = await pool.query(
@@ -222,12 +244,42 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       [profileId]
     );
 
+    const statsText0 = `Novos anúncios (7 dias): ${newAnns.length}. Concursos com prazo a decorrer: ${openAnns.length}. Contratos a terminar nos próximos 90 dias (oportunidades de renovação): ${renewals.length}. Detalhe renovações: ${renewals.map((r) => `${r.contracting} (${Number(r.initial_contractual_price ?? 0).toFixed(0)} EUR, termina ${String(r.end_date).slice(0, 10)})`).slice(0, 6).join('; ')}`;
+    const intro0 = aiEnabled() ? await digestIntro(profile.name, statsText0) : '';
+    return { profile, newAnns, openAnns, renewals, intro: intro0 };
+  }
+
+  // Digest como dados JSON (página da app)
+  app.get('/api/profiles/:id/digest.json', { preHandler: requireAuth }, async (req, reply) => {
+    const d = await digestData(Number((req.params as { id: string }).id));
+    if (!d) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+    return {
+      profile: { id: d.profile.id, name: d.profile.name },
+      intro: d.intro,
+      generated_at: new Date().toISOString(),
+      stats: { open: d.openAnns.length, new_7d: d.newAnns.length, renewals_90d: d.renewals.length },
+      open_announcements: d.openAnns.slice(0, 15).map((a: Record<string, unknown>) => ({
+        id: a.id, deadline: a.proposal_deadline_date, designation: a.contract_designation,
+        entity: a.contracting_entity, base_price: a.base_price != null ? Number(a.base_price) : null,
+      })),
+      renewals: d.renewals.map((r: Record<string, unknown>) => ({
+        id: r.id, end_date: r.end_date, days_left: r.days_left, entity: r.contracting,
+        object: r.object_brief_description,
+        value: r.initial_contractual_price != null ? Number(r.initial_contractual_price) : null,
+      })),
+    };
+  });
+
+  // Digest semanal em HTML pronto para email (layout independente da app)
+  app.get('/api/profiles/:id/digest.html', { preHandler: requireAuth }, async (req, reply) => {
+    const profileId = Number((req.params as { id: string }).id);
+    const data = await digestData(profileId);
+    if (!data) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+    const { profile, newAnns, openAnns, renewals, intro } = data;
+
     const fmtEur = (v: unknown) =>
       v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
     const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
-
-    const statsText = `Novos anúncios (7 dias): ${newAnns.length}. Concursos com prazo a decorrer: ${openAnns.length}. Contratos a terminar nos próximos 90 dias (oportunidades de renovação): ${renewals.length}. Detalhe renovações: ${renewals.map((r) => `${r.contracting} (${fmtEur(r.initial_contractual_price)}, termina ${String(r.end_date).slice(0, 10)})`).slice(0, 6).join('; ')}`;
-    const intro = aiEnabled() ? await digestIntro(profile.name, statsText) : '';
 
     const row = (cells: string[], bold = false) =>
       `<tr>${cells.map((c) => `<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;${bold ? 'font-weight:600' : ''}">${c}</td>`).join('')}</tr>`;

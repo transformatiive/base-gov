@@ -199,6 +199,16 @@ CREATE TABLE IF NOT EXISTS ai_analyses (
   UNIQUE (announcement_id, profile_id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_contract_analyses (
+  id          SERIAL PRIMARY KEY,
+  contract_id INT NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  profile_id  INT NOT NULL DEFAULT 0,
+  model       TEXT,
+  analysis    JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (contract_id, profile_id)
+);
+
 CREATE TABLE IF NOT EXISTS ai_fit_scores (
   profile_id INT NOT NULL,
   item_type  TEXT NOT NULL,   -- anuncio_aberto | renovacao
@@ -209,6 +219,7 @@ CREATE TABLE IF NOT EXISTS ai_fit_scores (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (profile_id, item_type, item_id)
 );
+ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS reasons JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
