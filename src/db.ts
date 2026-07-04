@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   last_run_at           TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS profile_runs (
   id                SERIAL PRIMARY KEY,
@@ -125,6 +126,7 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'contra
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS profile_run_id INT REFERENCES profile_runs(id) ON DELETE SET NULL;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS retries INT NOT NULL DEFAULT 0;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 
 -- v2: anúncios de procedimento (concursos abertos)
 CREATE TABLE IF NOT EXISTS announcements (

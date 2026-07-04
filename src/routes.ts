@@ -14,6 +14,31 @@ function paging(query: Record<string, unknown>, defaultSize = 25, maxSize = 200)
   return { page, size };
 }
 
+const CONTRACT_END = `(c.signing_date + (substring(c.execution_deadline from '(\\d+)')::int))`;
+const CONTRACT_HAS_END = `c.signing_date IS NOT NULL AND c.execution_deadline ~ '\\d+'`;
+
+/**
+ * Filtros temporais de listagens de contratos:
+ * - active=1 → só contratos em execução ou futuros (fim previsto >= hoje)
+ * - from/até → intervalo sobre a data de publicação (YYYY-MM-DD)
+ */
+function dateFilters(query: Record<string, unknown>, params: unknown[]): string[] {
+  const conditions: string[] = [];
+  if (query.active === '1') {
+    conditions.push(`(${CONTRACT_HAS_END} AND ${CONTRACT_END} >= CURRENT_DATE)`);
+  }
+  const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (isDate(query.from)) {
+    params.push(query.from);
+    conditions.push(`c.publication_date >= $${params.length}`);
+  }
+  if (isDate(query.to)) {
+    params.push(query.to);
+    conditions.push(`c.publication_date <= $${params.length}`);
+  }
+  return conditions;
+}
+
 async function contractDocuments(contractId: number) {
   const { rows } = await pool.query(
     `SELECT id, basegov_id, file_name, content_type, size_bytes, download_ok, download_error
@@ -119,7 +144,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/searches', { preHandler: requireAuth }, async (req, reply) => {
-    const { term } = (req.body ?? {}) as { term?: string };
+    const { term, fetch_documents } = (req.body ?? {}) as { term?: string; fetch_documents?: boolean };
     const cleaned = term?.trim();
     if (!cleaned) {
       return reply.code(400).send({ error: { code: 'invalid_term', message: 'Campo "term" é obrigatório' } });
@@ -127,8 +152,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const username = (req as unknown as { username: string }).username;
     const { rows: userRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
     const { rows } = await pool.query(
-      `INSERT INTO searches (term, created_by) VALUES ($1, $2) RETURNING id, term, status, created_at`,
-      [cleaned, userRows[0]?.id ?? null]
+      `INSERT INTO searches (term, created_by, fetch_documents) VALUES ($1, $2, $3)
+       RETURNING id, term, status, fetch_documents, created_at`,
+      [cleaned, userRows[0]?.id ?? null, fetch_documents === true]
     );
     return reply.code(201).send(rows[0]);
   });
@@ -160,13 +186,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/searches/:id/results', { preHandler: requireAuth }, async (req) => {
     const id = Number((req.params as { id: string }).id);
-    const { page, size } = paging(req.query as Record<string, unknown>);
+    const query = req.query as Record<string, unknown>;
+    const { page, size } = paging(query);
+    const params: unknown[] = [id];
+    const extra = dateFilters(query, params);
+    const where = extra.length ? `AND ${extra.join(' AND ')}` : '';
+    params.push(size, page * size);
     const { rows } = await pool.query(
       `SELECT c.*, sr.position, count(*) OVER() AS full_count,
          (SELECT count(*) FROM documents d WHERE d.contract_id = c.id) AS n_docs
        FROM search_results sr JOIN contracts c ON c.id = sr.contract_id
-       WHERE sr.search_id = $1 ORDER BY sr.position LIMIT $2 OFFSET $3`,
-      [id, size, page * size]
+       WHERE sr.search_id = $1 ${where}
+       ORDER BY c.publication_date DESC NULLS LAST, sr.position
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
     );
     return {
       total: rows.length ? Number(rows[0].full_count) : 0,
@@ -225,6 +258,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       params.push(Number(q.search_id));
       conditions.push(`EXISTS (SELECT 1 FROM search_results sr WHERE sr.contract_id = c.id AND sr.search_id = $${params.length})`);
     }
+    conditions.push(...dateFilters(q, params));
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(size, page * size);
     const { rows } = await pool.query(

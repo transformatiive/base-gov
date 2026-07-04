@@ -57,7 +57,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.post('/api/profiles', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as {
-      name?: string; terms?: string[]; schedule?: string; include_announcements?: boolean; run_now?: boolean;
+      name?: string; terms?: string[]; schedule?: string; include_announcements?: boolean;
+      fetch_documents?: boolean; run_now?: boolean;
     };
     const name = body.name?.trim();
     const terms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
@@ -67,9 +68,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     }
     try {
       const { rows } = await pool.query(
-        `INSERT INTO profiles (name, terms, schedule, include_announcements)
-         VALUES ($1,$2,$3,$4) RETURNING *`,
-        [name, terms, schedule, body.include_announcements !== false]
+        `INSERT INTO profiles (name, terms, schedule, include_announcements, fetch_documents)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [name, terms, schedule, body.include_announcements !== false, body.fetch_documents === true]
       );
       const profile = rows[0];
       let runId: number | null = null;

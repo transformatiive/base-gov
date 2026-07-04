@@ -104,8 +104,9 @@ async function renderSearches() {
       <h2>Nova pesquisa</h2>
       <form class="inline" id="new-search-form">
         <input type="text" name="term" placeholder="Termo de pesquisa (objeto do contrato) — ex.: software" required>
-        <button type="submit">Pesquisar no BASE</button>
+        <button type="submit">Pesquisar</button>
       </form>
+      <p class="muted" style="margin:0.5rem 0 0"><label><input type="checkbox" id="new-search-docs"> Descarregar documentos PDF do site BASE (mais lento; o histórico e os detalhes vêm dos dados abertos)</label></p>
       <div class="error" id="search-error"></div>
     </div>
     <div class="card">
@@ -120,7 +121,10 @@ async function renderSearches() {
     e.preventDefault();
     const term = new FormData(e.target).get('term');
     try {
-      await api('/api/searches', { method: 'POST', body: JSON.stringify({ term }) });
+      await api('/api/searches', {
+        method: 'POST',
+        body: JSON.stringify({ term, fetch_documents: document.getElementById('new-search-docs')?.checked === true }),
+      });
       e.target.reset();
       await load();
       stopPolling();
@@ -136,9 +140,20 @@ async function renderSearches() {
 }
 
 /* ---------- Resultados de uma pesquisa ---------- */
+/* Filtro temporal por defeito: contratos em execução ou futuros (fim >= hoje). */
+let resultsFilter = { mode: 'active', from: '', to: '' };
+
+function resultsFilterQuery() {
+  const parts = [];
+  if (resultsFilter.mode === 'active') parts.push('active=1');
+  if (resultsFilter.from) parts.push(`from=${resultsFilter.from}`);
+  if (resultsFilter.to) parts.push(`to=${resultsFilter.to}`);
+  return parts.length ? `&${parts.join('&')}` : '';
+}
+
 async function renderResults(searchId, page = 0) {
   const search = await api(`/api/searches/${searchId}`);
-  const data = await api(`/api/searches/${searchId}/results?page=${page}&size=25`);
+  const data = await api(`/api/searches/${searchId}/results?page=${page}&size=25${resultsFilterQuery()}`);
   const lastPage = Math.max(0, Math.ceil(data.total / data.size) - 1);
 
   const rows = data.items.map((c) => `
@@ -165,9 +180,18 @@ async function renderResults(searchId, page = 0) {
           <button class="btn-secondary" onclick="location.hash='#/'">${ico('back')} Voltar</button>
         </div>
       </div>
+      <div class="map-controls" style="margin-top:0.2rem">
+        <select id="res-mode" style="width:auto" aria-label="Âmbito temporal">
+          <option value="active" ${resultsFilter.mode === 'active' ? 'selected' : ''}>Em execução e futuros</option>
+          <option value="all" ${resultsFilter.mode === 'all' ? 'selected' : ''}>Todos (histórico)</option>
+        </select>
+        <label class="muted">De <input type="date" id="res-from" value="${resultsFilter.from}" style="width:auto"></label>
+        <label class="muted">Até <input type="date" id="res-to" value="${resultsFilter.to}" style="width:auto"></label>
+        <span class="muted">datas de publicação</span>
+      </div>
       <table>
         <thead><tr><th>Objeto</th><th>Procedimento</th><th>Preço</th><th>Publicação</th><th>Docs</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" class="muted">Sem resultados (ainda).</td></tr>'}</tbody>
+        <tbody>${rows || `<tr><td colspan="5" class="muted">${resultsFilter.mode === 'active' ? 'Sem contratos em execução ou futuros neste filtro — muda para "Todos (histórico)" para ver tudo.' : 'Sem resultados (ainda).'}</td></tr>`}</tbody>
       </table>
       <div class="pager">
         <button ${page <= 0 ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page - 1}'">${ico('back')} Anterior</button>
@@ -175,6 +199,11 @@ async function renderResults(searchId, page = 0) {
         <button ${page >= lastPage ? 'disabled' : ''} onclick="location.hash='#/searches/${searchId}?page=${page + 1}'">Seguinte ${ico('next')}</button>
       </div>
     </div>`;
+
+  for (const [id, key] of [['res-mode', 'mode'], ['res-from', 'from'], ['res-to', 'to']]) {
+    const input = document.getElementById(id);
+    if (input) input.onchange = () => { resultsFilter[key] = input.value; renderResults(searchId, 0); };
+  }
 
   const retryBtn = document.getElementById('retry-btn');
   if (retryBtn) {
@@ -271,6 +300,7 @@ async function renderProfiles() {
             <select name="schedule"><option value="manual">Manual</option><option value="daily">Diário</option><option value="weekly">Semanal</option></select>
           </label>
           &nbsp; <label><input type="checkbox" name="ann" checked> Incluir anúncios (concursos abertos)</label>
+          &nbsp; <label><input type="checkbox" name="docs"> Descarregar documentos PDF do site</label>
         </p>
         <div class="error" id="profile-error"></div>
         <p><button type="submit">Criar e executar</button></p>
@@ -295,6 +325,7 @@ async function renderProfiles() {
           terms: String(fd.get('terms')).split(',').map((t) => t.trim()).filter(Boolean),
           schedule: fd.get('schedule'),
           include_announcements: fd.get('ann') === 'on',
+          fetch_documents: fd.get('docs') === 'on',
         }),
       });
       e.target.reset();
@@ -386,21 +417,32 @@ async function renderInsightTab(el, q, tab, p) {
   } else if (tab === 'map') {
     document.querySelector('main').classList.add('wide');
     const tl = await api(`/api/insights/map-timeline${q}`);
-    const months = tl.months ?? [];
-    /* Agrega os dados client-side: sel = 0 → soma de todos os meses; 1..N → mês months[sel-1]. */
+    const allMonths = tl.months ?? [];
+    const nowMonth = new Date().toISOString().slice(0, 7);
+    // Por defeito só o período relevante para prospeção: mês atual em diante.
+    let months = allMonths.filter((m) => m >= nowMonth);
+    const monthsFor = (period) => (period === 'all' ? allMonths : allMonths.filter((m) => m >= nowMonth));
+    /* Agrega os dados client-side: sel = 0 → soma dos meses do período; 1..N → mês months[sel-1]. */
     const dataFor = (sel) => {
       const month = sel > 0 ? months[sel - 1] : null;
+      const set = month ? null : new Set(months);
       return Object.entries(tl.districts ?? {}).map(([district, byMonth]) => {
         let count = 0, total = 0;
         if (month) {
           const m = byMonth[month];
           if (m) { count = m.count; total = m.total_value; }
         } else {
-          for (const m of Object.values(byMonth)) { count += m.count; total += m.total_value; }
+          for (const [k, m] of Object.entries(byMonth)) {
+            if (set.has(k)) { count += m.count; total += m.total_value; }
+          }
         }
         return { district, count, total_value: total, avg_value: count ? total / count : 0 };
       }).sort((a, b) => b.total_value - a.total_value);
     };
+    // Referência de escala fixa do período (soma total) — evita bolhas gigantes
+    // quando o máximo de um mês isolado é pequeno.
+    let radiusRef = 1;
+    const computeRadiusRef = () => { radiusRef = Math.max(1, ...dataFor(0).map((i) => i.total_value)); };
     const rowsHtml = (items) => items.map((r) =>
       `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
     ).join('') || '<tr><td colspan="4" class="muted">Sem contratos neste período.</td></tr>';
@@ -408,6 +450,10 @@ async function renderInsightTab(el, q, tab, p) {
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
       <p class="muted">Usa o slider (ou o botão de reprodução) para ver a evolução mês a mês. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
       <div class="map-controls">
+        <select id="map-period" style="width:auto" aria-label="Âmbito temporal">
+          <option value="future" selected>Em curso e futuro</option>
+          <option value="all">Histórico completo</option>
+        </select>
         <button id="map-play" class="btn-secondary" title="Reproduzir evolução mensal" aria-label="Reproduzir" ${months.length ? '' : 'disabled'}>${MAP_PLAY_ICON}</button>
         <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período">
         <span class="month-label" id="map-month-label">Todos</span>
@@ -428,13 +474,21 @@ async function renderInsightTab(el, q, tab, p) {
     const slider = el.querySelector('#map-slider');
     const label = el.querySelector('#map-month-label');
     const playBtn = el.querySelector('#map-play');
+    const periodSel = el.querySelector('#map-period');
     const applySelection = () => {
       const sel = Number(slider.value);
       label.textContent = sel > 0 ? months[sel - 1] : 'Todos';
       const items = dataFor(sel);
-      updateLeafletMarkers(items);
+      updateLeafletMarkers(items, radiusRef);
       const tb = document.getElementById('map-district-tbody');
       if (tb) tb.innerHTML = rowsHtml(items);
+    };
+    periodSel.onchange = () => {
+      months = monthsFor(periodSel.value);
+      slider.max = String(months.length);
+      slider.value = '0';
+      computeRadiusRef();
+      applySelection();
     };
     let playTimer = null;
     const stopPlay = () => {
@@ -459,7 +513,8 @@ async function renderInsightTab(el, q, tab, p) {
 
     window._loadRegion = (district) => { stopPlay(); loadRegionPanel(district, q); };
     window._annReloadMap = () => { stopPlay(); renderInsightTab(el, q, tab, p); };
-    renderLeafletMap(dataFor(0), (district) => { stopPlay(); loadRegionPanel(district, q); });
+    computeRadiusRef();
+    renderLeafletMap(dataFor(0), (district) => { stopPlay(); loadRegionPanel(district, q); }, radiusRef);
     applySelection();
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
@@ -594,11 +649,13 @@ function mapColor(value, maxV) {
   if (r < 0.75) return MAP_COLORS[3];
   return MAP_COLORS[4];
 }
-const mapRadius = (value, maxV) => (value > 0 ? 8 + Math.sqrt(value / Math.max(1, maxV)) * 32 : 4);
+// Raio ancorado ao máximo do período completo (radiusRef), limitado a 4-22px —
+// evita que o maior valor de um mês fraco encha o mapa inteiro.
+const mapRadius = (value, refV) => (value > 0 ? Math.min(22, 4 + Math.sqrt(value / Math.max(1, refV)) * 18) : 3);
 const mapPopup = (i) =>
   `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`;
 
-function renderLeafletMap(items, onDistrictClick) {
+function renderLeafletMap(items, onDistrictClick, radiusRef) {
   const el = document.getElementById('osm-map');
   if (!el || typeof L === 'undefined') return;
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
@@ -610,13 +667,14 @@ function renderLeafletMap(items, onDistrictClick) {
   }).addTo(leafletMap);
 
   const maxV = Math.max(1, ...items.map((i) => i.total_value));
+  const refV = radiusRef ?? maxV;
   const bounds = [];
   for (const i of items) {
     const c = COORDS_NORM[deaccent(i.district)];
     if (!c) continue;
     const color = mapColor(i.total_value, maxV);
     const marker = L.circleMarker(c, {
-      radius: mapRadius(i.total_value, maxV),
+      radius: mapRadius(i.total_value, refV),
       color,
       weight: 2,
       fillColor: color,
@@ -631,14 +689,15 @@ function renderLeafletMap(items, onDistrictClick) {
 }
 
 /* Atualiza raio/cor/popup dos círculos existentes sem reinicializar o Leaflet. */
-function updateLeafletMarkers(items) {
+function updateLeafletMarkers(items, radiusRef) {
   if (!leafletMap) return;
   const maxV = Math.max(1, ...items.map((i) => i.total_value));
+  const refV = radiusRef ?? maxV;
   const byDistrict = Object.fromEntries(items.map((i) => [i.district, i]));
   for (const [district, marker] of Object.entries(mapMarkers)) {
     const i = byDistrict[district] ?? { district, count: 0, total_value: 0, avg_value: 0 };
     const color = mapColor(i.total_value, maxV);
-    marker.setRadius(mapRadius(i.total_value, maxV));
+    marker.setRadius(mapRadius(i.total_value, refV));
     marker.setStyle({ color, fillColor: color });
     marker.setPopupContent(mapPopup(i));
   }
