@@ -401,7 +401,7 @@ async function tick(client: BaseGovClient): Promise<void> {
         }
         console.log(`[worker] pesquisa #${id} concluída`);
       } catch (err) {
-        const transient = /HTTP (999|429|404|5\d\d)|fetch failed|timeout|ECONNRESET|ETIMEDOUT/i.test(String(err));
+        const transient = /HTTP (999|429|404|5\d\d)|fetch failed|timeout|ECONNRESET|ETIMEDOUT|deadlock/i.test(String(err));
         if (transient && retries < 5) {
           // O processamento é idempotente: ao retomar, os detalhes já extraídos são saltados.
           const cooldownMin = 5 * (retries + 1);
