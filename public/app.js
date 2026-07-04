@@ -100,8 +100,9 @@ async function renderSearches() {
   };
 
   app.innerHTML = `
+    ${configTabs('searches')}
     <div class="card">
-      <h2>Nova pesquisa</h2>
+      <h2>Nova recolha pontual no site BASE</h2>
       <form class="inline" id="new-search-form">
         <input type="text" name="term" placeholder="Termo de pesquisa (objeto do contrato) — ex.: software" required>
         <button type="submit">Pesquisar</button>
@@ -289,12 +290,14 @@ async function renderProfiles() {
   };
 
   app.innerHTML = `
+    ${configTabs('profiles')}
     <div class="card">
-      <h2>Novo perfil de pesquisa</h2>
+      <h2>Novo perfil de atividade</h2>
       <p class="muted">Vários termos em conjunto (ex.: pirotecnia, fogo de artifício, espetáculo pirotécnico) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
       <form id="new-profile-form">
         <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Pirotecnia" required></p>
         <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: pirotecnia, fogo de artifício" required></p>
+        <p><input type="text" name="cpv" placeholder="Códigos CPV oficiais, opcional — ex.: 24613000, 92360000 (apanha contratos classificados na atividade mesmo sem as palavras-chave no texto)"></p>
         <p>
           <label>Agendamento:
             <select name="schedule"><option value="manual">Manual</option><option value="daily">Diário</option><option value="weekly">Semanal</option></select>
@@ -323,6 +326,7 @@ async function renderProfiles() {
         body: JSON.stringify({
           name: fd.get('name'),
           terms: String(fd.get('terms')).split(',').map((t) => t.trim()).filter(Boolean),
+          cpv_codes: String(fd.get('cpv') || '').split(',').map((t) => t.trim()).filter(Boolean),
           schedule: fd.get('schedule'),
           include_announcements: fd.get('ann') === 'on',
           fetch_documents: fd.get('docs') === 'on',
@@ -353,8 +357,14 @@ const PROFILE_TABS = [
 async function renderInsightTab(el, q, tab, p) {
 
   if (tab === 'opportunities') {
-    const d = await api(`/api/insights/opportunities${q}`);
-    el.innerHTML = `<h2>Oportunidades priorizadas</h2>
+    const kw = window._oppFilter ?? '';
+    const d = await api(`/api/insights/opportunities${q}${kw ? `&q=${encodeURIComponent(kw)}` : ''}`);
+    window._oppReload = () => renderInsightTab(el, q, tab, p);
+    el.innerHTML = `<div class="toolbar"><h2 style="margin:0">Oportunidades priorizadas</h2>
+      <form class="inline" style="margin:0" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
+        <input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por palavra-chave (objeto ou entidade)" style="min-width:230px">
+        <button type="submit">${ico('search')} Filtrar</button>
+      </form></div>
       <p class="muted">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência e recorrência da entidade).</p>
       <div class="hint">Score (0-100): para concursos abertos soma 25 pontos base, até 35 pelo valor (escala logarítmica) e até 40 de urgência à medida que o prazo de propostas se aproxima. Para renovações soma até 35 pelo valor, até 30 pela proximidade do fim do contrato e até 15 pela recorrência de compra da entidade. &ge;70 = prioridade alta, 45-69 = média, &lt;45 = baixa.</div>
       <table><thead><tr><th>Score</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
@@ -703,20 +713,75 @@ function updateLeafletMarkers(items, radiusRef) {
   }
 }
 
-/* ---------- Insights globais (todos os dados, sem perfil) ---------- */
-async function renderInsights(tab = 'opportunities') {
+/* ---------- Radar: vista principal, sempre no contexto da atividade escolhida ---------- */
+function getCtx() { return localStorage.getItem('ctxProfile') || ''; }
+function setCtx(v) { localStorage.setItem('ctxProfile', v || ''); }
+
+async function renderRadar(tab = 'opportunities') {
+  const profilesData = await api('/api/profiles');
+  const profiles = profilesData.items;
+
+  // Sem perfis ainda: onboarding direto para a criação
+  if (profiles.length === 0) {
+    app.innerHTML = `
+      <div class="card" style="max-width:640px;margin:8vh auto;text-align:center">
+        <h2>Bem-vindo ao BaseRadar</h2>
+        <p class="muted">Começa por definir a tua atividade comercial (palavras-chave e códigos CPV).
+        Todos os insights — oportunidades, renovações, mapa, concorrentes — serão apresentados nesse contexto,
+        calculados sobre os dados já importados.</p>
+        <p><button onclick="location.hash='#/config/profiles'">Criar perfil de atividade</button></p>
+      </div>`;
+    return;
+  }
+
+  let ctx = getCtx();
+  if (ctx && !profiles.some((p) => String(p.id) === ctx)) ctx = '';
+  if (!ctx && profiles.length > 0) { ctx = String(profiles[0].id); setCtx(ctx); }
+  const active = profiles.find((p) => String(p.id) === ctx) ?? null;
+
   const tabs = PROFILE_TABS.filter(([k]) => k !== 'runs');
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <h2 style="margin:0">Insights globais</h2>
-        <div class="muted">Sobre todos os contratos e anúncios recolhidos (todas as pesquisas e perfis). Para análise focada, usa um perfil.</div>
+        <h2 style="margin:0">Radar</h2>
+        <div class="muted">${active
+          ? `Atividade: ${esc(active.name)} — ${active.terms.map(esc).join(', ')}${(active.cpv_codes ?? []).length ? ' · CPV ' + active.cpv_codes.map(esc).join(', ') : ''}`
+          : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+          ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+          <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
+        </select>
+        <button class="btn-secondary" onclick="location.hash='#/config/profiles'" title="Gerir perfis">${ico('building')} Gerir</button>
       </div>
     </div>
+    ${active ? `<div class="cards" id="radar-stats"></div>` : ''}
     <div class="tabs">${tabs.map(([k, l]) =>
-      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/insights/${k}'">${l}</button>`).join('')}</div>
+      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/radar/${k}'">${l}</button>`).join('')}</div>
     <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
-  await renderInsightTab(document.getElementById('tab-content'), '?profile_id=', tab, null);
+
+  document.getElementById('ctx-select').onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
+
+  if (active) {
+    api(`/api/profiles/${active.id}`).then((p) => {
+      const holder = document.getElementById('radar-stats');
+      if (holder) holder.innerHTML = `
+        <div class="stat"><div class="n">${p.totals.n_contracts.toLocaleString('pt-PT')}</div><div class="l">Contratos</div></div>
+        <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
+        <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
+        <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>`;
+    }).catch(() => {});
+  }
+
+  await renderInsightTab(document.getElementById('tab-content'), `?profile_id=${ctx}`, tab, null);
+}
+
+/* ---------- Configuração: perfis, recolhas e dados abertos ---------- */
+const CONFIG_SECTIONS = [['profiles', 'Perfis de atividade'], ['searches', 'Recolhas do site'], ['opendata', 'Dados abertos']];
+function configTabs(active) {
+  return `<div class="tabs">${CONFIG_SECTIONS.map(([k, l]) =>
+    `<button class="${k === active ? 'active' : ''}" onclick="location.hash='#/config/${k}'">${l}</button>`).join('')}</div>`;
 }
 
 /* ---------- Detalhe de anúncio ---------- */
@@ -771,6 +836,7 @@ async function renderOpendata() {
   const years = [];
   for (let y = new Date().getFullYear(); y >= 2012; y--) years.push(y);
   app.innerHTML = `
+    ${configTabs('opendata')}
     <div class="card">
       <h2>Dados abertos do Portal BASE (IMPIC)</h2>
       <p class="muted">Fonte oficial do histórico: datasets anuais publicados pelo IMPIC em dados.gov.pt (atualização quinzenal) — os mesmos dados do site, sem risco de bloqueio.
@@ -886,20 +952,28 @@ async function route() {
   const contract = hash.match(/^#\/contracts\/(\d+)$/);
   const profile = hash.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
   const entity = hash.match(/^#\/entities\/(\d+)$/);
-  const insights = hash.match(/^#\/insights(?:\/(\w+))?$/);
+  const radar = hash.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+  const config = hash.match(/^#\/config(?:\/(\w+))?$/);
   const announcement = hash.match(/^#\/announcements\/(\d+)$/);
   document.querySelector('main')?.classList.remove('wide');
   try {
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
     if (profile) return await renderProfile(Number(profile[1]), profile[2] || 'opportunities');
+    if (radar) return await renderRadar(radar[1] || 'opportunities');
+    if (config) {
+      const section = config[1] || 'profiles';
+      if (section === 'searches') return await renderSearches();
+      if (section === 'opendata') return await renderOpendata();
+      return await renderProfiles();
+    }
+    // rotas antigas → novos destinos
     if (hash === '#/profiles') return await renderProfiles();
-    if (insights) return await renderInsights(insights[1] || 'opportunities');
+    if (hash === '#/opendata') return await renderOpendata();
     if (entity) return await renderEntity(Number(entity[1]));
     if (hash === '#/entities') return await renderEntities();
-    if (hash === '#/opendata') return await renderOpendata();
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
-    return await renderSearches();
+    return await renderRadar('opportunities');
   } catch (err) {
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   }
