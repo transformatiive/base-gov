@@ -268,7 +268,35 @@ async function renderContract(id) {
         <thead><tr><th>Ficheiro</th><th>Tipo</th><th>Tamanho</th><th>Download</th></tr></thead>
         <tbody>${docs || '<tr><td colspan="4" class="muted">Sem documentos.</td></tr>'}</tbody>
       </table>
+    </div>
+    <div class="card">
+      <div class="toolbar"><h2 style="margin:0">Preparar renovação (IA)</h2>
+        <button id="ai-contract-btn">${ico('search')} Analisar com IA</button></div>
+      <p class="muted">Analisa este contrato e os seus documentos (quando descarregados) no contexto da tua atividade: critérios usados, requisitos, e o que preparar desde já para vencer a renovação.</p>
+      <div id="ai-contract-result"></div>
     </div>`;
+
+  document.getElementById('ai-contract-btn').onclick = async () => {
+    const btn = document.getElementById('ai-contract-btn');
+    const out = document.getElementById('ai-contract-result');
+    btn.disabled = true;
+    aiModalOpen([
+      'A carregar o contrato e as entidades…',
+      'A abrir os documentos PDF guardados na base…',
+      'A extrair critérios e requisitos do caderno de encargos…',
+      'A estudar o fornecedor atual e o histórico da entidade…',
+      'A montar o plano de preparação da renovação…',
+    ]);
+    try {
+      const pid = Number(getCtx() || 0);
+      const r = await api(`/api/contracts/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model) +
+        (r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : '');
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      btn.disabled = false;
+    } finally { aiModalClose(); }
+  };
 }
 
 /* ---------- Perfis ---------- */
@@ -420,7 +448,7 @@ async function renderInsightTab(el, q, tab, p) {
         <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
         <td>${fits[fitKey(o)] ? `<span class="score" style="background:${fitColor(fits[fitKey(o)].fit)}" title="${esc(fits[fitKey(o)].reason)}">${fits[fitKey(o)].fit}</span>` : '<span class="muted">—</span>'}</td>
         <td>${o.type === 'anuncio_aberto' ? `${ico('bell')} Concurso` : `${ico('rotate')} Renovação`}</td>
-        <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span></td>
+        <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span>${(fits[fitKey(o)]?.reasons ?? []).length ? `<ul class="fit-reasons">${fits[fitKey(o)].reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}</td>
         <td>${esc(o.entity ?? '—')}</td>
         <td>${fmtPrice(o.value)}</td>
         <td>${fmtDate(o.key_date)} <span class="muted">(${o.days_left}d)</span></td>
@@ -431,7 +459,12 @@ async function renderInsightTab(el, q, tab, p) {
       fitBtn.onclick = async () => {
         const status = el.querySelector('#fit-status');
         fitBtn.disabled = true;
-        status.textContent = 'A avaliar com IA…';
+        aiModalOpen([
+          'A carregar as oportunidades do teu radar…',
+          'A comparar cada uma com os termos e CPVs da atividade…',
+          'A pontuar o alinhamento (0-100) e a justificar…',
+          'A guardar os resultados em cache…',
+        ]);
         try {
           const pid = new URLSearchParams(q.slice(1)).get('profile_id');
           const items = d.items.map((o) => ({
@@ -445,7 +478,7 @@ async function renderInsightTab(el, q, tab, p) {
         } catch (err) {
           status.textContent = err.message;
           fitBtn.disabled = false;
-        }
+        } finally { aiModalClose(); }
       };
     }
   } else if (tab === 'renewals') {
@@ -520,15 +553,14 @@ async function renderInsightTab(el, q, tab, p) {
     };
     let radiusRef = Math.max(1, ...dataFor(0).map((i) => i.total_value));
 
-    // Ticks legíveis: "Tudo" no início; depois inícios de trimestre (Jan/Abr/Jul/Out)
-    const ticks = [];
-    months.forEach((m, i) => {
+    // Etiqueta mês a mês; ano visível em janeiro e no primeiro mês; meses fora
+    // dos trimestres levam a classe .minor (escondidos em ecrãs estreitos)
+    const shownTicks = months.map((m, i) => {
       const mm = Number(m.split('-')[1]);
-      if (i === 0 || [1, 4, 7, 10].includes(mm)) ticks.push({ pos: i + 1, label: i === 0 && basis === 'end' ? 'Hoje' : monthLabel(m) });
+      const label = i === 0 && basis === 'end' ? 'Hoje'
+        : (mm === 1 || i === 0) ? monthLabel(m) : MONTHS[mm - 1];
+      return { pos: i + 1, label, minor: !(i === 0 || [1, 4, 7, 10].includes(mm)) };
     });
-    const maxTicks = 9;
-    const step = Math.ceil(ticks.length / maxTicks);
-    const shownTicks = ticks.filter((_, i) => i % step === 0);
 
     const rowsHtml = (items) => items.map((r) =>
       `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`
@@ -548,7 +580,7 @@ async function renderInsightTab(el, q, tab, p) {
           <input type="range" id="map-slider" min="0" max="${months.length}" step="1" value="0" aria-label="Período" style="width:100%">
           <div class="slider-ticks">
             <span style="left:0%">Tudo</span>
-            ${shownTicks.map((t) => `<span style="left:${(t.pos / Math.max(1, months.length)) * 100}%">${t.label}</span>`).join('')}
+            ${shownTicks.map((t) => `<span class="${t.minor ? 'minor' : ''}" style="left:${(t.pos / Math.max(1, months.length)) * 100}%">${t.label}</span>`).join('')}
           </div>
         </div>
         <span class="month-label" id="map-month-label">Todo o período</span>
@@ -702,38 +734,89 @@ async function loadRegionPanel(district, q) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+/* Modal de progresso das análises IA: barra + passos contextualizados. */
+let _aiModalTimer = null;
+function aiModalOpen(steps) {
+  aiModalClose();
+  const el = document.createElement('div');
+  el.id = 'ai-modal';
+  el.innerHTML = `
+    <div class="ai-modal-box">
+      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'BaseRadar'}</div>
+      <div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>
+      <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
+    </div>`;
+  document.body.appendChild(el);
+  let i = 0;
+  let pct = 4;
+  const bar = () => document.getElementById('ai-progress-bar');
+  const stepEl = () => document.getElementById('ai-modal-step');
+  _aiModalTimer = setInterval(() => {
+    // progresso assimptótico até 92% (o salto para 100% acontece no fecho)
+    pct = Math.min(92, pct + Math.max(0.6, (92 - pct) * 0.06));
+    if (bar()) bar().style.width = pct + '%';
+    if (Math.random() < 0.16 && i < steps.length - 1) {
+      i++;
+      if (stepEl()) stepEl().textContent = steps[i];
+    }
+  }, 350);
+}
+function aiModalClose() {
+  if (_aiModalTimer) { clearInterval(_aiModalTimer); _aiModalTimer = null; }
+  const el = document.getElementById('ai-modal');
+  if (el) {
+    const bar = document.getElementById('ai-progress-bar');
+    if (bar) bar.style.width = '100%';
+    setTimeout(() => el.remove(), 250);
+  }
+}
+
 const fitColor = (f) => (f >= 75 ? '#15803d' : f >= 45 ? '#b45309' : '#94a3b8');
 
 /* Matriz de priorização: X = dias até à data-chave, Y = valor, bolha = recorrência, cor = fit IA ou tipo. */
 function renderPriorityMatrix(items, fits) {
   const pts = items.filter((o) => o.days_left != null && o.value != null && o.value > 0).slice(0, 80);
   if (pts.length < 2) return '';
-  const W = 860, H = 300, padL = 64, padR = 20, padT = 18, padB = 34;
+  const W = 860, H = 320, padL = 70, padR = 20, padT = 16, padB = 40;
   const maxDays = Math.max(30, ...pts.map((o) => Number(o.days_left)));
   const maxVal = Math.max(...pts.map((o) => o.value));
   const x = (d) => padL + (Math.min(d, maxDays) / maxDays) * (W - padL - padR);
   const y = (v) => padT + (1 - Math.sqrt(v / maxVal)) * (H - padT - padB);
   const key = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
+
+  // grelha Y: 4 níveis da escala sqrt, com o valor real correspondente
+  const yGrid = [0.25, 0.5, 0.75, 1].map((f) => {
+    const yy = padT + (1 - f) * (H - padT - padB);
+    return `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#eef2f7"/>
+      <text x="${padL - 6}" y="${yy + 3}" font-size="10" fill="#64748b" text-anchor="end">${fmtCompact(f * f * maxVal)}</text>`;
+  }).join('');
+  // grelha X: de 30 em 30 dias (máx 8 marcas)
+  const stepDays = maxDays > 240 ? 60 : 30;
+  let xGrid = '';
+  for (let d = stepDays; d <= maxDays; d += stepDays) {
+    xGrid += `<line x1="${x(d)}" y1="${padT}" x2="${x(d)}" y2="${H - padB}" stroke="${d === 30 ? '#cbd5e1' : '#eef2f7'}" ${d === 30 ? 'stroke-dasharray="4 4"' : ''}/>
+      <text x="${x(d)}" y="${H - padB + 14}" font-size="10" fill="#64748b" text-anchor="middle">${d}d</text>`;
+  }
+
   const dot = (o) => {
     const fit = fits?.[key(o)];
     const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#dc2626' : '#2563eb');
-    const r = 4 + Math.min(8, (o.recurrence ?? 1));
+    const r = 3 + Math.min(11, Math.sqrt(o.value / maxVal) * 11);
     return `<a href="${esc(o.internal_url ?? '#')}"><circle cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
       fill="${color}" fill-opacity="0.55" stroke="${color}">
-      <title>${esc(o.title ?? '')} — ${esc(o.entity ?? '')} · ${fmtCompact(o.value)} · ${o.days_left}d${fit ? ` · fit ${fit.fit}` : ''}</title></circle></a>`;
+      <title>${esc(o.title ?? '')} — ${esc(o.entity ?? '')} · ${fmtCompact(o.value)} · ${o.days_left}d · entidade com ${o.recurrence ?? 1} contrato(s)${fit ? ` · fit ${fit.fit}` : ''}</title></circle></a>`;
   };
-  const x30 = x(30);
+
   return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
     <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
-    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Bolha maior = entidade compra com mais frequência. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, azul = renovação.'}</p>
+    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, azul = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
+      ${yGrid}${xGrid}
       <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
       <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="#e2e8f0"/>
-      <line x1="${x30}" y1="${padT}" x2="${x30}" y2="${H - padB}" stroke="#cbd5e1" stroke-dasharray="4 4"/>
-      <text x="${x30 + 4}" y="${padT + 10}" font-size="10" fill="#94a3b8">30 dias</text>
-      <text x="${W - padR}" y="${H - 10}" font-size="10" fill="#64748b" text-anchor="end">dias até à data-chave →</text>
-      <text x="${padL - 6}" y="${padT + 8}" font-size="10" fill="#64748b" text-anchor="end">${fmtCompact(maxVal)}</text>
-      <text x="${padL - 6}" y="${H - padB}" font-size="10" fill="#64748b" text-anchor="end">0 €</text>
+      <text x="${x(30) + 4}" y="${padT + 10}" font-size="10" fill="#94a3b8">30 dias</text>
+      <text x="${W - padR}" y="${H - 8}" font-size="10" fill="#64748b" text-anchor="end">dias até à data-chave →</text>
+      <text x="${padL - 6}" y="${H - padB + 3}" font-size="10" fill="#64748b" text-anchor="end">0 €</text>
       ${pts.map(dot).join('')}
     </svg></div>`;
 }
@@ -927,7 +1010,7 @@ async function renderRadar(tab = 'opportunities') {
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
-        ${ctx ? `<a href="/api/profiles/${ctx}/digest.html" target="_blank" rel="noopener"><button class="btn-secondary">${ico('doc')} Digest semanal</button></a>` : ''}
+        ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>` : ''}
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
@@ -1002,15 +1085,50 @@ async function renderAnnouncement(id) {
     const btn = document.getElementById('ai-analyze-btn');
     const out = document.getElementById('ai-result');
     btn.disabled = true;
-    out.innerHTML = '<p class="muted">A analisar o anúncio (pode demorar ~30-60s na primeira vez)…</p>';
+    aiModalOpen([
+      'A descarregar o anúncio publicado em Diário da República…',
+      'A extrair o texto do documento oficial…',
+      'A identificar critérios de adjudicação e ponderações…',
+      'A levantar requisitos de habilitação, cauções e prazos…',
+      'A avaliar o fit com a tua atividade…',
+      'A procurar red flags no procedimento…',
+      'A compilar a checklist e a recomendação go/no-go…',
+    ]);
     try {
       const pid = Number(getCtx() || 0);
       const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model);
+      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model) + `
+        <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
+        <div id="ai-template-out"></div>`;
+      document.getElementById('ai-template-btn').onclick = async () => {
+        const tbtn = document.getElementById('ai-template-btn');
+        tbtn.disabled = true;
+        aiModalOpen([
+          'A reunir os critérios de adjudicação já extraídos…',
+          'A montar a checklist de submissão na plataforma…',
+          'A redigir a declaração do Anexo I do CCP…',
+          'A estruturar a memória descritiva alinhada aos critérios…',
+          'A preparar os placeholders da tua empresa…',
+        ]);
+        try {
+          const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
+          const url = URL.createObjectURL(blob);
+          document.getElementById('ai-template-out').innerHTML = `
+            <div class="card" style="margin-top:0.6rem">
+              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
+                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
+              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
+            </div>`;
+        } catch (err) {
+          document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+          tbtn.disabled = false;
+        } finally { aiModalClose(); }
+      };
     } catch (err) {
       out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
       btn.disabled = false;
-    }
+    } finally { aiModalClose(); }
   };
 }
 
@@ -1035,6 +1153,51 @@ function renderAiFicha(an, cached, model) {
     <h3>Red flags</h3>${list(an.red_flags)}
     <h3>Checklist para a proposta</h3>${list(an.checklist)}
     <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'} · modelo ${esc(model ?? '')}</p>`;
+}
+
+/* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
+async function renderDigest() {
+  const ctx = getCtx();
+  if (!ctx) { location.hash = '#/'; return; }
+  app.innerHTML = '<div class="card"><p class="muted">A gerar o digest da semana…</p></div>';
+  const d = await api(`/api/profiles/${ctx}/digest.json`);
+  app.innerHTML = `
+    <div class="toolbar">
+      <div>
+        <h2 style="margin:0">Digest semanal — ${esc(d.profile.name)}</h2>
+        <div class="muted">Gerado a ${new Date(d.generated_at).toLocaleString('pt-PT')}</div>
+      </div>
+      <div>
+        <a href="/api/profiles/${ctx}/digest.html" target="_blank" rel="noopener"><button class="btn-secondary">${ico('external')} Versão email</button></a>
+        <button class="btn-secondary" onclick="location.hash='#/'">${ico('back')} Radar</button>
+      </div>
+    </div>
+    ${d.intro ? `<div class="hint">${esc(d.intro)}</div>` : ''}
+    <div class="cards">
+      <div class="stat"><div class="n">${d.stats.open}</div><div class="l">Concursos abertos</div></div>
+      <div class="stat"><div class="n">${d.stats.new_7d}</div><div class="l">Novos (7 dias)</div></div>
+      <div class="stat"><div class="n">${d.stats.renewals_90d}</div><div class="l">Renovações 90 dias</div></div>
+    </div>
+    <div class="card">
+      <h2>Concursos com prazo a decorrer</h2>
+      ${d.open_announcements.length ? `<table><thead><tr><th>Prazo</th><th>Designação</th><th>Entidade</th><th>Preço base</th></tr></thead><tbody>
+        ${d.open_announcements.map((a) => `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
+          <td>${fmtDate(a.deadline)}</td>
+          <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc((a.designation ?? '').slice(0, 100))}</a></td>
+          <td>${esc(a.entity ?? '—')}</td><td>${fmtPrice(a.base_price)}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="muted">Sem concursos abertos neste momento.</p>'}
+    </div>
+    <div class="card">
+      <h2>Renovações a preparar (próximos 90 dias)</h2>
+      ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Entidade</th><th>Objeto</th><th>Valor</th></tr></thead><tbody>
+        ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
+          <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+          <td>${esc(r.entity ?? '—')}</td>
+          <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object ?? '').slice(0, 90))}</a></td>
+          <td>${fmtPrice(r.value)}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="muted">Sem renovações no horizonte de 90 dias.</p>'}
+    </div>
+    <p class="muted">Fonte: Portal BASE — IMPIC / dados.gov.pt</p>`;
 }
 
 /* ---------- Dados abertos (histórico oficial IMPIC) ---------- */
@@ -1193,6 +1356,7 @@ async function route() {
     // rotas antigas → novos destinos
     if (hash === '#/profiles') return await renderProfiles();
     if (hash === '#/opendata') return await renderOpendata();
+    if (hash === '#/digest') return await renderDigest();
     if (entity) return await renderEntity(Number(entity[1]));
     if (hash === '#/entities') return await renderEntities();
     if (announcement) return await renderAnnouncement(Number(announcement[1]));

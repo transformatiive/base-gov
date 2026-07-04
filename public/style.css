@@ -191,3 +191,13 @@ dl.detail dd { margin: 0; font-size: 0.92rem; }
 .slider-ticks { position: relative; height: 16px; font-size: 0.68rem; color: var(--muted); }
 .slider-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .slider-ticks span:first-child { transform: none; }
+.slider-ticks span.minor { color: #b6c2d1; }
+@media (max-width: 900px) { .slider-ticks span.minor { display: none; } }
+
+/* ---------- Modal IA ---------- */
+#ai-modal { position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 900; display: flex; align-items: center; justify-content: center; }
+.ai-modal-box { background: #fff; border-radius: 12px; padding: 1.6rem 2rem; width: min(420px, 90vw); border: 1px solid var(--border); }
+.ai-progress { height: 8px; background: var(--bg); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+.ai-progress-bar { height: 100%; width: 4%; background: linear-gradient(90deg, var(--brand), #60a5fa); border-radius: 999px; transition: width 0.35s ease; }
+.fit-reasons { margin: 0.25rem 0 0 1rem; padding: 0; font-size: 0.78rem; color: #166534; }
+.fit-reasons li { margin: 0.05rem 0; }
