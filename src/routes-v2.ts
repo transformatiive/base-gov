@@ -139,6 +139,32 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     return reply.code(204).send();
   });
 
+  // ---------- Dados abertos (histórico oficial do IMPIC) ----------
+  app.get('/api/opendata/imports', { preHandler: requireAuth }, async () => {
+    const { rows } = await pool.query('SELECT * FROM opendata_imports ORDER BY year DESC, created_at DESC');
+    const { rows: [tot] } = await pool.query(
+      `SELECT count(*) AS n FROM contracts WHERE opendata_imported`);
+    return { total_opendata_contracts: Number(tot.n), items: rows };
+  });
+
+  app.post('/api/opendata/import', { preHandler: requireAuth }, async (req, reply) => {
+    const { years } = (req.body ?? {}) as { years?: number[] };
+    const list = (years ?? []).map(Number).filter((y) => y >= 2012 && y <= 2100);
+    if (list.length === 0) {
+      return reply.code(400).send({ error: { code: 'invalid_years', message: 'years[] entre 2012 e o ano atual' } });
+    }
+    const created: number[] = [];
+    for (const year of list) {
+      const { rows: dup } = await pool.query(
+        `SELECT 1 FROM opendata_imports WHERE year = $1 AND status IN ('pending','running')`, [year]);
+      if (dup.length > 0) continue;
+      const { rows } = await pool.query(
+        'INSERT INTO opendata_imports (year) VALUES ($1) RETURNING id', [year]);
+      created.push(rows[0].id);
+    }
+    return reply.code(201).send({ created });
+  });
+
   // ---------- Anúncios ----------
   app.get('/api/announcements', { preHandler: requireAuth }, async (req) => {
     const q = req.query as Record<string, unknown>;
@@ -169,6 +195,80 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         base_price: a.base_price != null ? Number(a.base_price) : null,
         basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=anuncios&id=${a.basegov_id}`,
       })),
+    };
+  });
+
+  app.get('/api/announcements/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const raw = (req.query as Record<string, unknown>).raw === '1';
+    const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [id]);
+    if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Anúncio não encontrado' } });
+    const a = rows[0];
+    return {
+      ...(raw ? a : { ...a, raw_list_json: undefined, raw_detail_json: undefined }),
+      basegov_id: Number(a.basegov_id),
+      base_price: a.base_price != null ? Number(a.base_price) : null,
+      basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=anuncios&id=${a.basegov_id}`,
+      is_open: a.proposal_deadline_date != null && new Date(a.proposal_deadline_date) >= new Date(new Date().toISOString().slice(0, 10)),
+    };
+  });
+
+  // ---------- Insights: drill-down por região/distrito ----------
+  app.get('/api/insights/region', { preHandler: requireAuth }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const district = String(q.district ?? '').trim();
+    if (!district) return reply.code(400).send({ error: { code: 'invalid_district', message: 'district é obrigatório' } });
+    const profileId = parseProfileId(q);
+    const scope = contractScope(profileId);
+    const params = [...scope.params, district];
+    const d = `$${params.length}`;
+
+    const { rows: contracts } = await pool.query(
+      `SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
+         c.publication_date, c.contracting_procedure_type,
+         (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+           WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
+       FROM contracts c ${scope.join}
+       WHERE coalesce(${DISTRICT}, 'Desconhecido') = ${d}
+       ORDER BY c.publication_date DESC NULLS LAST LIMIT 50`,
+      params
+    );
+    const { rows: renewals } = await pool.query(
+      `SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
+         ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left,
+         (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+           WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
+       FROM contracts c ${scope.join}
+       WHERE coalesce(${DISTRICT}, 'Desconhecido') = ${d}
+         AND ${HAS_END} AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '12 months'
+       ORDER BY end_date LIMIT 50`,
+      params
+    );
+    const { rows: byYear } = await pool.query(
+      `SELECT extract(year FROM c.publication_date)::int AS year, count(*) AS n,
+              coalesce(sum(c.initial_contractual_price),0) AS total
+       FROM contracts c ${scope.join}
+       WHERE coalesce(${DISTRICT}, 'Desconhecido') = ${d} AND c.publication_date IS NOT NULL
+       GROUP BY 1 ORDER BY 1`,
+      params
+    );
+    const { rows: byMonth } = await pool.query(
+      `SELECT extract(month FROM c.publication_date)::int AS month, count(*) AS n
+       FROM contracts c ${scope.join}
+       WHERE coalesce(${DISTRICT}, 'Desconhecido') = ${d} AND c.publication_date IS NOT NULL
+       GROUP BY 1 ORDER BY 1`,
+      params
+    );
+    const num = (v: unknown) => (v != null ? Number(v) : null);
+    return {
+      district,
+      contracts: contracts.map((c) => ({ ...c, basegov_id: Number(c.basegov_id), initial_contractual_price: num(c.initial_contractual_price) })),
+      renewals: renewals.map((r) => ({ ...r, basegov_id: Number(r.basegov_id), initial_contractual_price: num(r.initial_contractual_price) })),
+      by_year: byYear.map((y) => ({ year: y.year, count: Number(y.n), total_value: Number(y.total) })),
+      by_month: Array.from({ length: 12 }, (_, i) => {
+        const r = byMonth.find((x) => Number(x.month) === i + 1);
+        return { month: i + 1, count: r ? Number(r.n) : 0 };
+      }),
     };
   });
 
@@ -444,6 +544,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         const score = Math.round(Math.min(100, 25 + valueScore(value) + urgency));
         return {
           type: 'anuncio_aberto',
+          announcement_id: a.id,
+          internal_url: `#/announcements/${a.id}`,
           score,
           title: a.contract_designation,
           entity: a.contracting_entity,
@@ -463,6 +565,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         const score = Math.round(Math.min(100, valueScore(value) + proximity + recurrence));
         return {
           type: 'renovacao',
+          contract_id: c.id,
+          internal_url: `#/contracts/${c.id}`,
           score,
           title: c.object_brief_description,
           entity: c.contracting,

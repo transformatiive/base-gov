@@ -21,8 +21,11 @@ header nav a:hover { color: #fff; }
 .bar-chart .bar b { position: absolute; top: -1.2rem; left: 0; right: 0; text-align: center; font-size: 0.7rem; color: #1a2733; font-weight: 600; }
 .chart-wrap { padding: 2rem 0.5rem 2rem; }
 .map-wrap { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
-#osm-map { height: 480px; width: 560px; max-width: 100%; border-radius: 8px; flex: 1 1 360px; z-index: 0; }
-.map-table { flex: 1 1 280px; max-width: 460px; overflow-x: auto; }
+#osm-map { height: 480px; width: 560px; max-width: 100%; border-radius: 8px; flex: 0 0 auto; z-index: 0; }
+.map-table { flex: 1 1 320px; min-width: 0; overflow-x: auto; }
+.map-table table { min-width: 0 !important; }
+main.wide { max-width: 97vw; }
+.map-table h4 { margin: 1rem 0 0.4rem; }
 
 /* ---------- Responsivo: tablet e mobile ---------- */
 html, body { max-width: 100%; overflow-x: hidden; }

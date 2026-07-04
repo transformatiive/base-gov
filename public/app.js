@@ -305,7 +305,7 @@ async function renderInsightTab(el, q, tab, p) {
       ${d.items.map((o) => `<tr>
         <td><span class="score" style="background:${scoreColor(o.score)}">${o.score}</span></td>
         <td>${o.type === 'anuncio_aberto' ? '📢 Concurso' : '🔁 Renovação'}</td>
-        <td><a href="${esc(o.basegov_url)}" target="_blank" rel="noopener">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span></td>
+        <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span></td>
         <td>${esc(o.entity ?? '—')}</td>
         <td>${fmtPrice(o.value)}</td>
         <td>${fmtDate(o.key_date)} <span class="muted">(${o.days_left}d)</span></td>
@@ -319,25 +319,30 @@ async function renderInsightTab(el, q, tab, p) {
       ${d.items.map((r) => `<tr>
         <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
         <td><strong>${fmtDate(r.suggested_contact_date)}</strong></td>
-        <td><a href="${esc(r.basegov_url)}" target="_blank" rel="noopener">${esc(r.object_brief_description ?? '')}</a></td>
+        <td><a href="#/contracts/${r.id}">${esc(r.object_brief_description ?? '')}</a></td>
         <td>${esc(r.contracting ?? '—')}</td>
         <td>${esc(r.incumbent ?? '—')}</td>
         <td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sem renovações no horizonte.</td></tr>'}
       </tbody></table>`;
   } else if (tab === 'announcements') {
-    const d = await api(`/api/announcements${q}&size=100`);
-    el.innerHTML = `<h2>Anúncios DR</h2>
+    const showAll = window._annShowAll === true;
+    const d = await api(`/api/announcements${q}&size=100${showAll ? '' : '&open=1'}`);
+    window._annReload = () => renderInsightTab(el, q, tab, p);
+    el.innerHTML = `<div class="toolbar"><h2>Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
+      <label class="muted"><input type="checkbox" ${showAll ? 'checked' : ''}
+        onchange="window._annShowAll=this.checked; window._annReload()"> mostrar expirados</label></div>
+      <p class="muted">Por omissão só se mostram concursos com prazo de propostas ainda a decorrer — os expirados já não são acionáveis.</p>
       <table><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th></tr></thead><tbody>
       ${d.items.map((a) => {
         const open = a.proposal_deadline_date && a.proposal_deadline_date >= new Date().toISOString().slice(0, 10);
-        return `<tr>
+        return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
         <td>${fmtDate(a.dr_publication_date)}</td>
         <td>${open ? '🟢' : '⚪'} ${fmtDate(a.proposal_deadline_date)}</td>
-        <td><a href="${esc(a.basegov_url)}" target="_blank" rel="noopener">${esc(a.contract_designation ?? '')}</a></td>
+        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a></td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
         <td>${fmtPrice(a.base_price)}</td></tr>`;
-      }).join('') || '<tr><td colspan="6" class="muted">Sem anúncios recolhidos.</td></tr>'}
+      }).join('') || `<tr><td colspan="6" class="muted">${showAll ? 'Sem anúncios recolhidos.' : 'Sem concursos abertos neste momento — ativa "mostrar expirados" para ver o histórico.'}</td></tr>`}
       </tbody></table>`;
   } else if (tab === 'seasonality') {
     const d = await api(`/api/insights/seasonality${q}`);
@@ -354,16 +359,19 @@ async function renderInsightTab(el, q, tab, p) {
       ${chart(d.contracts, 'total_value', 'Contratos por mês (valor)')}
       ${chart(d.announcements, 'count', 'Anúncios por mês (nº)')}`;
   } else if (tab === 'map') {
+    document.querySelector('main').classList.add('wide');
     const d = await api(`/api/insights/map${q}`);
     el.innerHTML = `<h2>Mapa de oportunidades por distrito</h2>
-      <p class="muted">Dimensão do círculo = valor total contratado; útil para decidir onde alocar esforço comercial.</p>
+      <p class="muted">Dimensão do círculo = valor total contratado. Clica num círculo (ou numa linha da tabela) para ver os contratos, renovações e a evolução temporal desse distrito.</p>
       <div class="map-wrap">
         <div id="osm-map"></div>
-        <div class="map-table"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
-        ${d.items.map((r) => `<tr><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
+        <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody>
+        ${d.items.map((r) => `<tr class="clickable" onclick="window._loadRegion('${esc(r.district).replace(/'/g, "\\'")}')"><td>${esc(r.district)}</td><td>${r.count}</td><td>${fmtCompact(r.total_value)}</td><td>${fmtCompact(r.avg_value)}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
-    renderLeafletMap(d.items);
+    window._loadRegion = (district) => loadRegionPanel(district, q);
+    window._annReloadMap = () => renderInsightTab(el, q, tab, p);
+    renderLeafletMap(d.items, (district) => loadRegionPanel(district, q));
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
     el.innerHTML = `<h2>Inteligência competitiva — adjudicatários nesta área</h2>
@@ -445,9 +453,44 @@ const COORDS_NORM = Object.fromEntries(
   [...Object.entries(DISTRICT_COORDS), ...Object.entries(ISLANDS)].map(([k, v]) => [deaccent(k), v])
 );
 
+/* Painel de drill-down de um distrito: contratos, renovações e perspetiva temporal. */
+async function loadRegionPanel(district, q) {
+  const panel = document.getElementById('region-panel');
+  if (!panel) return;
+  panel.innerHTML = '<p class="muted">A carregar dados do distrito…</p>';
+  const d = await api(`/api/insights/region${q}&district=${encodeURIComponent(district)}`);
+  const maxY = Math.max(1, ...d.by_year.map((y) => y.count));
+  const maxM = Math.max(1, ...d.by_month.map((m) => m.count));
+  panel.innerHTML = `
+    <div class="toolbar"><h3 style="margin:0">📍 ${esc(d.district)}</h3>
+      <button class="btn-secondary" onclick="window._annReloadMap ? window._annReloadMap() : location.reload()">← Todos os distritos</button></div>
+    <h4>Evolução anual (nº contratos)</h4>
+    <div class="chart-wrap"><div class="bar-chart" style="height:90px">
+      ${d.by_year.map((y) => `<div class="bar" style="height:${Math.round((y.count / maxY) * 100)}%"><b>${y.count}</b><span>${y.year}</span></div>`).join('') || '<span class="muted">Sem dados.</span>'}
+    </div></div>
+    <h4>Sazonalidade (mês do ano)</h4>
+    <div class="chart-wrap"><div class="bar-chart" style="height:70px">
+      ${d.by_month.map((m) => `<div class="bar" style="height:${Math.round((m.count / maxM) * 100)}%"><b>${m.count || ''}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
+    </div></div>
+    <h4>🔁 Renovações próximas (${d.renewals.length})</h4>
+    ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
+      ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
+        <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+        <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td>${esc(r.contracting ?? '—')}</td><td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sem renovações nos próximos 12 meses.</p>'}
+    <h4>Contratos recentes (${d.contracts.length})</h4>
+    <table><thead><tr><th>Publicação</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
+      ${d.contracts.map((c) => `<tr class="clickable" onclick="location.hash='#/contracts/${c.id}'">
+        <td>${fmtDate(c.publication_date)}</td>
+        <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${esc((c.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td>${esc(c.contracting ?? '—')}</td><td>${fmtPrice(c.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem contratos.</td></tr>'}
+    </tbody></table>`;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 /* Mapa real (OpenStreetMap via Leaflet) com círculos por distrito. */
 let leafletMap = null;
-function renderLeafletMap(items) {
+function renderLeafletMap(items, onDistrictClick) {
   const el = document.getElementById('osm-map');
   if (!el || typeof L === 'undefined') return;
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
@@ -463,15 +506,16 @@ function renderLeafletMap(items) {
     const c = COORDS_NORM[deaccent(i.district)];
     if (!c) continue;
     const radius = 8 + Math.sqrt(i.total_value / maxV) * 32;
-    L.circleMarker(c, {
+    const marker = L.circleMarker(c, {
       radius,
       color: '#0b5394',
       weight: 2,
       fillColor: '#0b5394',
       fillOpacity: 0.45,
     }).addTo(leafletMap).bindPopup(
-      `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}`
+      `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`
     );
+    if (onDistrictClick) marker.on('click', () => onDistrictClick(i.district));
     bounds.push(c);
   }
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
@@ -492,6 +536,99 @@ async function renderInsights(tab = 'opportunities') {
       `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/insights/${k}'">${l}</button>`).join('')}</div>
     <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
   await renderInsightTab(document.getElementById('tab-content'), '?profile_id=', tab, null);
+}
+
+/* ---------- Detalhe de anúncio ---------- */
+async function renderAnnouncement(id) {
+  const a = await api(`/api/announcements/${id}?raw=1`);
+  const raw = a.raw_detail_json ?? a.raw_list_json ?? {};
+  app.innerHTML = `
+    <div class="toolbar">
+      <h2>${a.is_open ? '🟢' : '⚪'} Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</h2>
+      <div>
+        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ↗</button></a>
+        <button class="btn-secondary" onclick="history.back()">← Voltar</button>
+      </div>
+    </div>
+    <div class="card">
+      <dl class="detail">
+        <dt>Designação</dt><dd>${esc(a.contract_designation ?? '—')}</dd>
+        <dt>Entidade adjudicante</dt><dd>${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</dd>
+        <dt>Tipo de anúncio</dt><dd>${esc(a.announcement_type ?? '—')}</dd>
+        <dt>Modelo / procedimento</dt><dd>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</dd>
+        <dt>Tipo de contrato</dt><dd>${esc(a.contract_type ?? '—')}</dd>
+        <dt>Preço base</dt><dd>${fmtPrice(a.base_price)}</dd>
+        <dt>Publicação em DR</dt><dd>${fmtDate(a.dr_publication_date)}</dd>
+        <dt>Prazo de propostas</dt><dd><strong>${fmtDate(a.proposal_deadline_date)}</strong> ${a.is_open ? '(a decorrer)' : '(expirado)'} ${raw.proposalDeadline ? '· ' + esc(raw.proposalDeadline) : ''}</dd>
+        <dt>CPV</dt><dd>${esc(a.cpvs ?? '—')}</dd>
+        <dt>Peças do procedimento</dt><dd>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener">${esc(a.contracting_procedure_url)}</a>` : '—'}</dd>
+        <dt>Publicação DR (PDF)</dt><dd>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener">${esc(a.reference_url)}</a>` : '—'}</dd>
+        <dt>Nº DR / Série</dt><dd>${esc(raw.dreNumber ?? '—')} / ${esc(raw.dreSeries ?? '—')}</dd>
+      </dl>
+    </div>`;
+}
+
+/* ---------- Dados abertos (histórico oficial IMPIC) ---------- */
+async function renderOpendata() {
+  const load = async () => {
+    const d = await api('/api/opendata/imports');
+    const totEl = document.getElementById('od-total');
+    if (totEl) totEl.textContent = d.total_opendata_contracts.toLocaleString('pt-PT');
+    const tbody = document.getElementById('od-table');
+    if (tbody) {
+      tbody.innerHTML = d.items.map((i) => `<tr>
+        <td>${i.year}</td><td>${badge(i.status)}</td>
+        <td>${(i.imported_rows ?? 0).toLocaleString('pt-PT')}${i.total_rows ? ' / ' + Number(i.total_rows).toLocaleString('pt-PT') : ''}</td>
+        <td>${i.started_at ? new Date(i.started_at).toLocaleString('pt-PT') : '—'}</td>
+        <td>${i.finished_at ? new Date(i.finished_at).toLocaleString('pt-PT') : '—'}</td>
+        <td class="muted">${esc((i.error_message ?? '').slice(0, 80))}</td>
+      </tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhum import ainda.</td></tr>';
+    }
+    if (!d.items.some((i) => ['pending', 'running'].includes(i.status))) stopPolling();
+  };
+
+  const years = [];
+  for (let y = new Date().getFullYear(); y >= 2012; y--) years.push(y);
+  app.innerHTML = `
+    <div class="card">
+      <h2>Dados abertos do Portal BASE (IMPIC)</h2>
+      <p class="muted">Fonte oficial do histórico: datasets anuais publicados pelo IMPIC em dados.gov.pt (atualização quinzenal) — os mesmos dados do site, sem risco de bloqueio.
+      Os contratos importados alimentam automaticamente as pesquisas, perfis e insights. Os PDFs dos documentos e os dados mais recentes que a última publicação continuam a vir do robot.</p>
+      <p><strong><span id="od-total">…</span></strong> contratos em base de dados vindos de dados abertos.</p>
+      <form class="inline" id="od-form">
+        <select name="year">${years.map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
+        <button type="submit">Importar ano</button>
+        <button type="button" id="od-all" class="btn-secondary">Importar tudo (2012-${years[0]})</button>
+      </form>
+      <div class="error" id="od-error"></div>
+    </div>
+    <div class="card">
+      <h2>Imports</h2>
+      <table>
+        <thead><tr><th>Ano</th><th>Estado</th><th>Contratos</th><th>Início</th><th>Fim</th><th>Erro</th></tr></thead>
+        <tbody id="od-table"><tr><td colspan="6" class="muted">A carregar…</td></tr></tbody>
+      </table>
+    </div>`;
+
+  const submit = async (yearsList) => {
+    try {
+      await api('/api/opendata/import', { method: 'POST', body: JSON.stringify({ years: yearsList }) });
+      await load();
+      stopPolling();
+      pollTimer = setInterval(load, 4000);
+    } catch (err) {
+      document.getElementById('od-error').textContent = err.message;
+    }
+  };
+  document.getElementById('od-form').onsubmit = (e) => {
+    e.preventDefault();
+    submit([Number(new FormData(e.target).get('year'))]);
+  };
+  document.getElementById('od-all').onclick = () => submit(years);
+
+  await load();
+  stopPolling();
+  pollTimer = setInterval(load, 4000);
 }
 
 /* ---------- Entidades ---------- */
@@ -536,8 +673,8 @@ async function renderEntity(id) {
       ${r.counterparts.length ? `<h3>${counterLabel}</h3><table><thead><tr><th>Entidade</th><th>Contratos</th><th>Valor</th></tr></thead><tbody>
         ${r.counterparts.map((c) => `<tr class="clickable" onclick="location.hash='#/entities/${c.id}'"><td>${esc(c.name)}</td><td>${c.count}</td><td>${fmtCompact(c.total_value)}</td></tr>`).join('')}</tbody></table>` : ''}
       ${r.recent_contracts.length ? `<h3>Contratos recentes</h3><table><thead><tr><th>Publicação</th><th>Objeto</th><th>Valor</th><th>Termina</th></tr></thead><tbody>
-        ${r.recent_contracts.map((c) => `<tr><td>${fmtDate(c.publication_date)}</td>
-          <td><a href="${esc(c.basegov_url)}" target="_blank" rel="noopener">${esc(c.object_brief_description ?? '')}</a></td>
+        ${r.recent_contracts.map((c) => `<tr class="clickable" onclick="location.hash='#/contracts/${c.id}'"><td>${fmtDate(c.publication_date)}</td>
+          <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${esc(c.object_brief_description ?? '')}</a></td>
           <td>${fmtPrice(c.initial_contractual_price)}</td><td>${fmtDate(c.end_date)}</td></tr>`).join('')}</tbody></table>` : ''}
     </div>`;
   app.innerHTML = `
@@ -569,6 +706,8 @@ async function route() {
   const profile = hash.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
   const entity = hash.match(/^#\/entities\/(\d+)$/);
   const insights = hash.match(/^#\/insights(?:\/(\w+))?$/);
+  const announcement = hash.match(/^#\/announcements\/(\d+)$/);
+  document.querySelector('main')?.classList.remove('wide');
   try {
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
@@ -577,6 +716,8 @@ async function route() {
     if (insights) return await renderInsights(insights[1] || 'opportunities');
     if (entity) return await renderEntity(Number(entity[1]));
     if (hash === '#/entities') return await renderEntities();
+    if (hash === '#/opendata') return await renderOpendata();
+    if (announcement) return await renderAnnouncement(Number(announcement[1]));
     return await renderSearches();
   } catch (err) {
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;

@@ -8,6 +8,7 @@ import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { startWorker } from './scraper/worker.js';
+import { startOpendataWorker } from './opendata.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,7 +32,12 @@ async function main(): Promise<void> {
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
   startWorker();
+  startOpendataWorker();
 }
+
+// Rede de segurança: um stream sem handler não deve derrubar o serviço inteiro.
+process.on('uncaughtException', (err) => console.error('[fatal-guard] uncaughtException:', err));
+process.on('unhandledRejection', (err) => console.error('[fatal-guard] unhandledRejection:', err));
 
 main().catch((err) => {
   console.error('Erro fatal no arranque:', err);
