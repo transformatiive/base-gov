@@ -7,6 +7,7 @@ import yauzl from 'yauzl';
 import { createRequire } from 'node:module';
 import { pool } from './db.js';
 import { matchLocalCorpus } from './scraper/worker.js';
+import { refreshCpvCatalog } from './cpv.js';
 
 const require = createRequire(import.meta.url);
 // stream-json v1 (CJS): parser + StreamArray clássicos
@@ -333,6 +334,7 @@ async function runImport(importId: number, year: number): Promise<void> {
   );
   console.log(`[opendata] ${year}: concluído — ${imported} contratos`);
 
+  await refreshCpvCatalog().catch((e) => console.error('[cpv] refresh falhou:', e));
   await rematchProfiles();
 }
 
