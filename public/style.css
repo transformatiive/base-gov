@@ -183,3 +183,6 @@ dl.detail dd { margin: 0; font-size: 0.92rem; }
   .map-wrap { flex-direction: column; }
   .map-table { max-width: 100%; }
 }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
+.dot.open { background: #16a34a; }
+.dot.closed { background: #cbd5e1; }
