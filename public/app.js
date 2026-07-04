@@ -8,6 +8,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const fmtPrice = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }));
 const fmtDate = (v) => (v ? String(v).slice(0, 10) : '—');
 const badge = (s) => `<span class="badge ${esc(s)}">${esc(s)}</span>`;
+/* Distância ao fim previsto do contrato: futuro → dias em falta; passado → há quanto terminou. */
+const endDaysBadge = (d) => {
+  const diff = Math.round((new Date(d) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
+  if (Number.isNaN(diff)) return '';
+  return diff >= 0
+    ? ` <span class="badge running">faltam ${diff} dia(s)</span>`
+    : ` <span class="badge completed">terminou há ${-diff} dia(s)</span>`;
+};
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const scoreColor = (s) => (s >= 70 ? '#14622d' : s >= 45 ? '#8a4b00' : '#5a6b7b');
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -255,6 +263,10 @@ async function renderContract(id) {
         <dt>Data de celebração</dt><dd>${fmtDate(c.signing_date)}</dd>
         <dt>Data de fecho</dt><dd>${fmtDate(c.close_date)}</dd>
         <dt>Prazo de execução</dt><dd>${esc(c.execution_deadline ?? '—')}</dd>
+        <dt>Fim previsto</dt><dd>${c.estimated_end_date
+          ? `<strong>${fmtDate(c.estimated_end_date)}</strong>${endDaysBadge(c.estimated_end_date)}
+             <span class="muted">— estimado: celebração (${fmtDate(c.signing_date)}) + ${esc(c.execution_deadline)}. É esta a data "Termina" das renovações, mapa e digest.</span>`
+          : '<span class="muted">— (sem data de celebração ou prazo em dias no BASE)</span>'}</dd>
         <dt>Local de execução</dt><dd>${esc(c.execution_place ?? '—')}</dd>
         <dt>CPV</dt><dd>${esc(c.cpvs ?? '—')} ${c.cpvs_designation ? '· ' + esc(c.cpvs_designation) : ''}</dd>
         <dt>Fundamentação</dt><dd>${esc(c.contract_fundamentation ?? '—')}</dd>
@@ -491,6 +503,7 @@ async function renderInsightTab(el, q, tab, p) {
     const d = await api(`/api/insights/renewals${q}&months=12`);
     el.innerHTML = `<h2>Radar de renovações (próximos 12 meses)</h2>
       <p class="muted">Contratos em curso cuja execução termina em breve — a entidade irá provavelmente lançar novo procedimento; contactar na data sugerida.</p>
+      <div class="hint">"Termina" é o fim previsto, estimado a partir dos dados do BASE: data de celebração + prazo de execução (o BASE não publica a data de fim explícita). A mesma regra é usada na matriz, no mapa e no digest; a data exata pode desviar-se se o contrato tiver sido suspenso ou prorrogado.</div>
       <table><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th></tr></thead><tbody>
       ${d.items.map((r) => `<tr>
         <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
