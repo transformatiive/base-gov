@@ -760,6 +760,15 @@ function matrixTipHtml(o, fit) {
     <div class="muted" style="margin-top:0.3rem">clique para abrir o detalhe</div>`;
 }
 
+/* O tip vive no <body> (position fixed), por isso sobrevive a navegações por hash
+   que substituem o conteúdo — tem de ser escondido explicitamente. */
+function hideMatrixTip() {
+  const t = document.getElementById('matrix-tip');
+  if (t) t.style.display = 'none';
+}
+window.addEventListener('hashchange', hideMatrixTip);
+window.addEventListener('scroll', hideMatrixTip, true);
+
 function bindMatrixTooltip(container) {
   let tipEl = document.getElementById('matrix-tip');
   if (!tipEl) {
@@ -767,7 +776,7 @@ function bindMatrixTooltip(container) {
     tipEl.id = 'matrix-tip';
     document.body.appendChild(tipEl);
   }
-  const hide = () => { tipEl.style.display = 'none'; };
+  const hide = hideMatrixTip;
   container.addEventListener('mousemove', (e) => {
     const c = e.target.closest?.('circle[data-mi]');
     if (!c) { hide(); return; }
@@ -785,6 +794,11 @@ function bindMatrixTooltip(container) {
     tipEl.style.top = `${Math.max(8, top)}px`;
   });
   container.addEventListener('mouseleave', hide);
+  container.addEventListener('mouseout', (e) => {
+    // saiu de um círculo e o destino já não é (nem está dentro de) um círculo
+    if (e.target.closest?.('circle[data-mi]') && !e.relatedTarget?.closest?.('circle[data-mi]')) hide();
+  });
+  container.addEventListener('click', hide, true);
 }
 
 /* Modal de progresso das análises IA: barra + passos contextualizados. */
@@ -1080,14 +1094,23 @@ async function renderRadar(tab = 'opportunities') {
   document.getElementById('ctx-select').onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
 
   if (active) {
-    api(`/api/profiles/${active.id}`).then((p) => {
+    const fillStats = (p) => {
       const holder = document.getElementById('radar-stats');
-      if (holder) holder.innerHTML = `
+      if (!holder) return;
+      const running = p.runs?.[0] && p.runs[0].status !== 'completed' && p.runs[0].status !== 'failed';
+      holder.innerHTML = `
         <div class="stat"><div class="n">${p.totals.n_contracts.toLocaleString('pt-PT')}</div><div class="l">Contratos</div></div>
         <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
         <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
-        <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>`;
-    }).catch(() => {});
+        <div class="stat"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>` +
+        (p.totals.n_contracts === 0 && running
+          ? `<p class="hint" style="flex-basis:100%">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>`
+          : '');
+    };
+    // uma falha transitória (ex.: restart durante deploy) não deve deixar os cartões vazios
+    api(`/api/profiles/${active.id}`).then(fillStats).catch(() => {
+      setTimeout(() => api(`/api/profiles/${active.id}`).then(fillStats).catch(() => {}), 2500);
+    });
   }
 
   await renderInsightTab(document.getElementById('tab-content'), `?profile_id=${ctx}`, tab, null);
@@ -1376,6 +1399,7 @@ async function renderEntity(id) {
 /* ---------- Router ---------- */
 async function route() {
   stopPolling();
+  hideMatrixTip();
   const hash = location.hash || '#/';
   if (hash === '#/login') return renderLogin();
 
