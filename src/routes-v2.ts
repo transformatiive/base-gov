@@ -691,24 +691,50 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   app.get('/api/insights/competitors', { preHandler: requireAuth }, async (req) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
     const scope = contractScope(profileId);
+    // Consolidação por NIF: o mesmo adjudicatário aparece por vezes com pequenas
+    // variações de nome (ex.: "Machados, Lda" vs "Machados Lda") em entity_ids
+    // distintos mas com o mesmo NIF. Agrupamos por NIF, somamos as estatísticas
+    // por contrato (sem duplicar) e elegemos como nome canónico o mais usado
+    // (mais contratos; desempate pelo nome mais completo). Entidades sem NIF
+    // ficam isoladas pelo seu id.
     const { rows } = await pool.query(
       `WITH scoped AS (SELECT c.* FROM contracts c ${scope.join}),
-       tot AS (SELECT coalesce(sum(initial_contractual_price),0) AS v FROM scoped)
-       SELECT e.id, e.name, e.nif,
-         count(DISTINCT c.id) AS n,
-         coalesce(sum(c.initial_contractual_price),0) AS total,
-         coalesce(avg(c.initial_contractual_price),0) AS avg,
-         round(100.0 * coalesce(sum(c.initial_contractual_price),0) / NULLIF((SELECT v FROM tot),0), 1) AS share_pct,
+       tot AS (SELECT coalesce(sum(initial_contractual_price),0) AS v FROM scoped),
+       links AS (
+         SELECT c.id AS contract_id, c.initial_contractual_price AS price,
+                e.id AS entity_id, e.name AS name,
+                nullif(trim(e.nif), '') AS nif,
+                coalesce(nullif(trim(e.nif), ''), 'ent:' || e.id) AS grp
+         FROM scoped c
+         JOIN contract_entities ce ON ce.contract_id = c.id AND ce.role = 'contracted'
+         JOIN entities e ON e.id = ce.entity_id
+       ),
+       per_contract AS (SELECT DISTINCT grp, contract_id, price FROM links),
+       agg AS (
+         SELECT grp, count(*) AS n, coalesce(sum(price),0) AS total
+         FROM per_contract GROUP BY grp
+       ),
+       name_rank AS (
+         SELECT grp, entity_id, name, nif,
+           row_number() OVER (
+             PARTITION BY grp
+             ORDER BY count(DISTINCT contract_id) DESC, length(name) DESC, name
+           ) AS rn
+         FROM links GROUP BY grp, entity_id, name, nif
+       ),
+       canon AS (SELECT grp, entity_id, name, nif FROM name_rank WHERE rn = 1)
+       SELECT canon.entity_id AS id, canon.name, canon.nif,
+         agg.n,
+         agg.total,
+         CASE WHEN agg.n > 0 THEN agg.total / agg.n ELSE 0 END AS avg,
+         round(100.0 * agg.total / NULLIF((SELECT v FROM tot),0), 1) AS share_pct,
          (SELECT string_agg(DISTINCT e2.name, '; ')
-            FROM scoped c3
-            JOIN contract_entities cex ON cex.contract_id = c3.id AND cex.role = 'contracted' AND cex.entity_id = e.id
-            JOIN contract_entities ce2 ON ce2.contract_id = c3.id AND ce2.role = 'contracting'
-            JOIN entities e2 ON e2.id = ce2.entity_id) AS top_clients
-       FROM scoped c
-       JOIN contract_entities ce ON ce.contract_id = c.id AND ce.role = 'contracted'
-       JOIN entities e ON e.id = ce.entity_id
-       GROUP BY e.id
-       ORDER BY total DESC LIMIT 50`,
+            FROM links l3
+            JOIN contract_entities ce2 ON ce2.contract_id = l3.contract_id AND ce2.role = 'contracting'
+            JOIN entities e2 ON e2.id = ce2.entity_id
+            WHERE l3.grp = canon.grp) AS top_clients
+       FROM agg JOIN canon ON canon.grp = agg.grp
+       ORDER BY agg.total DESC LIMIT 50`,
       scope.params
     );
     return {
