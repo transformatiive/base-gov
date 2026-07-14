@@ -1647,7 +1647,12 @@ async function renderAnnouncement(id) {
     try {
       const pid = Number(getCtx() || 0);
       const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}
+      const docNote = r.docs_used > 0
+        ? `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`
+        : r.docs_used === 0
+          ? '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga direta ou com registo) — análise com o anúncio do DR e dados estruturados.</p>'
+          : '';
+      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${docNote}
         <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
         <div id="ai-template-out"></div></div>`;
       out.scrollIntoView({ block: 'nearest' });
