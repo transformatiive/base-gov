@@ -19,6 +19,8 @@ const endDaysBadge = (d) => {
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €');
 const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
+const fmtDatePt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const daysUntil = (v) => (v ? Math.round((new Date(v) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null);
 /* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
 const scorePair = (s) => (s >= 70 ? ['#e4efe8', '#2c6353'] : s >= 45 ? ['#fdf6e8', '#8a6a1e'] : ['#eef1ef', '#7d8681']);
 const scoreChip = (s, title) => {
@@ -1461,7 +1463,7 @@ async function renderHoje() {
           <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${esc((o.title ?? '').slice(0, 44))} · ${fmtCompact(o.value)}</span>`).join('')}</div>
         </div>` : ''}
       </div>
-      <div class="hoje-col" style="gap:14px">
+      <div class="hoje-col hoje-right" style="gap:14px">
         <div class="injogo-card">
           <div class="k">EM JOGO · PRÓXIMOS 90 DIAS</div>
           <div class="big">${fmtCompact(jogoTotal)}</div>
@@ -1564,35 +1566,69 @@ function configTabs(active) {
 async function renderAnnouncement(id) {
   const a = await api(`/api/announcements/${id}?raw=1`);
   const raw = a.raw_detail_json ?? a.raw_list_json ?? {};
+  const dl = daysUntil(a.proposal_deadline_date);
+  let prazoBadge = '';
+  if (dl != null) {
+    prazoBadge = a.is_open && dl >= 0
+      ? `<span class="fim-badge">FALTAM ${dl} DIAS</span>`
+      : `<span class="fim-badge past">EXPIRADO</span>`;
+  }
+  const crono = [];
+  if (a.dr_publication_date) crono.push({ d: a.dr_publication_date, dot: '#9aa6a0', label: 'publicação em Diário da República' });
+  if (a.proposal_deadline_date) crono.push({ d: a.proposal_deadline_date, dot: a.is_open ? '#c2543a' : '#9aa6a0', label: `prazo de propostas${a.is_open ? ' — a decorrer' : ' — expirado'}`, strong: a.is_open });
+  crono.sort((x, y) => new Date(x.d) - new Date(y.d));
+  const cronoHtml = crono.map((r, i) => `<div class="crono-row">
+    <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
+    <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${fmtDatePt(r.d)}</b> · ${r.label}</div></div>`).join('');
+
   app.innerHTML = `
-    <div class="toolbar">
-      <h2><span class="dot ${a.is_open ? 'open' : 'closed'}"></span> Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</h2>
-      <div>
+    <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/announcements">Concursos</a> → <span class="cur">Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</span></div>
+    <div class="d-head">
+      <div style="min-width:0">
+        <div class="d-tags">
+          <span class="d-tag ${a.is_open ? 'brand' : ''}">${a.is_open ? 'CONCURSO ABERTO' : 'EXPIRADO'}</span>
+          ${a.contracting_procedure_type || a.model_type ? `<span class="d-tag">${esc(String(a.model_type ?? a.contracting_procedure_type).toUpperCase())}</span>` : ''}
+          ${a.contract_type ? `<span class="d-tag">${esc(String(a.contract_type).toUpperCase())}</span>` : ''}
+        </div>
+        <h1>${esc(a.contract_designation ?? `Anúncio #${a.basegov_id}`)}</h1>
+      </div>
+      <div class="d-actions">
+        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button>
         <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-        <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
       </div>
     </div>
-    <div class="card">
-      <dl class="detail">
-        <dt>Designação</dt><dd>${esc(a.contract_designation ?? '—')}</dd>
-        <dt>Entidade adjudicante</dt><dd>${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</dd>
-        <dt>Tipo de anúncio</dt><dd>${esc(a.announcement_type ?? '—')}</dd>
-        <dt>Modelo / procedimento</dt><dd>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</dd>
-        <dt>Tipo de contrato</dt><dd>${esc(a.contract_type ?? '—')}</dd>
-        <dt>Preço base</dt><dd>${fmtPrice(a.base_price)}</dd>
-        <dt>Publicação em DR</dt><dd>${fmtDate(a.dr_publication_date)}</dd>
-        <dt>Prazo de propostas</dt><dd><strong>${fmtDate(a.proposal_deadline_date)}</strong> ${a.is_open ? '(a decorrer)' : '(expirado)'} ${raw.proposalDeadline ? '· ' + esc(raw.proposalDeadline) : ''}</dd>
-        <dt>CPV</dt><dd>${esc(a.cpvs ?? '—')}</dd>
-        <dt>Peças do procedimento</dt><dd>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener">${esc(a.contracting_procedure_url)}</a>` : '—'}</dd>
-        <dt>Publicação DR (PDF)</dt><dd>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener">${esc(a.reference_url)}</a>` : '—'}</dd>
-        <dt>Nº DR / Série</dt><dd>${esc(raw.dreNumber ?? '—')} / ${esc(raw.dreSeries ?? '—')}</dd>
-      </dl>
-    </div>
-    <div class="card" id="ai-card">
-      <div class="toolbar"><h2 style="margin:0">Ficha de oportunidade (IA)</h2>
-        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button></div>
-      <p class="muted" id="ai-hint">Análise do anúncio publicado em DR, contextualizada à atividade selecionada no Radar: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado (só paga uma vez).</p>
-      <div id="ai-result"></div>
+    <div class="d-grid">
+      <div>
+        <div class="d-card">
+          <div class="t">Partes e enquadramento</div>
+          <div class="parts">
+            <span class="lb">Entidade adjudicante</span><span style="font-weight:600">${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</span>
+            <span class="lb">Tipo de anúncio</span><span>${esc(a.announcement_type ?? '—')}</span>
+            <span class="lb">Modelo / procedimento</span><span>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</span>
+            <span class="lb">Tipo de contrato</span><span>${esc(a.contract_type ?? '—')}</span>
+            <span class="lb">CPV</span><span>${esc(a.cpvs ?? '—')}</span>
+            <span class="lb">Peças do procedimento</span><span>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">abrir na plataforma ↗</a>` : '—'}</span>
+            <span class="lb">Publicação DR (PDF)</span><span>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">ver no Diário da República ↗</a>` : '—'}${raw.dreNumber ? ` · DR n.º ${esc(raw.dreNumber)}, série ${esc(raw.dreSeries ?? '—')}` : ''}</span>
+          </div>
+        </div>
+        <div id="ai-result"></div>
+      </div>
+      <div>
+        <div class="d-price">
+          <div class="k">PREÇO BASE</div>
+          <div class="big">${fmtPrice(a.base_price)}</div>
+          <div class="sep">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="k">PRAZO DE PROPOSTAS</span>${prazoBadge}</div>
+            <div class="fim">${fmtDatePt(a.proposal_deadline_date)}</div>
+            ${raw.proposalDeadline ? `<p class="est">No detalhe do BASE: ${esc(raw.proposalDeadline)}.</p>` : ''}
+          </div>
+        </div>
+        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
+        <div class="d-card">
+          <div class="t">Ficha de oportunidade (IA)</div>
+          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado.</p>
+        </div>
+      </div>
     </div>`;
 
   document.getElementById('ai-analyze-btn').onclick = async () => {
@@ -1611,9 +1647,10 @@ async function renderAnnouncement(id) {
     try {
       const pid = Number(getCtx() || 0);
       const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model) + `
+      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}
         <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
-        <div id="ai-template-out"></div>`;
+        <div id="ai-template-out"></div></div>`;
+      out.scrollIntoView({ block: 'nearest' });
       document.getElementById('ai-template-btn').onclick = async () => {
         const tbtn = document.getElementById('ai-template-btn');
         tbtn.disabled = true;
@@ -1780,24 +1817,30 @@ async function renderOpendata() {
   pollTimer = setInterval(load, 4000);
 }
 
-/* ---------- Entidades ---------- */
+/* ---------- Entidades (lista) ---------- */
 async function renderEntities(role = 'contracting', q = '') {
   const d = await api(`/api/entities?role=${role}&q=${encodeURIComponent(q)}&size=50`);
   app.innerHTML = `
-    <div class="card">
-      <div class="toolbar">
-        <h2>Entidades ${role === 'contracting' ? 'adjudicantes (compradores públicos)' : 'adjudicatárias (fornecedores)'}</h2>
-        <div>
-          <button class="${role === 'contracting' ? '' : 'btn-secondary'}" onclick="renderEntities('contracting')">Adjudicantes</button>
-          <button class="${role === 'contracted' ? '' : 'btn-secondary'}" onclick="renderEntities('contracted')">Adjudicatárias</button>
-        </div>
+    <div class="toolbar">
+      <div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Entidades</h1>
+        <div class="muted" style="margin-top:3px">Compradores públicos e fornecedores com histórico na base.</div></div>
+      <div class="ent-toggle">
+        <button class="${role === 'contracting' ? 'on' : ''}" onclick="renderEntities('contracting')">Adjudicantes</button>
+        <button class="${role === 'contracted' ? 'on' : ''}" onclick="renderEntities('contracted')">Adjudicatárias</button>
       </div>
-      <form class="inline" id="ent-search"><input type="text" name="q" placeholder="Pesquisar por nome ou NIF" value="${esc(q)}"><button>Filtrar</button></form>
-      <table style="margin-top:0.8rem"><thead><tr><th>Nome</th><th>NIF</th><th>Contratos</th><th>Valor total</th><th>Último contrato</th></tr></thead><tbody>
-      ${d.items.map((e) => `<tr class="clickable" onclick="location.hash='#/entities/${e.id}'">
-        <td><strong>${esc(e.name)}</strong></td><td>${esc(e.nif ?? '')}</td><td>${e.n_contracts}</td>
-        <td>${fmtCompact(e.total_value)}</td><td>${fmtDate(e.last_contract)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Sem entidades.</td></tr>'}
-      </tbody></table>
+    </div>
+    <form class="opp-search" id="ent-search" style="margin:0 0 12px">
+      ${ico('search', 14)}<input type="text" name="q" placeholder="Pesquisar por nome ou NIF" value="${esc(q)}">
+    </form>
+    <div class="ent-list">
+      <div class="ent-row head"><span>NOME</span><span class="nifh">NIF</span><span class="r">CONTRATOS</span><span class="r th">VALOR TOTAL</span><span class="r uh">ÚLTIMO CONTRATO</span></div>
+      ${d.items.map((e) => `<div class="ent-row body" onclick="location.hash='#/entities/${e.id}'">
+        <span class="nm">${esc(e.name)}</span>
+        <span class="nif">${esc(e.nif ?? '—')}</span>
+        <span class="r">${e.n_contracts}</span>
+        <span class="r b">${fmtCompact(e.total_value)}</span>
+        <span class="r m ult">${fmtDate(e.last_contract)}</span>
+      </div>`).join('') || '<div class="ent-row"><span class="muted">Sem entidades.</span></div>'}
     </div>`;
   document.getElementById('ent-search').onsubmit = (e) => {
     e.preventDefault();
@@ -1806,33 +1849,64 @@ async function renderEntities(role = 'contracting', q = '') {
 }
 window.renderEntities = renderEntities;
 
+/* ---------- Entidade (ficha) ---------- */
 async function renderEntity(id) {
   const e = await api(`/api/entities/${id}`);
-  const roleBlock = (r, title, counterLabel) => `
-    <div class="card">
-      <h2>${title}</h2>
-      <div class="cards">
-        <div class="stat"><div class="n">${r.n_contracts}</div><div class="l">Contratos</div></div>
-        <div class="stat"><div class="n">${fmtCompact(r.total_value)}</div><div class="l">Valor total</div></div>
-        <div class="stat"><div class="n">${fmtCompact(r.avg_value)}</div><div class="l">Valor médio</div></div>
-      </div>
-      ${r.by_year.length ? `<h3>Por ano</h3><table><thead><tr><th>Ano</th><th>Contratos</th><th>Valor</th></tr></thead><tbody>
-        ${r.by_year.map((y) => `<tr><td>${y.year}</td><td>${y.count}</td><td>${fmtCompact(y.total_value)}</td></tr>`).join('')}</tbody></table>` : ''}
-      ${r.procedure_types.length ? `<h3>Tipos de procedimento</h3><p>${r.procedure_types.map((p) => `${esc(p.type ?? '?')} (${p.count})`).join(' · ')}</p>` : ''}
-      ${r.counterparts.length ? `<h3>${counterLabel}</h3><table><thead><tr><th>Entidade</th><th>Contratos</th><th>Valor</th></tr></thead><tbody>
-        ${r.counterparts.map((c) => `<tr class="clickable" onclick="location.hash='#/entities/${c.id}'"><td>${esc(c.name)}</td><td>${c.count}</td><td>${fmtCompact(c.total_value)}</td></tr>`).join('')}</tbody></table>` : ''}
-      ${r.recent_contracts.length ? `<h3>Contratos recentes</h3><table><thead><tr><th>Publicação</th><th>Objeto</th><th>Valor</th><th>Termina</th></tr></thead><tbody>
-        ${r.recent_contracts.map((c) => `<tr class="clickable" onclick="location.hash='#/contracts/${c.id}'"><td>${fmtDate(c.publication_date)}</td>
-          <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${esc(c.object_brief_description ?? '')}</a></td>
-          <td>${fmtPrice(c.initial_contractual_price)}</td><td>${fmtDate(c.end_date)}</td></tr>`).join('')}</tbody></table>` : ''}
-    </div>`;
+  const isBuyer = (e.as_contracting?.n_contracts ?? 0) >= (e.as_contracted?.n_contracts ?? 0);
+  const r = isBuyer ? e.as_contracting : e.as_contracted;
+  const roleLabel = isBuyer ? 'comprador público' : 'fornecedor';
+  const topProc = (r.procedure_types ?? [])[0];
+  const years = (r.by_year ?? []).map((y) => y.year).filter(Boolean);
+  const sinceYear = years.length ? Math.min(...years) : null;
+  const counterLabel = isBuyer ? 'Fornecedores habituais' : 'Clientes habituais';
+  // Próxima janela: contrato recente com fim previsto no futuro mais próximo
+  const future = (r.recent_contracts ?? [])
+    .filter((c) => c.end_date && new Date(c.end_date) >= new Date(new Date().toISOString().slice(0, 10)))
+    .sort((a, b) => new Date(a.end_date) - new Date(b.end_date))[0];
+
+  const recent = (r.recent_contracts ?? []).slice(0, 8).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
+    <span class="pub">${fmtDate(c.publication_date)}</span>
+    <span class="obj">${esc(c.object_brief_description ?? '—')}</span>
+    <span class="val">${fmtCompact(c.initial_contractual_price)}</span>
+    <span class="ter">${c.end_date ? fmtDate(c.end_date) : '—'}</span>
+  </div>`).join('') || '<div class="row"><span class="muted" style="grid-column:1/-1">Sem contratos.</span></div>';
+
   app.innerHTML = `
-    <div class="toolbar">
-      <h2>${esc(e.name)} ${e.nif ? `<span class="muted">· NIF ${esc(e.nif)}</span>` : ''}</h2>
-      <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
+    <div class="dcrumb"><a href="#/entities">Entidades</a> → <span class="cur">${esc(e.name)}</span></div>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:18px;flex-wrap:wrap">
+      <h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">${esc(e.name)}</h1>
+      <span class="muted">${e.nif ? `NIF ${esc(e.nif)} · ` : ''}${roleLabel}</span>
     </div>
-    ${e.as_contracting.n_contracts ? roleBlock(e.as_contracting, 'Como adjudicante (comprador)', 'Fornecedores') : ''}
-    ${e.as_contracted.n_contracts ? roleBlock(e.as_contracted, 'Como adjudicatária (fornecedor)', 'Clientes') : ''}`;
+    <div class="ent-statcards">
+      <div class="c"><div class="n">${r.n_contracts}</div><div class="l">contratos${isBuyer ? '' : ' adjudicados'}</div></div>
+      <div class="c"><div class="n">${fmtCompact(r.total_value)}</div><div class="l">valor total</div></div>
+      <div class="c"><div class="n">${fmtCompact(r.avg_value)}</div><div class="l">valor médio</div></div>
+    </div>
+    <div class="d-grid">
+      <div>
+        <div class="ent-recent">
+          <div class="h">Contratos recentes</div>
+          ${recent}
+        </div>
+      </div>
+      <div>
+        <div class="d-card">
+          <div class="t">${isBuyer ? 'Como compra' : 'Como vende'}</div>
+          <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${topProc ? `Sobretudo por <b>${esc(topProc.type ?? '—')}</b> · ` : ''}${r.n_contracts} contrato${r.n_contracts === 1 ? '' : 's'}${sinceYear ? ` desde ${sinceYear}` : ''} (média ${fmtCompact(r.avg_value)}).</div>
+        </div>
+        ${(r.counterparts ?? []).length ? `<div class="d-card">
+          <div class="t">${counterLabel}</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+            ${r.counterparts.slice(0, 5).map((c) => `<a href="#/entities/${c.id}" style="display:flex;justify-content:space-between;gap:10px;color:var(--ink)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span><b>${c.count} contrato${c.count === 1 ? '' : 's'}</b></a>`).join('')}
+          </div>
+        </div>` : ''}
+        ${future ? `<div class="d-price" style="padding:16px 20px">
+          <div class="k" style="letter-spacing:0.06em">PRÓXIMA JANELA</div>
+          <p style="font-size:12.5px;color:var(--accent-line);margin:6px 0 0;line-height:1.55">Um contrato termina a <b style="color:#fff">${fmtDatePt(future.end_date)}</b>. Contactar cerca de 4 meses antes.</p>
+          <a href="#/contracts/${future.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;color:#fff;border-bottom:1px solid var(--on-dark-muted)">Ver contrato →</a>
+        </div>` : ''}
+      </div>
+    </div>`;
 }
 
 /* ---------- Router ---------- */
