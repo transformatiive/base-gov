@@ -21,6 +21,9 @@ const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', {
 const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
 const fmtDatePt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const daysUntil = (v) => (v ? Math.round((new Date(v) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null);
+/* Acordo-quadro: canal de venda distinto (contratação centralizada/ESPAP). */
+const isAcordoQuadro = (o) => /acordo[-\s]?quadro/i.test([o?.contract_designation, o?.announcement_type, o?.model_type, o?.contracting_procedure_type, o?.contract_type].filter(Boolean).join(' '));
+const AQ_BADGE = '<span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6" title="Acordo-quadro — canal de contratação centralizada">AQ</span>';
 /* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
 const scorePair = (s) => (s >= 70 ? ['#e4efe8', '#2c6353'] : s >= 45 ? ['#fdf6e8', '#8a6a1e'] : ['#eef1ef', '#7d8681']);
 const scoreChip = (s, title) => {
@@ -834,7 +837,7 @@ async function renderInsightTab(el, q, tab, p) {
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
         <td>${fmtDate(a.dr_publication_date)}</td>
         <td><span class="dot ${open ? 'open' : 'closed'}"></span> ${fmtDate(a.proposal_deadline_date)}</td>
-        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a></td>
+        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
         <td>${fmtPrice(a.base_price)}</td></tr>`;
@@ -858,7 +861,7 @@ async function renderInsightTab(el, q, tab, p) {
         <div class="opp-tr head" style="grid-template-columns:120px minmax(0,1fr) 200px 118px"><span>PRAZO</span><span>CONCURSO</span><span>ENTIDADE</span><span class="dat">PUBLICADO</span></div>
         ${items.map((n) => `<div class="opp-tr body" style="grid-template-columns:120px minmax(0,1fr) 200px 118px" onclick="window.open('${esc(n.url)}','_blank')">
           <span class="dat ${n.days_left != null && n.days_left <= 30 ? 'urgent' : ''}" style="text-align:left">${n.deadline ? `${dPtShort(n.deadline)}${n.days_left != null ? ` · ${n.days_left}d` : ''}` : '—'}</span>
-          <div><div class="ti">${esc(n.title)}</div><div class="sub">${esc((n.cpvs || []).slice(0, 3).join(' · '))} · abrir no TED ↗</div></div>
+          <div><div class="ti">${esc(n.title)}${/acordo[-\s]?quadro|framework/i.test(n.title) ? ' ' + AQ_BADGE : ''}</div><div class="sub">${esc((n.cpvs || []).slice(0, 3).join(' · '))} · abrir no TED ↗</div></div>
           <span class="ent">${esc(n.buyer)}</span>
           <span class="dat">${n.publication_date ? dPtShort(n.publication_date) : '—'}</span>
         </div>`).join('')}
@@ -1652,6 +1655,7 @@ async function renderAnnouncement(id) {
       <div style="min-width:0">
         <div class="d-tags">
           <span class="d-tag ${a.is_open ? 'brand' : ''}">${a.is_open ? 'CONCURSO ABERTO' : 'EXPIRADO'}</span>
+          ${isAcordoQuadro(a) ? '<span class="d-tag brand">ACORDO-QUADRO</span>' : ''}
           ${a.contracting_procedure_type || a.model_type ? `<span class="d-tag">${esc(String(a.model_type ?? a.contracting_procedure_type).toUpperCase())}</span>` : ''}
           ${a.contract_type ? `<span class="d-tag">${esc(String(a.contract_type).toUpperCase())}</span>` : ''}
         </div>
