@@ -46,6 +46,7 @@ const ICON_PATHS = {
   rotate: '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
   building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
 };
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
@@ -217,19 +218,45 @@ function renderTrialBanner(me) {
   const c = me?.company;
   if (!host) return;
   if (!c || me.is_admin || c.subscription_status === 'active') { host.hidden = true; host.innerHTML = ''; return; }
-  let msg = '';
+  let title = '';
+  let sub = 'Depois, 29€/mês + IVA.';
   let cls = 'trial';
+  let cta = 'Subscrever';
   if (c.subscription_status === 'trialing') {
     const d = c.trial_days_left;
-    msg = `Teste gratuito — ${d} dia${d === 1 ? '' : 's'} restante${d === 1 ? '' : 's'}.`;
+    title = `Teste gratuito — ${d} dia${d === 1 ? '' : 's'}`;
   } else if (c.subscription_status === 'past_due') {
-    cls = 'past-due'; msg = 'Pagamento pendente — regularize para manter o acesso.';
+    cls = 'past-due'; title = 'Pagamento pendente'; sub = 'Regularize para manter o acesso.'; cta = 'Regularizar';
   } else if (c.subscription_status === 'canceled') {
-    cls = 'past-due'; msg = 'Subscrição cancelada.';
+    cls = 'past-due'; title = 'Subscrição cancelada'; sub = 'Reative para voltar a aceder.'; cta = 'Reativar';
   }
   host.hidden = false;
-  host.className = 'trial-banner ' + cls;
-  host.innerHTML = `<span>${msg}</span> <a href="#/subscrever">Subscrever</a>`;
+  host.className = cls;
+  host.innerHTML = `<div class="tb-title">${title}</div><div class="tb-sub">${sub}</div><a href="#/subscrever">${cta}</a>`;
+}
+
+/* Preenche o bloco "Atividade" da barra lateral com o perfil ativo. */
+async function updateSidebar() {
+  const el = document.getElementById('side-activity');
+  if (!el) return;
+  try {
+    const { items: profiles } = await api('/api/profiles');
+    window._profiles = profiles;
+    if (!profiles.length) { el.innerHTML = ''; return; }
+    let ctx = getCtx();
+    if (ctx && !profiles.some((p) => String(p.id) === ctx)) ctx = '';
+    const active = profiles.find((p) => String(p.id) === ctx) ?? profiles[0];
+    const nT = active.terms?.length ?? 0;
+    const nC = (active.cpv_codes ?? []).length;
+    const sched = { diaria: 'diária', semanal: 'semanal', mensal: 'mensal' }[active.schedule] ?? (active.schedule || '—');
+    el.innerHTML = `<div class="side-section">
+      <div class="lbl">ATIVIDADE</div>
+      <a class="side-activity" href="#/config/profiles">
+        <div class="top"><span class="nm">${esc(active.name)}</span>${ico('chevron', 13)}</div>
+        <div class="mt">${nT} termo${nT === 1 ? '' : 's'} · ${nC} CPV · recolha ${esc(sched)}</div>
+      </a>
+    </div>`;
+  } catch { /* silencioso — não bloqueia a navegação */ }
 }
 
 /* ---------- Página de subscrição ---------- */
@@ -416,84 +443,103 @@ async function renderResults(searchId, page = 0) {
 /* ---------- Detalhe de contrato ---------- */
 async function renderContract(id) {
   const c = await api(`/api/contracts/${id}`);
-  const ent = (role) => (c.entities?.[role] ?? []).map((e) => `${esc(e.name)}${e.nif ? ` (NIF ${esc(e.nif)})` : ''}`).join('<br>') || '—';
-  const docs = (c.documents ?? []).map((d) => `
-    <tr>
-      <td>${d.download_ok ? `<a href="${d.download_url}">${esc(d.file_name)}</a>` : esc(d.file_name)}</td>
-      <td>${esc(d.content_type ?? '—')}</td>
-      <td>${d.size_bytes ? (d.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
-      <td>${d.download_ok ? `<span style="color:var(--ok)">${ico('check')}</span>` : `<span style="color:var(--bad)">${ico('x')}</span> <span class="muted">${esc(d.download_error ?? 'pendente')}</span>`}</td>
-    </tr>`).join('');
+  const dPt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+  const firstEnt = (role) => (c.entities?.[role] ?? [])[0] ?? null;
+  const entLine = (role) => (c.entities?.[role] ?? []).map((e) =>
+    (e.id ? `<a href="#/entities/${e.id}" style="font-weight:600;border-bottom:1px solid var(--border-btn)">${esc(e.name)}</a>` : `<span style="font-weight:600">${esc(e.name)}</span>`)
+    + (e.nif ? ` <span class="nif">NIF ${esc(e.nif)}</span>` : '')).join(' · ') || '—';
+  const concorrentes = (c.entities?.contestant ?? []).map((e) => esc(e.name)).join(' · ') || '—';
+  const isRenewal = c.estimated_end_date && new Date(c.estimated_end_date) >= new Date(new Date().toISOString().slice(0, 10));
 
-  const kv = (label, value) => `<div class="kv"><span>${label}</span><b>${value}</b></div>`;
+  const docs = (c.documents ?? []).map((d) => {
+    const ok = d.download_ok;
+    return `<div class="doc-row ${ok ? '' : 'pend'}">
+      <span class="fn">${ico('doc', 15)}${ok ? `<a href="${d.download_url}">${esc(d.file_name)}</a>` : `<span>${esc(d.file_name)}</span>`}</span>
+      <span class="sz">${d.size_bytes ? (d.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</span>
+      <span class="st ${ok ? 'ok' : 'pend'}">${ok ? 'GUARDADO' : 'PENDENTE'}</span>
+    </div>`;
+  }).join('');
+
+  // Cronologia — só entradas com data válida, por ordem cronológica
+  const crono = [];
+  if (c.publication_date) crono.push({ d: c.publication_date, dot: '#9aa6a0', label: 'publicação no BASE' });
+  if (c.signing_date) crono.push({ d: c.signing_date, dot: '#9aa6a0', label: `celebração${c.execution_deadline ? ` · prazo ${esc(String(c.execution_deadline))}` : ''}` });
+  if (c.estimated_end_date) {
+    const contactar = new Date(Math.max(Date.now(), new Date(c.estimated_end_date).getTime() - 120 * 86400000)).toISOString().slice(0, 10);
+    crono.push({ d: contactar, dot: '#c99a3c', label: 'contacto comercial sugerido' });
+    crono.push({ d: c.estimated_end_date, dot: '#c2543a', label: 'fim previsto — renovação', strong: true });
+  }
+  crono.sort((a, b) => new Date(a.d) - new Date(b.d));
+  const cronoHtml = crono.map((r, i) => `<div class="crono-row">
+    <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
+    <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${dPt(r.d)}</b> · ${r.label}</div></div>`).join('');
+
+  // Badge do fim previsto
+  let fimBadge = '';
+  if (c.estimated_end_date) {
+    const diff = Math.round((new Date(c.estimated_end_date) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
+    fimBadge = diff >= 0
+      ? `<span class="fim-badge">FALTAM ${diff} DIAS</span>`
+      : `<span class="fim-badge past">HÁ ${-diff} DIAS</span>`;
+  }
+  const adj = firstEnt('contracting');
+
   app.innerHTML = `
-    <div class="page-head">
-      <div class="eyebrow">Contrato BASE #${c.basegov_id}</div>
-      <div class="toolbar">
-        <h2 class="page-title">${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h2>
-        <div>
-          <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-          <button class="btn-secondary" onclick="history.back()">${ico('back')} Voltar</button>
+    <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/renewals">Renovações</a> → <span class="cur">Contrato BASE #${c.basegov_id}</span></div>
+    <div class="d-head">
+      <div style="min-width:0">
+        <div class="d-tags">
+          ${isRenewal ? '<span class="d-tag brand">RENOVAÇÃO</span>' : ''}
+          ${c.contracting_procedure_type ? `<span class="d-tag">${esc(String(c.contracting_procedure_type).toUpperCase())}</span>` : ''}
+          ${c.contract_types ? `<span class="d-tag">${esc(String(c.contract_types).toUpperCase())}</span>` : ''}
         </div>
+        <h1>${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h1>
+        ${c.description ? `<p class="lead">${esc(c.description)}</p>` : ''}
       </div>
-      <div class="chip-row">
-        ${c.contracting_procedure_type ? `<span class="badge" style="background:#f2f4f7;color:#475467">${esc(c.contracting_procedure_type)}</span>` : ''}
-        ${c.contract_types ? `<span class="badge" style="background:#f2f4f7;color:#475467">${esc(c.contract_types)}</span>` : ''}
-        ${c.estimated_end_date ? endDaysBadge(c.estimated_end_date) : ''}
+      <div class="d-actions">
+        <button id="ai-contract-btn">${ico('search')} ${isRenewal ? 'Preparar renovação com IA' : 'Analisar com IA'}</button>
+        <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
       </div>
     </div>
-    <div class="detail-grid">
+    <div class="d-grid">
       <div>
-        <div class="card">
-          <h2>Objeto e partes</h2>
-          <dl class="detail">
-            <dt>Descrição</dt><dd>${esc(c.description ?? '—')}</dd>
-            <dt>Adjudicante</dt><dd>${ent('contracting')}</dd>
-            <dt>Adjudicatário</dt><dd>${ent('contracted')}</dd>
-            <dt>Concorrentes</dt><dd>${ent('contestant')}</dd>
-            <dt>Local de execução</dt><dd>${esc(c.execution_place ?? '—')}</dd>
-            <dt>CPV</dt><dd>${esc(c.cpvs ?? '—')} ${c.cpvs_designation ? '· ' + esc(c.cpvs_designation) : ''}</dd>
-            <dt>Fundamentação</dt><dd>${esc(c.contract_fundamentation ?? '—')}</dd>
-            <dt>Peças do procedimento</dt><dd>${c.contracting_procedure_url ? `<a href="${esc(c.contracting_procedure_url)}" target="_blank" rel="noopener">${esc(c.contracting_procedure_url)}</a>` : '—'}</dd>
-          </dl>
+        <div class="d-card">
+          <div class="t">Partes e enquadramento</div>
+          <div class="parts">
+            <span class="lb">Adjudicante</span><span>${entLine('contracting')}</span>
+            <span class="lb">Adjudicatário</span><span>${entLine('contracted')}</span>
+            <span class="lb">Concorrentes</span><span>${concorrentes}</span>
+            <span class="lb">Local de execução</span><span>${esc(c.execution_place ?? '—')}</span>
+            <span class="lb">CPV</span><span>${esc(c.cpvs ?? '—')}${c.cpvs_designation ? ' · ' + esc(c.cpvs_designation) : ''}</span>
+            <span class="lb">Fundamentação</span><span>${esc(c.contract_fundamentation ?? '—')}</span>
+            <span class="lb">Regime</span><span>${esc(c.regime ?? '—')}</span>
+          </div>
         </div>
-        <div class="card">
-          <h2>Documentos (${(c.documents ?? []).length})</h2>
-          <table>
-            <thead><tr><th>Ficheiro</th><th>Tipo</th><th>Tamanho</th><th>Download</th></tr></thead>
-            <tbody>${docs || '<tr><td colspan="4" class="muted">Sem documentos.</td></tr>'}</tbody>
-          </table>
-        </div>
-        <div class="card">
-          <div class="toolbar"><h2 style="margin:0">Preparar renovação (IA)</h2>
-            <button id="ai-contract-btn">${ico('search')} Analisar com IA</button></div>
-          <p class="muted">Analisa este contrato e os seus documentos (quando descarregados) no contexto da tua atividade: critérios usados, requisitos, e o que preparar desde já para vencer a renovação.</p>
-          <div id="ai-contract-result"></div>
-        </div>
+        ${(c.documents ?? []).length ? `<div class="d-card">
+          <div class="t">Documentos · ${(c.documents ?? []).length}</div>
+          <div>${docs}</div>
+        </div>` : ''}
+        <div id="ai-contract-result"></div>
       </div>
       <div>
-        <div class="card side-card">
-          <div class="side-label">Preço contratual</div>
-          <div class="price-hero">${fmtPrice(c.initial_contractual_price)}</div>
-          <div class="muted">Preço efetivo: ${fmtPrice(c.total_effective_price)}</div>
-          <hr class="hairline">
-          ${kv('Publicação', fmtDate(c.publication_date))}
-          ${kv('Celebração', fmtDate(c.signing_date))}
-          ${kv('Prazo de execução', esc(c.execution_deadline ?? '—'))}
-          ${kv('Fecho', fmtDate(c.close_date))}
+        <div class="d-price">
+          <div class="k">PREÇO CONTRATUAL</div>
+          <div class="big">${fmtPrice(c.initial_contractual_price)}</div>
+          ${c.total_effective_price != null ? `<div class="eff">preço efetivo: ${fmtPrice(c.total_effective_price)}</div>` : ''}
+          <div class="sep">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="k">FIM PREVISTO</span>${fimBadge}</div>
+            ${c.estimated_end_date
+              ? `<div class="fim">${dPt(c.estimated_end_date)}</div>
+                 <p class="est">Estimado: celebração (${dPt(c.signing_date)})${c.execution_deadline ? ' + ' + esc(String(c.execution_deadline)) : ''}.</p>`
+              : '<p class="est">Sem data de celebração ou prazo no BASE — não é possível estimar.</p>'}
+          </div>
         </div>
-        <div class="card side-card tint">
-          <div class="side-label">Fim previsto</div>
-          ${c.estimated_end_date
-            ? `<div class="side-num">${fmtDate(c.estimated_end_date)}</div>
-               <div style="margin:0.25rem 0 0.45rem">${endDaysBadge(c.estimated_end_date).trim()}</div>
-               <p class="small-print">Estimado: celebração (${fmtDate(c.signing_date)}) + ${esc(c.execution_deadline)}. É esta a data "Termina" das renovações, mapa e digest.</p>`
-            : '<p class="small-print">Sem data de celebração ou prazo em dias no BASE — não é possível estimar.</p>'}
-        </div>
-        <div class="card side-card">
-          <div class="side-label">Regime</div>
-          <div style="font-size:0.86rem">${esc(c.regime ?? '—')}</div>
-        </div>
+        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
+        ${adj ? `<div class="d-card">
+          <div class="t">A entidade compra</div>
+          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
+          ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}
+        </div>` : ''}
       </div>
     </div>`;
 
@@ -511,8 +557,9 @@ async function renderContract(id) {
     try {
       const pid = Number(getCtx() || 0);
       const r = await api(`/api/contracts/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = renderAiFicha(r.analysis, r.cached, r.model) +
-        (r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : '');
+      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${
+        r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : ''}</div>`;
+      out.scrollIntoView({ block: 'nearest' });
     } catch (err) {
       out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
       btn.disabled = false;
@@ -851,14 +898,29 @@ async function renderInsightTab(el, q, tab, p) {
     applySelection();
   } else if (tab === 'competitors') {
     const d = await api(`/api/insights/competitors${q}`);
-    el.innerHTML = `<h2>Inteligência competitiva — adjudicatários nesta área</h2>
-      <table><thead><tr><th>Concorrente</th><th>NIF</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th><th>Quota</th><th>Clientes</th></tr></thead><tbody>
-      ${d.items.map((c) => `<tr class="clickable" onclick="location.hash='#/entities/${c.id}'">
-        <td><strong>${esc(c.name)}</strong></td><td>${esc(c.nif ?? '')}</td><td>${c.n_contracts}</td>
-        <td>${fmtCompact(c.total_value)}</td><td>${fmtCompact(c.avg_value)}</td>
-        <td>${c.share_pct != null ? c.share_pct + '%' : '—'}</td>
-        <td class="muted">${esc((c.top_clients ?? '').slice(0, 120))}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sem dados.</td></tr>'}
-      </tbody></table>`;
+    const maxShare = Math.max(1, ...d.items.map((c) => Number(c.share_pct) || 0));
+    const ownNif = (window._me?.company?.nif || '').replace(/\D/g, '');
+    const quotaColor = (share, own) => (own ? '#c2543a'
+      : share >= 25 ? '#173f35' : share >= 15 ? '#2c6353' : share >= 8 ? '#5e8a7a' : '#8fb3a4');
+    const row = (c) => {
+      const own = ownNif && String(c.nif ?? '').replace(/\D/g, '') === ownNif;
+      const share = Number(c.share_pct) || 0;
+      const w = Math.round((share / maxShare) * 100);
+      return `<div class="comp-row body" onclick="location.hash='#/entities/${c.id}'">
+        <div class="nm">${esc(c.name)}${own ? ' <span class="own">(a sua)</span>' : ''}<div class="nif">NIF ${esc(c.nif ?? '—')}</div></div>
+        <span class="r">${c.n_contracts}</span>
+        <span class="r b">${fmtCompact(c.total_value)}</span>
+        <span class="r m">${fmtCompact(c.avg_value)}</span>
+        <div class="comp-quota"><div class="track"><div class="fill" style="width:${w}%;background:${quotaColor(share, own)}"></div></div><span class="pct">${c.share_pct != null ? c.share_pct + '%' : '—'}</span></div>
+        <span class="cli">${esc(c.top_clients ?? '—')}</span>
+      </div>`;
+    };
+    el.innerHTML = `<h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Concorrentes</h1>
+      <div class="muted" style="margin:3px 0 18px">Adjudicatários com contratos na sua atividade — quota, valores médios e clientes.</div>
+      <div class="comp-table">
+        <div class="comp-row head"><span>CONCORRENTE</span><span class="r">CONTRATOS</span><span class="r">TOTAL</span><span class="r mh">MÉDIO</span><span class="qh">QUOTA</span><span class="ch">PRINCIPAIS CLIENTES</span></div>
+        ${d.items.map(row).join('') || '<div class="comp-row"><span class="muted">Sem dados.</span></div>'}
+      </div>`;
   } else if (tab === 'runs') {
     el.innerHTML = `<h2>Execuções</h2>
       <table><thead><tr><th>#</th><th>Estado</th><th>Novos contratos</th><th>Novos anúncios</th><th>Início</th><th>Fim</th><th>Pesquisas</th></tr></thead><tbody>
@@ -1790,8 +1852,9 @@ async function route() {
     }
   }
   topbar.hidden = false;
-  whoami.textContent = window._me.username;
+  whoami.innerHTML = `<span class="nm">${esc(window._me.username)}</span>${window._me.company?.name ? `<span class="co">${esc(window._me.company.name)}</span>` : ''}`;
   renderTrialBanner(window._me);
+  updateSidebar();
   if (hash === '#/subscrever') return renderSubscribe();
   // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
