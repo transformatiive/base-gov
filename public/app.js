@@ -60,6 +60,11 @@ async function api(path, opts = {}) {
     if (location.hash !== '#/login') location.hash = '#/login';
     throw new Error('unauthorized');
   }
+  if (res.status === 402) {
+    // Subscrição necessária (trial terminado) — encaminha para a página de subscrição.
+    if (location.hash !== '#/subscrever') location.hash = '#/subscrever';
+    throw new Error('subscription_required');
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
@@ -71,9 +76,12 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
+function hideTrialBanner() { const t = document.getElementById('trial-banner'); if (t) { t.hidden = true; t.innerHTML = ''; } }
+
 /* ---------- Login ---------- */
 function renderLogin() {
   topbar.hidden = true;
+  hideTrialBanner();
   app.innerHTML = `
     <div class="card login-box">
       ${wordmark(24)}
@@ -86,7 +94,7 @@ function renderLogin() {
         <div class="error" id="login-error"></div>
         <p><button type="submit">Entrar</button></p>
       </form>
-      <p class="login-foot">Acesso reservado · dados do Portal BASE</p>
+      <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis — 7 dias</a></p>
     </div>`;
   document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -98,6 +106,162 @@ function renderLogin() {
       document.getElementById('login-error').textContent = err.message === 'unauthorized' ? 'Credenciais inválidas' : err.message;
     }
   };
+}
+
+/* ---------- Inscrição (7 dias grátis) ---------- */
+async function renderRegister() {
+  topbar.hidden = true;
+  hideTrialBanner();
+  document.body.classList.add('login-bg');
+  app.innerHTML = `
+    <div class="card register-box">
+      ${wordmark(24)}
+      <h2 style="margin:0.4rem 0 0.2rem">Comece grátis — 7 dias</h2>
+      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado.</p>
+      <form id="reg-form">
+        <div class="reg-grid">
+          <div><label>Primeiro nome *</label><input type="text" name="first_name" required></div>
+          <div><label>Apelido</label><input type="text" name="last_name"></div>
+        </div>
+        <label>Email *</label><input type="email" name="email" autocomplete="email" required>
+        <div class="reg-grid">
+          <div><label>Telefone</label><input type="text" name="phone" autocomplete="tel"></div>
+          <div><label>Password *</label><input type="password" name="password" autocomplete="new-password" minlength="8" required></div>
+        </div>
+        <div class="reg-grid">
+          <div><label>Empresa *</label><input type="text" name="company_name" required></div>
+          <div><label>NIF *</label><input type="text" name="nif" inputmode="numeric" pattern="\\d{9}" maxlength="9" required></div>
+        </div>
+
+        <label style="margin-top:0.8rem">A sua atividade</label>
+        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: pirotecnia, fogo de artifício) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
+        <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
+        <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
+        <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
+          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção)" style="flex:1">
+          <button type="button" class="btn-secondary" id="reg-cpv-btn">${ico('search')} Procurar</button>
+        </div>
+        <div id="reg-cpv-results" style="margin-top:0.4rem"></div>
+
+        <div class="error" id="reg-error" style="margin-top:0.6rem"></div>
+        <p style="margin-top:0.9rem"><button type="submit" id="reg-submit">Criar conta e começar</button></p>
+        <p class="muted" style="font-size:0.8rem">Ao criar conta, começa um teste gratuito de 7 dias. Depois, ${'29€/mês + IVA'} — cancele quando quiser.</p>
+      </form>
+      <p class="login-foot">Já tem conta? <a href="#/login">Entrar</a></p>
+    </div>`;
+
+  const chosen = new Map(); // code -> designation
+  const renderChips = () => {
+    document.getElementById('reg-cpv-chips').innerHTML = [...chosen.entries()].map(([code, des]) =>
+      `<span class="chip">${esc(code)} · ${esc(des.slice(0, 28))} <button type="button" data-code="${esc(code)}" aria-label="remover">×</button></span>`).join('');
+    document.querySelectorAll('#reg-cpv-chips .chip button').forEach((b) => {
+      b.onclick = () => { chosen.delete(b.dataset.code); renderChips(); };
+    });
+  };
+  const doSearch = async () => {
+    const q = document.getElementById('reg-cpv-q').value.trim();
+    const box = document.getElementById('reg-cpv-results');
+    box.innerHTML = '<p class="muted">A pesquisar…</p>';
+    try {
+      const d = await fetch('/api/public/cpv?q=' + encodeURIComponent(q)).then((r) => r.json());
+      box.innerHTML = `<table style="min-width:0"><tbody>${d.items.map((c) =>
+        `<tr><td><strong>${esc(c.code)}</strong></td><td>${esc(c.designation)}</td><td class="muted">${c.n_contracts}</td>
+         <td><a href="#" data-code="${esc(c.code)}" data-des="${esc(c.designation)}">adicionar</a></td></tr>`).join('')}</tbody></table>`;
+      box.querySelectorAll('a[data-code]').forEach((a) => {
+        a.onclick = (e) => { e.preventDefault(); chosen.set(a.dataset.code, a.dataset.des); renderChips(); };
+      });
+    } catch { box.innerHTML = '<p class="error">Falha na pesquisa de CPV.</p>'; }
+  };
+  document.getElementById('reg-cpv-btn').onclick = doSearch;
+  document.getElementById('reg-cpv-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } };
+
+  document.getElementById('reg-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const terms = String(fd.get('terms') || '').split(',').map((t) => t.trim()).filter(Boolean);
+    const cpv_codes = [...chosen.keys()];
+    const errBox = document.getElementById('reg-error');
+    errBox.textContent = '';
+    if (terms.length === 0 && cpv_codes.length === 0) {
+      errBox.textContent = 'Escolha pelo menos uma palavra-chave ou código CPV da sua atividade.'; return;
+    }
+    const btn = document.getElementById('reg-submit');
+    btn.disabled = true; btn.textContent = 'A criar conta…';
+    try {
+      await api('/api/auth/register', { method: 'POST', body: JSON.stringify({
+        first_name: fd.get('first_name'), last_name: fd.get('last_name'), phone: fd.get('phone'),
+        email: fd.get('email'), password: fd.get('password'),
+        company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes,
+      }) });
+      window._me = null;
+      location.hash = '#/';
+    } catch (err) {
+      errBox.textContent = err.message; btn.disabled = false; btn.textContent = 'Criar conta e começar';
+    }
+  };
+}
+
+/* ---------- Banner de trial / subscrição no topo ---------- */
+function renderTrialBanner(me) {
+  const host = document.getElementById('trial-banner');
+  const c = me?.company;
+  if (!host) return;
+  if (!c || me.is_admin || c.subscription_status === 'active') { host.hidden = true; host.innerHTML = ''; return; }
+  let msg = '';
+  let cls = 'trial';
+  if (c.subscription_status === 'trialing') {
+    const d = c.trial_days_left;
+    msg = `Teste gratuito — ${d} dia${d === 1 ? '' : 's'} restante${d === 1 ? '' : 's'}.`;
+  } else if (c.subscription_status === 'past_due') {
+    cls = 'past-due'; msg = 'Pagamento pendente — regularize para manter o acesso.';
+  } else if (c.subscription_status === 'canceled') {
+    cls = 'past-due'; msg = 'Subscrição cancelada.';
+  }
+  host.hidden = false;
+  host.className = 'trial-banner ' + cls;
+  host.innerHTML = `<span>${msg}</span> <a href="#/subscrever">Subscrever</a>`;
+}
+
+/* ---------- Página de subscrição ---------- */
+async function renderSubscribe() {
+  topbar.hidden = false;
+  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  let s;
+  try { s = await api('/api/billing/summary'); } catch { return; }
+  const c = s.company || {};
+  const statusLabel = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' }[c.subscription_status] || c.subscription_status;
+  app.innerHTML = `
+    <div class="card" style="max-width:640px;margin:2rem auto">
+      <div class="eyebrow" style="color:var(--brand)">Subscrição</div>
+      <h2 style="margin:0.3rem 0 0.2rem">${esc(s.plan)}</h2>
+      <div class="price" style="display:flex;align-items:baseline;gap:0.4rem;margin:0.4rem 0">
+        <span style="font-size:2rem;font-weight:700">${esc(s.price)}</span>
+      </div>
+      <p class="muted">Empresa: <strong>${esc(c.name ?? '—')}</strong> · Estado: <strong>${esc(statusLabel ?? '—')}</strong>${
+        c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · ${c.trial_days_left} dia(s) de teste restantes` : ''}</p>
+      <div class="hint">Tudo incluído: oportunidades priorizadas, radar de renovações, mapa e sazonalidade, análise IA do caderno de encargos, inteligência competitiva e digest semanal.</div>
+      ${s.billing_enabled ? `
+        <p style="margin-top:1rem">Escolha o método de pagamento:</p>
+        <div class="inline" style="gap:0.5rem;flex-wrap:wrap">
+          <button data-m="mb" class="pay-m">Multibanco</button>
+          <button data-m="mbw" class="pay-m btn-secondary">MB WAY</button>
+          <button data-m="cc" class="pay-m btn-secondary">Cartão</button>
+        </div>
+        <div id="pay-result" style="margin-top:1rem"></div>`
+        : `<div class="error" style="margin-top:1rem">Os pagamentos ainda não estão ativos nesta instalação. Contacte o suporte para subscrever.</div>`}
+      <p style="margin-top:1.2rem"><a href="#/">← Voltar ao radar</a></p>
+    </div>`;
+  document.querySelectorAll('.pay-m').forEach((b) => {
+    b.onclick = async () => {
+      const out = document.getElementById('pay-result');
+      out.innerHTML = '<p class="muted">A criar pagamento…</p>';
+      try {
+        const r = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ method: b.dataset.m }) });
+        out.innerHTML = `<div class="hint">Pagamento criado (método ${esc(r.method)}). Siga as instruções para concluir; o acesso é ativado assim que o pagamento é confirmado.</div>
+          <pre style="white-space:pre-wrap;font-size:0.8rem;background:var(--panel-2,#f6f8fb);padding:0.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r.payment, null, 2))}</pre>`;
+      } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+    };
+  });
 }
 
 /* ---------- Lista de pesquisas ---------- */
@@ -1465,6 +1629,7 @@ async function route() {
     a.classList.toggle('active', on);
   });
   if (hash === '#/login') { window._me = null; return renderLogin(); }
+  if (hash === '#/registo') { window._me = null; return renderRegister(); }
 
   // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
   // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
@@ -1477,6 +1642,8 @@ async function route() {
   }
   topbar.hidden = false;
   whoami.textContent = window._me.username;
+  renderTrialBanner(window._me);
+  if (hash === '#/subscrever') return renderSubscribe();
   // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
