@@ -523,6 +523,16 @@ async function renderContract(id) {
           <div class="t">Documentos · ${(c.documents ?? []).length}</div>
           <div>${docs}</div>
         </div>` : ''}
+        ${(c.modifications ?? []).length ? `<div class="d-card">
+          <div class="t">Modificações ao contrato · ${c.modifications.length}</div>
+          <div class="crono">
+            ${c.modifications.map((mo, i) => `<div class="crono-row">
+              <div class="crono-mark"><span class="crono-dot" style="background:#c99a3c"></span>${i < c.modifications.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
+              <div class="body">${mo.date ? `<b>${fmtDate(mo.date)}</b> · ` : ''}${esc(mo.label)}${mo.price_text ? ` <span class="muted">(${esc(mo.price_text)})</span>` : ''}</div>
+            </div>`).join('')}
+          </div>
+          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de incumbente a defender a posição).</p>
+        </div>` : ''}
         <div id="ai-contract-result"></div>
       </div>
       <div>
