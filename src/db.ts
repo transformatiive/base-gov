@@ -10,12 +10,32 @@ export const pool = new pg.Pool({
 });
 
 const SCHEMA = `
+-- Multi-tenant: uma empresa por conta (o modelo permite vários utilizadores por empresa no futuro).
+CREATE TABLE IF NOT EXISTS companies (
+  id                      SERIAL PRIMARY KEY,
+  name                    TEXT NOT NULL,
+  nif                     TEXT UNIQUE,
+  plan                    TEXT NOT NULL DEFAULT 'baseradar',
+  subscription_status     TEXT NOT NULL DEFAULT 'trialing',  -- trialing | active | past_due | canceled
+  trial_ends_at           TIMESTAMPTZ,
+  easypay_customer_id     TEXT,
+  easypay_subscription_id TEXT,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id            SERIAL PRIMARY KEY,
   username      TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email       TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name  TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name   TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone       TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin    BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email)) WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS searches (
   id             SERIAL PRIMARY KEY,
@@ -110,6 +130,11 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cpv_codes TEXT[] NOT NULL DEFAULT '{}';
+-- Multi-tenant: perfis pertencem a uma empresa; nome único por empresa (não global).
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_company_name ON profiles (company_id, lower(name));
+CREATE INDEX IF NOT EXISTS idx_profiles_company ON profiles (company_id);
 
 CREATE TABLE IF NOT EXISTS profile_runs (
   id                SERIAL PRIMARY KEY,
@@ -129,6 +154,8 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS retries INT NOT NULL DEFAULT 0;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+CREATE INDEX IF NOT EXISTS idx_searches_company ON searches (company_id);
 
 -- v2: anúncios de procedimento (concursos abertos)
 CREATE TABLE IF NOT EXISTS announcements (
@@ -243,10 +270,32 @@ export async function migrateAndSeed(): Promise<void> {
     `UPDATE opendata_imports SET status = 'pending' WHERE status = 'running' RETURNING id, year`);
   if (orphanSearches.rowCount) console.log(`[recovery] ${orphanSearches.rowCount} pesquisa(s) órfã(s) reagendada(s)`);
   if (orphanImports.rowCount) console.log(`[recovery] ${orphanImports.rowCount} import(s) órfão(s) reagendado(s)`);
-  const { rows } = await pool.query('SELECT 1 FROM users WHERE username = $1', ['admin']);
-  if (rows.length === 0) {
+  const { rows } = await pool.query('SELECT id FROM users WHERE username = $1', ['admin']);
+  let adminId = rows[0]?.id as number | undefined;
+  if (adminId === undefined) {
     const hash = await bcrypt.hash('admin123', 10);
-    await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', ['admin', hash]);
+    const ins = await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id', ['admin', hash]);
+    adminId = ins.rows[0].id;
     console.log('Seeded default user: admin');
   }
+
+  // Empresa interna que detém todos os dados pré-existentes (conta admin).
+  // Fica 'active' para nunca ser bloqueada pelo gating de subscrição.
+  let { rows: co } = await pool.query(
+    `SELECT id FROM companies WHERE name = 'Conta principal' ORDER BY id LIMIT 1`);
+  if (co.length === 0) {
+    co = (await pool.query(
+      `INSERT INTO companies (name, subscription_status) VALUES ('Conta principal', 'active') RETURNING id`)).rows;
+    console.log('Seeded default company: Conta principal');
+  }
+  const defaultCompanyId = co[0].id;
+
+  // Liga a conta admin à empresa interna e marca-a como administradora.
+  await pool.query(
+    `UPDATE users SET company_id = COALESCE(company_id, $1), is_admin = true WHERE id = $2`,
+    [defaultCompanyId, adminId]);
+
+  // Todos os perfis/pesquisas sem dono passam para a empresa interna (dados legados).
+  await pool.query('UPDATE profiles SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
+  await pool.query('UPDATE searches SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
 }

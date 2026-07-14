@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
-import { requireAuth, verifyCredentials, SESSION_COOKIE } from './auth.js';
+import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } from './auth.js';
 import { buildSearchWorkbook } from './excel.js';
 
 interface Paging {
@@ -111,21 +111,31 @@ function contractToJson(c: Record<string, unknown>, extra: Record<string, unknow
   };
 }
 
+/** true se a pesquisa pertence à empresa do pedido (ou acesso global). */
+async function searchOwned(req: Parameters<typeof auth>[0], id: number): Promise<boolean> {
+  const { companyId } = auth(req);
+  if (companyId == null) return true;
+  const { rows } = await pool.query('SELECT 1 FROM searches WHERE id = $1 AND company_id = $2', [id, companyId]);
+  return rows.length > 0;
+}
+
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---- Auth ----
   app.post('/api/auth/login', async (req, reply) => {
+    // "username" aceita username OU email (compat. com a conta admin legada).
     const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
-    if (!username || !password || !(await verifyCredentials(username, password))) {
+    const user = username && password ? await verifyCredentials(username, password) : null;
+    if (!user) {
       return reply.code(401).send({ error: { code: 'invalid_credentials', message: 'Credenciais inválidas' } });
     }
-    reply.setCookie(SESSION_COOKIE, username, {
+    reply.setCookie(SESSION_COOKIE, user.username, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
       signed: true,
       maxAge: 60 * 60 * 24 * 7,
     });
-    return { ok: true, username };
+    return { ok: true, username: user.username };
   });
 
   app.post('/api/auth/logout', async (_req, reply) => {
@@ -134,18 +144,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
-    return { username: (req as unknown as { username: string }).username };
+    const { username, companyId, isAdmin } = auth(req);
+    let company = null;
+    if (companyId != null) {
+      const { rows } = await pool.query(
+        `SELECT id, name, nif, plan, subscription_status, trial_ends_at,
+           (subscription_status = 'active'
+             OR (subscription_status = 'trialing' AND (trial_ends_at IS NULL OR trial_ends_at > now()))) AS access_ok,
+           CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
+                THEN GREATEST(0, ceil(extract(epoch FROM (trial_ends_at - now())) / 86400)::int) END AS trial_days_left
+         FROM companies WHERE id = $1`, [companyId]);
+      company = rows[0] ?? null;
+    }
+    return { username, is_admin: isAdmin, company };
   });
 
   // ---- Searches ----
   app.get('/api/searches', { preHandler: requireAuth }, async (req) => {
     const { page, size } = paging(req.query as Record<string, unknown>);
+    const params: unknown[] = [];
+    const scope = companyFilter(req, 's.company_id', params);
+    params.push(size, page * size);
     const { rows } = await pool.query(
       `SELECT s.*, u.username AS created_by_username,
          count(*) OVER() AS full_count
        FROM searches s LEFT JOIN users u ON u.id = s.created_by
-       ORDER BY s.created_at DESC LIMIT $1 OFFSET $2`,
-      [size, page * size]
+       ${scope ? `WHERE ${scope}` : ''}
+       ORDER BY s.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
     );
     return {
       total: rows.length ? Number(rows[0].full_count) : 0,
@@ -161,18 +187,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!cleaned) {
       return reply.code(400).send({ error: { code: 'invalid_term', message: 'Campo "term" é obrigatório' } });
     }
-    const username = (req as unknown as { username: string }).username;
-    const { rows: userRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    const { userId, companyId } = auth(req);
     const { rows } = await pool.query(
-      `INSERT INTO searches (term, created_by, fetch_documents) VALUES ($1, $2, $3)
+      `INSERT INTO searches (term, created_by, company_id, fetch_documents) VALUES ($1, $2, $3, $4)
        RETURNING id, term, status, fetch_documents, created_at`,
-      [cleaned, userRows[0]?.id ?? null, fetch_documents === true]
+      [cleaned, userId, companyId, fetch_documents === true]
     );
     return reply.code(201).send(rows[0]);
   });
 
   app.get('/api/searches/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const { rows } = await pool.query(
       `SELECT s.*, u.username AS created_by_username FROM searches s
        LEFT JOIN users u ON u.id = s.created_by WHERE s.id = $1`,
@@ -185,6 +211,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Reagenda uma pesquisa falhada; o processamento é idempotente e retoma onde ficou.
   app.post('/api/searches/:id/retry', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const { rows } = await pool.query(
       `UPDATE searches SET status = 'pending', retries = 0, next_attempt_at = NULL, finished_at = NULL
        WHERE id = $1 AND status = 'failed' RETURNING id`,
@@ -196,8 +223,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  app.get('/api/searches/:id/results', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/searches/:id/results', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const query = req.query as Record<string, unknown>;
     const { page, size } = paging(query);
     const params: unknown[] = [id];
@@ -222,8 +250,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Endpoint para integrações externas: detalhe completo + documentos.
-  app.get('/api/searches/:id/full', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/searches/:id/full', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const { page, size } = paging(req.query as Record<string, unknown>, 100, 500);
     const { rows } = await pool.query(
       `SELECT c.*, count(*) OVER() AS full_count
@@ -246,6 +275,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/searches/:id/export.xlsx', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const { rows } = await pool.query('SELECT term FROM searches WHERE id = $1', [id]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const buf = await buildSearchWorkbook(id);
