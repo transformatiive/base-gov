@@ -81,7 +81,39 @@ function estimatedEndDate(c: Record<string, unknown>): string | null {
   return new Date(signing.getTime() + Number(days[0]) * 86400000).toISOString().slice(0, 10);
 }
 
+/**
+ * Extrai as modificações ao contrato do JSON de detalhe do BASE que já
+ * guardamos (raw_detail_json), de forma defensiva: o BASE pode expor o array
+ * sob nomes diferentes (contractModification, modificacoes, adendas, …). Não
+ * depende de novo scraping. Devolve [] se não houver nada reconhecível.
+ */
+function extractModifications(raw: unknown): { date: string | null; label: string; price_text: string | null }[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const pickStr = (o: Record<string, unknown>, re: RegExp): string | null => {
+    for (const [k, v] of Object.entries(o)) {
+      if (re.test(k) && (typeof v === 'string' || typeof v === 'number') && String(v).trim()) return String(v).trim();
+    }
+    return null;
+  };
+  const out: { date: string | null; label: string; price_text: string | null }[] = [];
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/modif|adenda|prorrog|alter/i.test(k) || !Array.isArray(v)) continue;
+    for (const m of v) {
+      if (!m || typeof m !== 'object') continue;
+      const o = m as Record<string, unknown>;
+      const date = pickStr(o, /date|data/i);
+      const label = pickStr(o, /descri|object|reason|motiv|fundament|type|tipo|caus/i)
+        // se não houver campo descritivo, junta os primeiros textos do item
+        ?? Object.values(o).filter((x) => (typeof x === 'string') && x.trim() && x.length < 200).slice(0, 2).join(' · ')
+        ?? '(modificação)';
+      out.push({ date, label: label || '(modificação)', price_text: pickStr(o, /price|valor|value/i) });
+    }
+  }
+  return out;
+}
+
 function contractToJson(c: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  const modifications = extractModifications(c.raw_detail_json);
   return {
     id: c.id,
     basegov_id: Number(c.basegov_id),
@@ -106,6 +138,7 @@ function contractToJson(c: Record<string, unknown>, extra: Record<string, unknow
     ambient_criteria: c.ambient_criteria,
     ccp: c.ccp,
     detail_scraped_at: c.detail_scraped_at,
+    modifications,
     basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=contratos&id=${c.basegov_id}`,
     ...extra,
   };
