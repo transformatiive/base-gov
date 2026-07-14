@@ -17,6 +17,8 @@ const endDaysBadge = (d) => {
     : ` <span class="badge" style="background:#eef1ef;color:#4c5551">terminou há ${-diff} dia(s)</span>`;
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
+const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €');
+const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
 /* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
 const scorePair = (s) => (s >= 70 ? ['#e4efe8', '#2c6353'] : s >= 45 ? ['#fdf6e8', '#8a6a1e'] : ['#eef1ef', '#7d8681']);
 const scoreChip = (s, title) => {
@@ -702,27 +704,36 @@ async function renderInsightTab(el, q, tab, p) {
     const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
     const fits = window._fitCache?.[q] ?? {};
     const matrix = renderPriorityMatrix(d.items, fits);
-    el.innerHTML = `<div class="toolbar"><h2 style="margin:0">Oportunidades priorizadas</h2>
-      <form class="inline" style="margin:0" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
-        <input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por palavra-chave (objeto ou entidade)" style="min-width:230px">
-        <button type="submit">${ico('search')} Filtrar</button>
+    const scoreBarColor = (o) => (o.type === 'anuncio_aberto' ? '#c2543a' : o.score >= 70 ? '#173f35' : o.score >= 50 ? '#5e8a7a' : '#9aa6a0');
+    const subLine = (o) => {
+      if (o.type === 'anuncio_aberto') return `CONCURSO ABERTO · prazo de propostas a ${o.days_left} dias`;
+      return o.recurrence && o.recurrence > 1
+        ? `RENOVAÇÃO · entidade recorrente (${o.recurrence}×)`
+        : `RENOVAÇÃO · termina em ${o.days_left} dias`;
+    };
+    const oppRow = (o) => {
+      const f = fits[fitKey(o)];
+      const urgent = o.type === 'anuncio_aberto' || (o.days_left != null && o.days_left <= 30);
+      return `<div class="opp-tr body" onclick="location.hash='${esc(o.internal_url ?? o.basegov_url)}'">
+        <div class="opp-score"><b>${o.score}</b><div class="track"><div class="fill" style="width:${Math.min(100, o.score)}%;background:${scoreBarColor(o)}"></div></div></div>
+        <span class="opp-fit ${f ? '' : 'none'}"${f && f.reason ? ` title="${esc(f.reason)}"` : ''}>${f ? f.fit : '—'}</span>
+        <div><div class="ti">${esc(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
+        <span class="ent">${esc(o.entity ?? '—')}</span>
+        <span class="val">${fmtEuro0(o.value)}</span>
+        <span class="dat ${urgent ? 'urgent' : ''}">${o.key_date ? `${dPtShort(o.key_date)} · ${o.days_left}d` : '—'}</span>
+      </div>`;
+    };
+    el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Oportunidades</h1>
+        <div class="muted" style="margin-top:3px">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência, recorrência da entidade).</div></div>
+      <form class="opp-search" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
+        ${ico('search', 14)}<input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por objeto ou entidade">
       </form></div>
       ${matrix}
-      <p class="muted">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência e recorrência da entidade).</p>
-      <div class="hint">Score (0-100): para concursos abertos soma 25 pontos base, até 35 pelo valor (escala logarítmica) e até 40 de urgência à medida que o prazo de propostas se aproxima. Para renovações soma até 35 pelo valor, até 30 pela proximidade do fim do contrato e até 15 pela recorrência de compra da entidade. &ge;70 = prioridade alta, 45-69 = média, &lt;45 = baixa.</div>
-      ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.4rem 0" id="fit-status">Fit IA: calculado automaticamente para oportunidades nos próximos 12 meses.</p>` : ''}
-      <table><thead><tr><th>Score</th><th>Fit IA</th><th>Tipo</th><th>Oportunidade</th><th>Entidade</th><th>Valor</th><th>Data-chave</th><th>Ação recomendada</th></tr></thead><tbody>
-      ${d.items.map((o) => `<tr>
-        <td>${scoreChip(o.score)}</td>
-        <td>${fits[fitKey(o)] ? fitChip(fits[fitKey(o)].fit, esc(fits[fitKey(o)].reason))
-          : `<button class="btn-secondary fit-one" title="Calcular fit desta oportunidade (a mais de 12 meses, não é automático)" onclick="window._fitOne('${o.type}', ${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id})">${ico('refresh', 13)}</button>`}</td>
-        <td>${typeChip(o.type)}</td>
-        <td><a href="${esc(o.internal_url ?? o.basegov_url)}">${esc(o.title ?? '')}</a><br><span class="muted">${esc(o.reason)}</span>${(fits[fitKey(o)]?.reasons ?? []).length ? `<ul class="fit-reasons">${fits[fitKey(o)].reasons.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}</td>
-        <td>${esc(o.entity ?? '—')}</td>
-        <td>${fmtPrice(o.value)}</td>
-        <td>${fmtDate(o.key_date)} <span class="muted">(${o.days_left}d)</span></td>
-        <td>${esc(o.action)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Sem oportunidades ativas — executa o perfil ou alarga os termos.</td></tr>'}
-      </tbody></table>`;
+      ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.2rem 0 0.6rem" id="fit-status"></p>` : ''}
+      <div class="opp-t">
+        <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span></div>
+        ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem oportunidades ativas — executa o perfil ou alarga os termos.</div>'}
+      </div>`;
     bindMatrixTooltip(el);
     const pid = new URLSearchParams(q.slice(1)).get('profile_id');
     const toFitItem = (o) => ({
@@ -1162,7 +1173,7 @@ function renderPriorityMatrix(items, fits) {
 
   return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
     <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
-    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, azul = renovação.'}</p>
+    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
       ${yGrid}${xGrid}
       <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
@@ -1636,14 +1647,16 @@ async function renderAnnouncement(id) {
 }
 
 function renderAiFicha(an, cached, model) {
-  const badgeGo = { go: ['GO', '#15803d'], condicional: ['CONDICIONAL', '#b45309'], 'no-go': ['NO-GO', '#b91c1c'] }[an.go_no_go?.recomendacao] ?? ['?', '#64748b'];
+  // recomendação → [rótulo, cor da etiqueta, classe do destaque]
+  const rec = an.go_no_go?.recomendacao;
+  const badgeGo = { go: ['GO', '#2c6353', 'go'], condicional: ['CONDICIONAL', '#b26a00', 'condicional'], 'no-go': ['NO-GO', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
   const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   return `
-    <div class="toolbar" style="margin-top:0.4rem">
-      <span class="score" style="background:${badgeGo[1]};font-size:1rem;padding:0.3rem 0.9rem">${badgeGo[0]}</span>
+    <div class="ai-verdict">
+      <span class="ai-badge" style="background:${badgeGo[1]}">${badgeGo[0]}</span>
       ${an.fit_atividade ? `<span>Fit com a atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
     </div>
-    <p><strong>${esc(an.go_no_go?.justificacao ?? '')}</strong></p>
+    ${an.go_no_go?.justificacao ? `<div class="ai-callout ${badgeGo[2]}">${esc(an.go_no_go.justificacao)}</div>` : ''}
     <dl class="detail">
       <dt>Resumo</dt><dd>${esc(an.resumo ?? '—')}</dd>
       <dt>Critérios de adjudicação</dt><dd>${esc(an.criterios_adjudicacao ?? '—')}</dd>
