@@ -13,21 +13,21 @@ const endDaysBadge = (d) => {
   const diff = Math.round((new Date(d) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
   if (Number.isNaN(diff)) return '';
   return diff >= 0
-    ? ` <span class="badge" style="background:#dcfae6;color:#067647;border-color:#a9efc5">faltam ${diff} dia(s)</span>`
-    : ` <span class="badge" style="background:#f2f4f7;color:#475467">terminou há ${-diff} dia(s)</span>`;
+    ? ` <span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6">faltam ${diff} dia(s)</span>`
+    : ` <span class="badge" style="background:#eef1ef;color:#4c5551">terminou há ${-diff} dia(s)</span>`;
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 /* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
-const scorePair = (s) => (s >= 70 ? ['#dcfae6', '#067647'] : s >= 45 ? ['#fef0c7', '#b54708'] : ['#f2f4f7', '#475467']);
+const scorePair = (s) => (s >= 70 ? ['#e4efe8', '#2c6353'] : s >= 45 ? ['#fdf6e8', '#8a6a1e'] : ['#eef1ef', '#7d8681']);
 const scoreChip = (s, title) => {
   const [bg, fg] = scorePair(s);
   return `<span class="score" style="background:${bg};color:${fg}"${title ? ` title="${title}"` : ''}>${s}</span>`;
 };
-const FIT_BG = '#eff4ff', FIT_FG = '#175cd3';
+const FIT_BG = '#e4efe8', FIT_FG = '#2c6353';
 const fitChip = (f, title) => `<span class="score" style="background:${FIT_BG};color:${FIT_FG}"${title ? ` title="${title}"` : ''}>${f}</span>`;
 const typeChip = (t) => (t === 'anuncio_aberto'
-  ? '<span class="badge" style="background:#fffaeb;color:#b54708;border-color:#fedf89">Concurso</span>'
-  : '<span class="badge" style="background:#eff4ff;color:#175cd3;border-color:#d1e0ff">Renovação</span>');
+  ? '<span class="badge" style="background:#f7e9e4;color:#c2543a;border-color:#ecc9bf">Concurso</span>'
+  : '<span class="badge" style="background:#fdf6e8;color:#8a6a1e;border-color:#ecd9ac">Renovação</span>');
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 /* Ícones SVG inline (traço, 24x24). */
@@ -1051,7 +1051,7 @@ function aiModalClose() {
   }
 }
 
-const fitColor = (f) => (f >= 75 ? '#067647' : f >= 45 ? '#b54708' : '#98a2b3');
+const fitColor = (f) => (f >= 75 ? '#173f35' : f >= 45 ? '#c99a3c' : '#9aa6a0');
 
 /* Matriz de priorização: X = dias até à data-chave, Y = valor, bolha = recorrência, cor = fit IA ou tipo. */
 function renderPriorityMatrix(items, fits) {
@@ -1082,7 +1082,7 @@ function renderPriorityMatrix(items, fits) {
   window._matrixFits = fits ?? {};
   const dot = (o, i) => {
     const fit = fits?.[key(o)];
-    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#b42318' : '#2952e3');
+    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#c2543a' : '#173f35');
     const r = 3 + Math.min(11, Math.sqrt(o.value / maxVal) * 11);
     return `<a href="${esc(o.internal_url ?? '#')}"><circle data-mi="${i}" cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
       fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
@@ -1105,7 +1105,7 @@ function renderPriorityMatrix(items, fits) {
 /* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
 /* Rampa azul do design v2: 4 níveis visíveis sobre o basemap claro
    (os tons mais claros da rampa completa desapareciam com opacidade baixa). */
-const MAP_COLORS = ['#dbe4f5', '#8fb0f2', '#2952e3', '#1a2f8f'];
+const MAP_COLORS = ['#dfe7e2', '#a7cdbc', '#3f8a70', '#173f35'];
 const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
 const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
 
@@ -1286,11 +1286,12 @@ async function renderRadar(tab = 'opportunities') {
   if (!ctx && profiles.length > 0) { ctx = String(profiles[0].id); setCtx(ctx); }
   const active = profiles.find((p) => String(p.id) === ctx) ?? null;
 
-  const tabs = PROFILE_TABS.filter(([k]) => k !== 'runs');
+  // A navegação entre vistas (Oportunidades/Renovações/Mapa/…) vive agora na
+  // barra lateral; aqui fica apenas o contexto de atividade e os KPIs.
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <h2 style="margin:0">Radar</h2>
+        <div class="eyebrow">Radar comercial</div>
         <div class="muted">${active
           ? `Atividade: ${esc(active.name)} — ${active.terms.map(esc).join(', ')}${(active.cpv_codes ?? []).length ? ' · CPV ' + active.cpv_codes.map(esc).join(', ') : ''}`
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
@@ -1305,8 +1306,6 @@ async function renderRadar(tab = 'opportunities') {
       </div>
     </div>
     ${active ? `<div class="cards" id="radar-stats"></div>` : ''}
-    <div class="tabs">${tabs.map(([k, l]) =>
-      `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/radar/${k}'">${l}</button>`).join('')}</div>
     <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
 
   document.getElementById('ctx-select').onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
@@ -1619,13 +1618,15 @@ async function route() {
   stopPolling();
   hideMatrixTip();
   const hash = location.hash || '#/';
-  document.body.classList.toggle('login-bg', hash === '#/login');
-  // Estado ativo da navegação (aspeto de segmented control)
-  document.querySelectorAll('header nav a').forEach((a) => {
+  document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo');
+  // Estado ativo da navegação lateral. A raiz mapeia para Oportunidades.
+  const navHash = (hash === '#/' || hash === '') ? '#/radar/opportunities' : hash;
+  document.querySelectorAll('#topbar nav a').forEach((a) => {
     const href = a.getAttribute('href');
-    const on = href === '#/'
-      ? !(hash.startsWith('#/entities') || hash.startsWith('#/config') || hash.startsWith('#/profiles') || hash === '#/login')
-      : hash.startsWith(href) || (href === '#/config' && hash.startsWith('#/profiles'));
+    let on = false;
+    if (href.startsWith('#/radar/')) on = navHash === href;
+    else if (href === '#/entities') on = navHash.startsWith('#/entities');
+    else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
     a.classList.toggle('active', on);
   });
   if (hash === '#/login') { window._me = null; return renderLogin(); }
