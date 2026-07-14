@@ -801,7 +801,34 @@ async function renderInsightTab(el, q, tab, p) {
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
         <td>${fmtPrice(a.base_price)}</td></tr>`;
       }).join('') || `<tr><td colspan="6" class="muted">${showAll ? 'Sem anúncios recolhidos.' : 'Sem concursos abertos neste momento — ativa "mostrar expirados" para ver o histórico.'}</td></tr>`}
-      </tbody></table>`;
+      </tbody></table>
+      <div style="margin-top:1.4rem">
+        <div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">Concursos europeus (TED)</span><span class="sh">acima dos limiares UE · fonte Tenders Electronic Daily</span></div>
+        <div id="ted-panel" class="card" style="margin:0"><p class="muted" style="margin:0">A procurar no TED…</p></div>
+      </div>`;
+    // TED carrega em separado — não bloqueia a lista do BASE nem quebra se falhar.
+    api(`/api/insights/ted${q}`).then((t) => {
+      const host = document.getElementById('ted-panel');
+      if (!host) return;
+      const items = t.items ?? [];
+      if (!items.length) {
+        host.innerHTML = `<p class="muted" style="margin:0">${t.error ? 'TED indisponível de momento.' : 'Sem concursos europeus ativos para esta atividade (a maioria dos contratos desta área fica abaixo dos limiares UE).'}</p>`;
+        return;
+      }
+      host.style.padding = '0';
+      host.innerHTML = `<div class="opp-t" style="border:0;box-shadow:none">
+        <div class="opp-tr head" style="grid-template-columns:120px minmax(0,1fr) 200px 118px"><span>PRAZO</span><span>CONCURSO</span><span>ENTIDADE</span><span class="dat">PUBLICADO</span></div>
+        ${items.map((n) => `<div class="opp-tr body" style="grid-template-columns:120px minmax(0,1fr) 200px 118px" onclick="window.open('${esc(n.url)}','_blank')">
+          <span class="dat ${n.days_left != null && n.days_left <= 30 ? 'urgent' : ''}" style="text-align:left">${n.deadline ? `${dPtShort(n.deadline)}${n.days_left != null ? ` · ${n.days_left}d` : ''}` : '—'}</span>
+          <div><div class="ti">${esc(n.title)}</div><div class="sub">${esc((n.cpvs || []).slice(0, 3).join(' · '))} · abrir no TED ↗</div></div>
+          <span class="ent">${esc(n.buyer)}</span>
+          <span class="dat">${n.publication_date ? dPtShort(n.publication_date) : '—'}</span>
+        </div>`).join('')}
+      </div>`;
+    }).catch(() => {
+      const host = document.getElementById('ted-panel');
+      if (host) host.innerHTML = '<p class="muted" style="margin:0">TED indisponível de momento.</p>';
+    });
   } else if (tab === 'seasonality') {
     const d = await api(`/api/insights/seasonality${q}`);
     const chart = (data, metric, label) => {

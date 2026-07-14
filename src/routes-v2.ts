@@ -4,6 +4,7 @@ import { requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
+import { searchTed } from './ted.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -786,6 +787,26 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         top_clients: r.top_clients,
       })),
     };
+  });
+
+  // ---------- TED: concursos europeus (read-through, sem persistência) ----------
+  app.get('/api/insights/ted', { preHandler: requireAuth }, async (req, reply) => {
+    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
+    let cpvCodes: string[] = [];
+    let terms: string[] = [];
+    if (profileId != null) {
+      const { rows } = await pool.query('SELECT cpv_codes, terms FROM profiles WHERE id = $1', [profileId]);
+      cpvCodes = rows[0]?.cpv_codes ?? [];
+      terms = rows[0]?.terms ?? [];
+    }
+    try {
+      const items = await searchTed(cpvCodes, terms, 30);
+      return { items, source: 'TED' };
+    } catch (err) {
+      // Falha do TED não deve quebrar a vista — devolve vazio com aviso.
+      return { items: [], error: String(err).slice(0, 200) };
+    }
   });
 
   // ---------- Insights: oportunidades (scoring) ----------
