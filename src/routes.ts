@@ -59,13 +59,13 @@ async function contractDocuments(contractId: number) {
 
 async function contractEntities(contractId: number) {
   const { rows } = await pool.query(
-    `SELECT ce.role, e.nif, e.name FROM contract_entities ce
+    `SELECT ce.role, e.id, e.nif, e.name FROM contract_entities ce
      JOIN entities e ON e.id = ce.entity_id WHERE ce.contract_id = $1`,
     [contractId]
   );
-  const byRole: Record<string, { nif: string; name: string }[]> = {};
+  const byRole: Record<string, { id: number; nif: string; name: string }[]> = {};
   for (const r of rows) {
-    (byRole[r.role] ??= []).push({ nif: r.nif, name: r.name });
+    (byRole[r.role] ??= []).push({ id: r.id, nif: r.nif, name: r.name });
   }
   return byRole;
 }
