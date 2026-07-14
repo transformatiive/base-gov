@@ -93,6 +93,26 @@ function stopPolling() {
 
 function hideTrialBanner() { const t = document.getElementById('trial-banner'); if (t) { t.hidden = true; t.innerHTML = ''; } }
 
+/* Mensagens de validação do browser em português (por omissão vêm no idioma do browser). */
+function localizeValidation(form) {
+  if (!form) return;
+  const msg = (el) => {
+    const v = el.validity;
+    if (v.valueMissing) return el.type === 'checkbox' ? 'Assinale esta opção.' : 'Preencha este campo.';
+    if (v.typeMismatch && el.type === 'email') return 'Introduza um email válido (ex.: nome@empresa.pt).';
+    if (v.patternMismatch) return el.name === 'nif' ? 'O NIF tem de ter 9 dígitos.' : 'O formato não é válido.';
+    if (v.tooShort) return `Use pelo menos ${el.minLength} caracteres.`;
+    if (v.tooLong) return `Use no máximo ${el.maxLength} caracteres.`;
+    if (v.rangeUnderflow || v.rangeOverflow || v.stepMismatch) return 'Valor fora do intervalo permitido.';
+    return 'Valor inválido.';
+  };
+  form.querySelectorAll('input, select, textarea').forEach((el) => {
+    el.addEventListener('invalid', () => el.setCustomValidity(msg(el)));
+    el.addEventListener('input', () => el.setCustomValidity(''));
+    el.addEventListener('change', () => el.setCustomValidity(''));
+  });
+}
+
 /* ---------- Login ---------- */
 function renderLogin() {
   topbar.hidden = true;
@@ -111,6 +131,7 @@ function renderLogin() {
       </form>
       <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis — 7 dias</a></p>
     </div>`;
+  localizeValidation(document.getElementById('login-form'));
   document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -189,6 +210,7 @@ async function renderRegister() {
   };
   document.getElementById('reg-cpv-btn').onclick = doSearch;
   document.getElementById('reg-cpv-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } };
+  localizeValidation(document.getElementById('reg-form'));
 
   document.getElementById('reg-form').onsubmit = async (e) => {
     e.preventDefault();

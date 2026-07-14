@@ -296,7 +296,7 @@ body.login-bg { background: radial-gradient(700px 340px at 50% -120px, rgba(23, 
 .login-foot { text-align: center; font-size: 0.78rem; color: var(--muted); margin: 1.2rem 0 0; }
 
 /* ---------- Inscrição / subscrição ---------- */
-.register-box { max-width: 560px; margin: 5vh auto; }
+.register-box { max-width: 720px; margin: 5vh auto; }
 .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.9rem; }
 .register-box label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 700; font-size: 0.68rem;
   color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
