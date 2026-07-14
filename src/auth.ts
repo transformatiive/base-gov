@@ -10,40 +10,55 @@ export interface AuthUser {
   username: string;
   companyId: number | null;   // null = acesso global (chave de API / integrações)
   isAdmin: boolean;
+  accessOk: boolean;          // subscrição ativa ou trial a decorrer
 }
 
 type AuthedRequest = FastifyRequest & { auth?: AuthUser };
 
+// SQL: a conta tem acesso se a subscrição está ativa OU o trial ainda não terminou.
+const ACCESS_OK_SQL = `(c.subscription_status = 'active'
+  OR (c.subscription_status = 'trialing' AND (c.trial_ends_at IS NULL OR c.trial_ends_at > now())))`;
+
+const USER_COLS = `u.id, u.username, u.company_id, u.is_admin,
+  COALESCE(${ACCESS_OK_SQL}, true) AS access_ok`;
+const USER_FROM = `FROM users u LEFT JOIN companies c ON c.id = u.company_id`;
+
+function toUser(row: Record<string, unknown>): AuthUser {
+  return {
+    userId: row.id as number,
+    username: row.username as string,
+    companyId: (row.company_id as number) ?? null,
+    isAdmin: row.is_admin === true,
+    accessOk: row.access_ok !== false,
+  };
+}
+
 /** Devolve o utilizador (por username OU email) se as credenciais baterem certo. */
 export async function verifyCredentials(identifier: string, password: string): Promise<AuthUser | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash, company_id, is_admin
-     FROM users WHERE username = $1 OR lower(email) = lower($1) LIMIT 1`,
+    `SELECT ${USER_COLS}, u.password_hash ${USER_FROM}
+     WHERE u.username = $1 OR lower(u.email) = lower($1) LIMIT 1`,
     [identifier]
   );
   if (rows.length === 0) return null;
   if (!(await bcrypt.compare(password, rows[0].password_hash))) return null;
-  return {
-    userId: rows[0].id,
-    username: rows[0].username,
-    companyId: rows[0].company_id ?? null,
-    isAdmin: rows[0].is_admin === true,
-  };
+  return toUser(rows[0]);
 }
 
 /** Carrega o utilizador da sessão (cookie guarda o username) com a sua empresa. */
 async function loadByUsername(username: string): Promise<AuthUser | null> {
-  const { rows } = await pool.query(
-    `SELECT id, username, company_id, is_admin FROM users WHERE username = $1`,
-    [username]
-  );
-  if (rows.length === 0) return null;
-  return {
-    userId: rows[0].id,
-    username: rows[0].username,
-    companyId: rows[0].company_id ?? null,
-    isAdmin: rows[0].is_admin === true,
-  };
+  const { rows } = await pool.query(`SELECT ${USER_COLS} ${USER_FROM} WHERE u.username = $1`, [username]);
+  return rows.length ? toUser(rows[0]) : null;
+}
+
+// Prefixos de API que continuam acessíveis mesmo sem subscrição ativa
+// (autenticação, faturação, dados abertos públicos da conta e info da própria conta).
+const UNGATED = ['/api/auth/', '/api/billing/', '/api/public/'];
+
+function isGated(url: string): boolean {
+  const path = url.split('?')[0];
+  if (!path.startsWith('/api/')) return false;
+  return !UNGATED.some((p) => path.startsWith(p));
 }
 
 async function checkBasicAuth(header: string): Promise<AuthUser | null> {
@@ -57,29 +72,39 @@ async function checkBasicAuth(header: string): Promise<AuthUser | null> {
 
 /** Aceita: cookie de sessão assinado (UI), X-API-Key (integrações) ou HTTP Basic. */
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  let user: AuthUser | null = null;
+
   const raw = req.cookies[SESSION_COOKIE];
   if (raw) {
     const unsigned = req.unsignCookie(raw);
-    if (unsigned.valid && unsigned.value) {
-      const user = await loadByUsername(unsigned.value);
-      if (user) { (req as AuthedRequest).auth = user; return; }
+    if (unsigned.valid && unsigned.value) user = await loadByUsername(unsigned.value);
+  }
+
+  if (!user) {
+    const apiKey = req.headers['x-api-key'];
+    if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
+      // Integrações têm acesso global (sem empresa) — para uso interno/administrativo.
+      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true };
     }
   }
 
-  const apiKey = req.headers['x-api-key'];
-  if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
-    // Integrações têm acesso global (sem empresa) — para uso interno/administrativo.
-    (req as AuthedRequest).auth = { userId: null, username: 'api-key', companyId: null, isAdmin: true };
+  if (!user) {
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader === 'string') user = await checkBasicAuth(authHeader);
+  }
+
+  if (!user) {
+    reply.code(401).send({ error: { code: 'unauthorized', message: 'Autenticação necessária' } });
     return;
   }
 
-  const authHeader = req.headers.authorization;
-  if (typeof authHeader === 'string') {
-    const user = await checkBasicAuth(authHeader);
-    if (user) { (req as AuthedRequest).auth = user; return; }
-  }
+  (req as AuthedRequest).auth = user;
 
-  reply.code(401).send({ error: { code: 'unauthorized', message: 'Autenticação necessária' } });
+  // Gating de subscrição: empresas sem acesso (trial terminado, sem subscrição
+  // ativa) só podem usar autenticação/faturação. Admin e api-key não são gated.
+  if (!user.isAdmin && user.companyId != null && !user.accessOk && isGated(req.url)) {
+    reply.code(402).send({ error: { code: 'subscription_required', message: 'Subscrição necessária para continuar' } });
+  }
 }
 
 /** Contexto autenticado do pedido (após requireAuth). */

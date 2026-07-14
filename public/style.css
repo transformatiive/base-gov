@@ -285,3 +285,24 @@ button.fit-one:hover { background: var(--brand-tint); color: var(--brand-text); 
 /* Login: brilho radial da marca (spec §6) */
 body.login-bg { background: radial-gradient(600px 300px at 50% -80px, rgba(41, 82, 227, 0.07), transparent), var(--bg); }
 .login-foot { text-align: center; font-size: 0.75rem; color: var(--faint); margin: 1.1rem 0 0; }
+
+/* ---------- Inscrição / subscrição (fases 2-3) ---------- */
+.register-box { max-width: 560px; margin: 5vh auto; }
+.reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.9rem; }
+.register-box label { display: block; margin: 0.7rem 0 0.25rem; font-weight: 600; font-size: 0.72rem;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.register-box .reg-grid label { margin-top: 0.5rem; }
+.cpv-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cpv-chips .chip { display: inline-flex; align-items: center; gap: 0.35rem; background: var(--brand-tint);
+  border: 1px solid var(--brand-tint-border); color: var(--brand-text); border-radius: 999px;
+  padding: 0.15rem 0.6rem; font-size: 0.8rem; font-weight: 600; }
+.cpv-chips .chip button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 1rem;
+  line-height: 1; padding: 0; box-shadow: none; }
+@media (max-width: 560px) { .reg-grid { grid-template-columns: 1fr; } }
+
+#trial-banner { display: flex; justify-content: center; align-items: center; gap: 0.8rem;
+  padding: 0.5rem 1rem; font-size: 0.88rem; font-weight: 500; }
+#trial-banner.trial { background: var(--brand-tint); color: var(--brand-ink); border-bottom: 1px solid var(--brand-tint-border); }
+#trial-banner.past-due { background: #fef0c7; color: #92400e; border-bottom: 1px solid #fedf89; }
+#trial-banner a { font-weight: 700; }
+.pay-m { min-width: 120px; justify-content: center; }

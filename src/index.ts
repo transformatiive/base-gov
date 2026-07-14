@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
+import { registerAccountRoutes } from './routes-account.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
 import { ensureCpvCatalog } from './cpv.js';
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
   });
   await registerRoutes(app);
   await registerRoutesV2(app);
+  await registerAccountRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
 

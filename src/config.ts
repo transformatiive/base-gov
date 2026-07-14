@@ -11,4 +11,18 @@ export const config = {
   openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
   aiModelDeep: process.env.AI_MODEL_DEEP || 'anthropic/claude-sonnet-5',
   aiModelFast: process.env.AI_MODEL_FAST || 'anthropic/claude-haiku-4.5',
+
+  // Subscrição / trial
+  trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
+  planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA)
+  planName: process.env.PLAN_NAME || 'BaseRadar',
+  appBaseUrl: process.env.APP_BASE_URL || '',   // ex.: https://basegov-robot-production.up.railway.app
+
+  // Easypay (pagamentos PT: Multibanco, MB WAY, cartão, subscrições)
+  easypay: {
+    accountId: process.env.EASYPAY_ACCOUNT_ID || '',
+    apiKey: process.env.EASYPAY_API_KEY || '',
+    baseUrl: process.env.EASYPAY_BASE_URL || 'https://api.prod.easypay.pt/2.0',
+    webhookSecret: process.env.EASYPAY_WEBHOOK_SECRET || '',  // valida os webhooks recebidos
+  },
 };
