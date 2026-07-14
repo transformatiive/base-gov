@@ -1,6 +1,6 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { pool } from './db.js';
-import { requireAuth } from './auth.js';
+import { requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
@@ -43,9 +43,32 @@ function parseProfileId(query: Record<string, unknown>): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Isolamento por empresa: o perfil tem de pertencer à empresa do pedido.
+ * profileId null = sem filtro de atividade (agregados públicos do corpus,
+ * permitido); companyId null = acesso global (api-key).
+ */
+async function profileOwned(req: FastifyRequest, profileId: number | null): Promise<boolean> {
+  const { companyId } = auth(req);
+  if (companyId == null || profileId == null || profileId === 0) return true;
+  const { rows } = await pool.query('SELECT 1 FROM profiles WHERE id = $1 AND company_id = $2', [profileId, companyId]);
+  return rows.length > 0;
+}
+
+/** Garante acesso ao profileId; devolve false e responde 404 se não pertencer à empresa. */
+async function ensureProfile(req: FastifyRequest, reply: FastifyReply, profileId: number | null): Promise<boolean> {
+  if (await profileOwned(req, profileId)) return true;
+  reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+  return false;
+}
+
 export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- Perfis ----------
-  app.get('/api/profiles', { preHandler: requireAuth }, async () => {
+  app.get('/api/profiles', { preHandler: requireAuth }, async (req) => {
+    const { companyId } = auth(req);
+    const params: unknown[] = [];
+    let where = '';
+    if (companyId != null) { params.push(companyId); where = 'WHERE p.company_id = $1'; }
     const { rows } = await pool.query(`
       SELECT p.*,
         (SELECT count(*) FROM (${PROFILE_CONTRACTS.replace('$1', 'p.id')}) x) AS n_contracts,
@@ -53,7 +76,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         (SELECT row_to_json(r) FROM (
            SELECT id, status, new_contracts, new_announcements, started_at, finished_at
            FROM profile_runs WHERE profile_id = p.id ORDER BY created_at DESC LIMIT 1) r) AS last_run
-      FROM profiles p ORDER BY p.name`);
+      FROM profiles p ${where} ORDER BY p.name`, params);
     return { items: rows.map((p) => ({ ...p, n_contracts: Number(p.n_contracts), n_announcements: Number(p.n_announcements) })) };
   });
 
@@ -69,18 +92,17 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!name || terms.length === 0) {
       return reply.code(400).send({ error: { code: 'invalid_profile', message: 'name e terms[] são obrigatórios' } });
     }
+    const { userId, companyId } = auth(req);
     try {
       const { rows } = await pool.query(
-        `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, fetch_documents)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [name, terms, cpvCodes, schedule, body.include_announcements !== false, body.fetch_documents === true]
+        `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, fetch_documents, company_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [name, terms, cpvCodes, schedule, body.include_announcements !== false, body.fetch_documents === true, companyId]
       );
       const profile = rows[0];
       let runId: number | null = null;
       if (body.run_now !== false) {
-        const username = (req as unknown as { username: string }).username;
-        const { rows: u } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-        runId = await createProfileRun(profile.id, u[0]?.id ?? null);
+        runId = await createProfileRun(profile.id, userId);
       }
       return reply.code(201).send({ ...profile, run_id: runId });
     } catch (err: unknown) {
@@ -93,6 +115,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.get('/api/profiles/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, id))) return;
     const { rows } = await pool.query('SELECT * FROM profiles WHERE id = $1', [id]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
     const { rows: runs } = await pool.query(
@@ -126,19 +149,19 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.post('/api/profiles/:id/run', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, id))) return;
     const { rows: pending } = await pool.query(
       `SELECT 1 FROM profile_runs WHERE profile_id = $1 AND status IN ('pending','running')`, [id]);
     if (pending.length > 0) {
       return reply.code(409).send({ error: { code: 'already_running', message: 'Este perfil já tem um run em curso' } });
     }
-    const username = (req as unknown as { username: string }).username;
-    const { rows: u } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-    const runId = await createProfileRun(id, u[0]?.id ?? null);
+    const runId = await createProfileRun(id, auth(req).userId);
     return reply.code(201).send({ run_id: runId });
   });
 
   app.delete('/api/profiles/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, id))) return;
     await pool.query('DELETE FROM profiles WHERE id = $1', [id]);
     return reply.code(204).send();
   });
@@ -152,6 +175,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/opendata/import', { preHandler: requireAuth }, async (req, reply) => {
+    // Importa para o corpus partilhado — operação administrativa.
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Operação reservada a administradores' } });
     const { years } = (req.body ?? {}) as { years?: number[] };
     const list = (years ?? []).map(Number).filter((y) => y >= 2012 && y <= 2100);
     if (list.length === 0) {
@@ -176,6 +201,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    if (!(await ensureProfile(req, reply, profileId))) return;
     try {
       return await analyzeAnnouncement(id, profileId);
     } catch (err) {
@@ -187,6 +213,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    if (!(await ensureProfile(req, reply, profileId))) return;
     try {
       return await analyzeContract(id, profileId);
     } catch (err) {
@@ -199,6 +226,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
+    if (!(await ensureProfile(req, reply, profileId))) return;
     try {
       return await responseTemplate(id, profileId);
     } catch (err) {
@@ -207,8 +235,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/profiles/:id/fit-scores', { preHandler: requireAuth }, async (req, reply) => {
-    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const profileId = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, profileId))) return;
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
     try {
       return { scores: await fitScores(profileId, items) };
@@ -251,7 +280,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   // Digest como dados JSON (página da app)
   app.get('/api/profiles/:id/digest.json', { preHandler: requireAuth }, async (req, reply) => {
-    const d = await digestData(Number((req.params as { id: string }).id));
+    const pid = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, pid))) return;
+    const d = await digestData(pid);
     if (!d) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
     return {
       profile: { id: d.profile.id, name: d.profile.name },
@@ -273,6 +304,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // Digest semanal em HTML pronto para email (layout independente da app)
   app.get('/api/profiles/:id/digest.html', { preHandler: requireAuth }, async (req, reply) => {
     const profileId = Number((req.params as { id: string }).id);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const data = await digestData(profileId);
     if (!data) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
     const { profile, newAnns, openAnns, renewals, intro } = data;
@@ -354,9 +386,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Anúncios ----------
-  app.get('/api/announcements', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/announcements', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const onlyOpen = q.open === '1';
     const params: unknown[] = [];
     let join = '';
@@ -407,6 +440,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const district = String(q.district ?? '').trim();
     if (!district) return reply.code(400).send({ error: { code: 'invalid_district', message: 'district é obrigatório' } });
     const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
     const params = [...scope.params, district];
     const d = `$${params.length}`;
@@ -461,9 +495,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: renovações ----------
-  app.get('/api/insights/renewals', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/renewals', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const months = Math.min(24, Math.max(1, Number(q.months ?? 6) || 6));
     const scope = contractScope(profileId);
     const params = [...scope.params, months];
@@ -499,8 +534,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: sazonalidade ----------
-  app.get('/api/insights/seasonality', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/seasonality', { preHandler: requireAuth }, async (req, reply) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
     const { rows: contracts } = await pool.query(
       `SELECT extract(month FROM c.publication_date)::int AS month,
@@ -531,8 +567,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: mapa (por distrito) ----------
-  app.get('/api/insights/map', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/map', { preHandler: requireAuth }, async (req, reply) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
     const { rows } = await pool.query(
       `SELECT coalesce(${DISTRICT}, 'Desconhecido') AS district,
@@ -553,9 +590,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: timeline mensal por distrito (slider do mapa) ----------
-  app.get('/api/insights/map-timeline', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/map-timeline', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
     // basis=end: meses futuros por data de FIM do contrato (renovações previstas por distrito)
     // basis=publication (default): meses históricos por data de publicação
@@ -688,8 +726,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: concorrentes (adjudicatários no scope) ----------
-  app.get('/api/insights/competitors', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/competitors', { preHandler: requireAuth }, async (req, reply) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
     // Consolidação por NIF: o mesmo adjudicatário aparece por vezes com pequenas
     // variações de nome (ex.: "Machados, Lda" vs "Machados Lda") em entity_ids
@@ -750,9 +789,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: oportunidades (scoring) ----------
-  app.get('/api/insights/opportunities', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/insights/opportunities', { preHandler: requireAuth }, async (req, reply) => {
     const query = req.query as Record<string, unknown>;
     const profileId = parseProfileId(query);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const textFilter = String(query.q ?? '').trim().toLowerCase();
     const scope = contractScope(profileId);
 
