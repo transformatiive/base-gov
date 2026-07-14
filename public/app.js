@@ -1902,6 +1902,24 @@ async function renderEntity(id) {
     .filter((c) => c.end_date && new Date(c.end_date) >= new Date(new Date().toISOString().slice(0, 10)))
     .sort((a, b) => new Date(a.end_date) - new Date(b.end_date))[0];
 
+  // Enriquecimento derivado do corpus (sem fontes externas): tendência,
+  // concentração de clientes/fornecedores, canal de acordo-quadro e — para
+  // adjudicatárias — um sinal de vulnerabilidade (= oportunidade de disputa).
+  const yrs = (r.by_year ?? []).slice().sort((a, b) => b.year - a.year);
+  let trend = null;
+  if (yrs[0] && yrs[1] && (yrs[1].total_value ?? 0) > 0) {
+    const rel = ((yrs[0].total_value ?? 0) - yrs[1].total_value) / yrs[1].total_value;
+    trend = rel > 0.15 ? 'up' : rel < -0.15 ? 'down' : 'flat';
+  }
+  const topCp = (r.counterparts ?? [])[0];
+  const conc = topCp && r.total_value > 0 ? Math.round((topCp.total_value / r.total_value) * 100) : null;
+  const usesAQ = (r.procedure_types ?? []).some((pt) => /acordo[-\s]?quadro/i.test(pt.type || ''));
+  const vulnerable = !isBuyer && trend === 'down' && conc != null && conc >= 50;
+  const signals = [];
+  if (trend) signals.push(`Atividade <b style="color:${trend === 'up' ? '#2c6353' : trend === 'down' ? '#c2543a' : '#4c5551'}">${trend === 'up' ? 'em crescimento' : trend === 'down' ? 'em declínio' : 'estável'}</b> face ao ano anterior.`);
+  if (conc != null && topCp) signals.push(`<b>${conc}%</b> do valor ${isBuyer ? 'adjudicado a' : 'proveniente de'} <b>${esc(topCp.name)}</b>${conc >= 50 ? ' — dependência elevada.' : '.'}`);
+  if (usesAQ) signals.push(isBuyer ? 'Compra ao abrigo de <b>acordos-quadro</b> — para fornecer é preciso estar no AQ.' : 'Fornece ao abrigo de <b>acordos-quadro</b>.');
+
   const recent = (r.recent_contracts ?? []).slice(0, 8).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
     <span class="pub">${fmtDate(c.publication_date)}</span>
     <span class="obj">${esc(c.object_brief_description ?? '—')}</span>
@@ -1932,6 +1950,11 @@ async function renderEntity(id) {
           <div class="t">${isBuyer ? 'Como compra' : 'Como vende'}</div>
           <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${topProc ? `Sobretudo por <b>${esc(topProc.type ?? '—')}</b> · ` : ''}${r.n_contracts} contrato${r.n_contracts === 1 ? '' : 's'}${sinceYear ? ` desde ${sinceYear}` : ''} (média ${fmtCompact(r.avg_value)}).</div>
         </div>
+        ${signals.length ? `<div class="d-card">
+          <div class="t">Sinais</div>
+          <ul style="margin:0;padding-left:1.1rem;font-size:12.5px;color:var(--ink-2);line-height:1.75">${signals.map((s) => `<li>${s}</li>`).join('')}</ul>
+          ${vulnerable ? '<div class="ai-callout condicional" style="margin:12px 0 0;font-size:12.5px">Sinal de abertura: adjudicatário em declínio e dependente de poucos clientes — bom alvo para disputar contas.</div>' : ''}
+        </div>` : ''}
         ${(r.counterparts ?? []).length ? `<div class="d-card">
           <div class="t">${counterLabel}</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
