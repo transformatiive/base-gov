@@ -1,10 +1,13 @@
 import { createRequire } from 'node:module';
+import yauzl from 'yauzl';
 import { pool } from './db.js';
 import { config } from './config.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
 const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -67,6 +70,98 @@ async function fetchPdfText(url: string, maxChars = 45_000): Promise<string | nu
   }
 }
 
+/** Extrai texto de todos os PDFs dentro de um ZIP, respeitando um orçamento de caracteres. */
+function pdfsFromZip(buffer: Buffer, budget: { chars: number }): Promise<string[]> {
+  return new Promise((resolve) => {
+    const out: string[] = [];
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zip) => {
+      if (err || !zip) return resolve(out);
+      zip.readEntry();
+      zip.on('entry', (entry) => {
+        if (/\/$/.test(entry.fileName) || !/\.pdf$/i.test(entry.fileName) || budget.chars <= 0 || entry.uncompressedSize > 25 * 1024 * 1024) {
+          zip.readEntry();
+          return;
+        }
+        zip.openReadStream(entry, (e2, stream) => {
+          if (e2 || !stream) { zip.readEntry(); return; }
+          const chunks: Buffer[] = [];
+          stream.on('data', (c: Buffer) => chunks.push(c));
+          stream.on('end', () => {
+            pdfParse(Buffer.concat(chunks))
+              .then(({ text }) => {
+                const t = text.replace(/\s+\n/g, '\n').trim();
+                if (t) { const s = t.slice(0, Math.max(0, budget.chars)); out.push(s); budget.chars -= s.length; }
+              })
+              .catch(() => {})
+              .finally(() => zip.readEntry());
+          });
+          stream.on('error', () => zip.readEntry());
+        });
+      });
+      zip.on('end', () => resolve(out));
+      zip.on('error', () => resolve(out));
+    });
+  });
+}
+
+/** Descobre links de documentos (PDF/ZIP ou padrões de download) numa página HTML. */
+function extractDocLinks(html: string, base: string): string[] {
+  const urls = new Set<string>();
+  const re = /(?:href|src|data-href|data-url)\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const raw = m[1];
+    if (/\.(pdf|zip)(\?|#|$)/i.test(raw) || /(download|documento|ficheiro|anexo|getdoc|getfile|blob|pe%c3%a7a|peca|caderno)/i.test(raw)) {
+      try { urls.add(new URL(raw, base).toString()); } catch { /* ignora URLs inválidos */ }
+    }
+  }
+  return [...urls];
+}
+
+/**
+ * Recolhe (best-effort) as peças do procedimento a partir do URL da plataforma
+ * eletrónica (AcinGov, Vortal, Saphety, ESPAP…). Sob o CCP, as peças dos
+ * concursos públicos são de acesso livre; ainda assim cada plataforma difere e
+ * algumas exigem registo — nesses casos devolve vazio sem quebrar a análise.
+ */
+async function fetchProcedureDocsText(pageUrl: string, maxChars = 55_000): Promise<{ text: string; count: number }> {
+  const budget = { chars: maxChars };
+  const parts: string[] = [];
+  let count = 0;
+  const grabPdf = (buf: Buffer) => pdfParse(buf).then(({ text }) => {
+    const t = text.replace(/\s+\n/g, '\n').trim();
+    if (t) { const s = t.slice(0, Math.max(0, budget.chars)); parts.push(s); budget.chars -= s.length; count++; }
+  }).catch(() => {});
+  try {
+    const res = await fetch(pageUrl, { headers: { 'User-Agent': UA, Accept: '*/*' }, signal: AbortSignal.timeout(35_000), redirect: 'follow' });
+    if (!res.ok) return { text: '', count: 0 };
+    const ct = res.headers.get('content-type') || '';
+    const finalUrl = res.url || pageUrl;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const looksHtml = /html/i.test(ct);
+    if (/pdf/i.test(ct) || (/\.pdf(\?|#|$)/i.test(finalUrl) && !looksHtml)) { await grabPdf(buf); return { text: parts.join(''), count }; }
+    if (/zip/i.test(ct) || (/\.zip(\?|#|$)/i.test(finalUrl) && !looksHtml)) { parts.push(...await pdfsFromZip(buf, budget)); return { text: parts.join('\n\n---\n\n'), count: parts.length }; }
+    // HTML → descobrir e descarregar documentos
+    const links = extractDocLinks(buf.toString('utf8'), finalUrl).slice(0, 10);
+    for (const link of links) {
+      if (budget.chars <= 0 || count >= 6) break;
+      try {
+        const r = await fetch(link, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000), redirect: 'follow' });
+        if (!r.ok) continue;
+        const c = r.headers.get('content-type') || '';
+        const b = Buffer.from(await r.arrayBuffer());
+        if (b.length > 25 * 1024 * 1024) continue;
+        const html = /html/i.test(c);
+        if (/pdf/i.test(c) || (/\.pdf(\?|#|$)/i.test(link) && !html)) await grabPdf(b);
+        else if (/zip/i.test(c) || (/\.zip(\?|#|$)/i.test(link) && !html)) { const z = await pdfsFromZip(b, budget); parts.push(...z); count += z.length; }
+      } catch { /* documento individual falhou — continua */ }
+    }
+  } catch (err) {
+    console.warn(`[ai] falha a recolher peças do procedimento ${pageUrl}: ${String(err).slice(0, 140)}`);
+  }
+  return { text: parts.join('\n\n---\n\n').slice(0, maxChars), count };
+}
+
 async function profileContext(profileId: number): Promise<string> {
   if (!profileId) return 'Sem contexto de atividade específico.';
   const { rows } = await pool.query('SELECT name, terms, cpv_codes FROM profiles WHERE id = $1', [profileId]);
@@ -84,23 +179,28 @@ async function profileContext(profileId: number): Promise<string> {
 }
 
 /** Ficha de oportunidade + go/no-go para um anúncio, contextualizada à atividade. */
-export async function analyzeAnnouncement(announcementId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string }> {
+export async function analyzeAnnouncement(announcementId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number }> {
   const { rows: cached } = await pool.query(
     'SELECT analysis, model FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
     [announcementId, profileId]
   );
-  if (cached.length > 0) return { analysis: cached[0].analysis, cached: true, model: cached[0].model };
+  if (cached.length > 0) return { analysis: cached[0].analysis, cached: true, model: cached[0].model, docs_used: -1 };
 
   const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [announcementId]);
   if (rows.length === 0) throw new Error('Anúncio não encontrado');
   const a = rows[0];
 
+  // Fonte 1: anúncio publicado em Diário da República (curto, mas oficial).
   const pdfText = a.reference_url ? await fetchPdfText(a.reference_url) : null;
+  // Fonte 2: peças do procedimento na plataforma eletrónica (caderno de
+  // encargos / programa) — é o que dá critérios e requisitos reais à IA.
+  const proc = a.contracting_procedure_url ? await fetchProcedureDocsText(a.contracting_procedure_url) : { text: '', count: 0 };
   const ctx = await profileContext(profileId);
 
   const system = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
 ${ctx}
-Analisa o anúncio de procedimento e responde APENAS com um objeto JSON válido com esta estrutura:
+Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), baseia os critérios de adjudicação, requisitos de habilitação, cauções, prazos e red flags NO TEXTO desses documentos (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação.
+Analisa o procedimento e responde APENAS com um objeto JSON válido com esta estrutura:
 {
  "resumo": "2-3 frases sobre o que a entidade quer comprar",
  "criterios_adjudicacao": "critério(s) e ponderações se indicados, ou 'não especificado no anúncio'",
@@ -124,7 +224,7 @@ Analisa o anúncio de procedimento e responde APENAS com um objeto JSON válido 
 - CPV: ${a.cpvs ?? 'n/d'}
 - Peças do procedimento: ${a.contracting_procedure_url ?? 'n/d'}
 
-${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}` : 'PDF do anúncio indisponível — analisa apenas com os dados estruturados e indica essa limitação no resumo.'}`;
+${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${proc.text ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${proc.count} documento(s) da plataforma):\n${proc.text}` : ''}${!pdfText && !proc.text ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
 
   const model = config.aiModelDeep;
   const raw = await chat(model, system, user, 3500);
@@ -135,7 +235,7 @@ ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}` 
      ON CONFLICT (announcement_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
     [announcementId, profileId, model, JSON.stringify(analysis)]
   );
-  return { analysis, cached: false, model };
+  return { analysis, cached: false, model, docs_used: proc.count };
 }
 
 export interface FitItem {
