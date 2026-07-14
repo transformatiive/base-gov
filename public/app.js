@@ -54,6 +54,16 @@ const ico = (name, size = 15) =>
 const wordmark = (size = 20) =>
   `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Base<span class="accent">Radar</span></span></span>`;
 
+/* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
+const scoreDonut = (score, color, size = 52) => {
+  const s = Math.max(0, Math.min(100, Number(score) || 0));
+  const dash = `${Math.round((s / 100) * 138)} 138`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 52 52" aria-hidden="true">
+    <circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle>
+    <circle cx="26" cy="26" r="22" fill="none" stroke="${color}" stroke-width="5" stroke-dasharray="${dash}" stroke-linecap="round" transform="rotate(-90 26 26)"></circle>
+    <text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">${s}</text></svg>`;
+};
+
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   if (res.status === 401) {
@@ -1264,6 +1274,143 @@ function updateLeafletMarkers(items, radiusRef) {
 function getCtx() { return localStorage.getItem('ctxProfile') || ''; }
 function setCtx(v) { localStorage.setItem('ctxProfile', v || ''); }
 
+/* ---------- Hoje: painel diário de ação (agrega os insights existentes) ---------- */
+async function renderHoje() {
+  const profilesData = await api('/api/profiles');
+  const profiles = profilesData.items;
+  if (profiles.length === 0) return renderRadar('opportunities'); // reencaminha ao onboarding
+
+  let ctx = getCtx();
+  if (ctx && !profiles.some((p) => String(p.id) === ctx)) ctx = '';
+  const pid = ctx || String(profiles[0].id);
+  const active = profiles.find((p) => String(p.id) === pid) ?? profiles[0];
+
+  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  const q = `?profile_id=${pid}`;
+  const [opp, prof, mapData, compData] = await Promise.all([
+    api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
+    api(`/api/profiles/${pid}`).catch(() => null),
+    api(`/api/insights/map${q}`).catch(() => ({ items: [] })),
+    api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
+  ]);
+  const items = opp.items ?? [];
+  const withDays = items.filter((o) => o.days_left != null);
+  const agir = withDays.filter((o) => o.days_left <= 30).sort((a, b) => b.score - a.score).slice(0, 4);
+  const preparar = withDays.filter((o) => o.type === 'renovacao' && o.days_left > 30 && o.days_left <= 183)
+    .sort((a, b) => a.days_left - b.days_left).slice(0, 5);
+  const monitorizar = withDays.filter((o) => o.days_left > 183).sort((a, b) => b.score - a.score);
+
+  const jogo = withDays.filter((o) => o.days_left <= 90 && o.value);
+  const jogoTotal = jogo.reduce((s, o) => s + (o.value || 0), 0);
+  const jogoConc = jogo.filter((o) => o.type === 'anuncio_aberto').length;
+  const jogoRenov = jogo.filter((o) => o.type === 'renovacao').length;
+  const nRenov12 = items.filter((o) => o.type === 'renovacao').length;
+  const totals = prof?.totals ?? {};
+  const fitCache = window._fitCache?.[q] ?? {};
+  const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
+
+  const h = new Date().getHours();
+  const greet = h < 12 ? 'Bom dia' : h < 20 ? 'Boa tarde' : 'Boa noite';
+  const firstName = esc((window._me?.username || '').split(/[\s@]/)[0] || 'Olá');
+  const today = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const contactar = (keyDate) => {
+    if (!keyDate) return '—';
+    const d = new Date(Math.max(Date.now(), new Date(keyDate).getTime() - 120 * 86400000));
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
+  };
+  const chipText = (o) => (o.type === 'anuncio_aberto' ? `CONCURSO · ${o.days_left}d` : 'RENOVAÇÃO');
+  const chipCls = (o) => (o.type === 'anuncio_aberto' ? 'concurso' : 'renovacao');
+
+  const agirCard = (o) => {
+    const fit = fitCache[fitKey(o)];
+    return `<div class="opp-card" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
+      ${scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c')}
+      <div style="min-width:0">
+        <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">fit IA ${fit.fit}/100</span>` : ''}</div>
+        <div class="ti">${esc(o.title ?? '')}</div>
+        <div class="su">${esc(o.entity ?? '—')}${o.value != null ? ' · ' + fmtCompact(o.value) : ''}</div>
+      </div>
+      <div class="opp-actions">
+        <a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>
+        <a class="btn ghost" href="${esc(o.basegov_url ?? '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ver peças</a>
+      </div></div>`;
+  };
+  const prepRow = (o) => `<div class="prep-row" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
+    ${scoreDonut(o.score, '#c99a3c', 44)}
+    <div><div class="ti">${esc(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
+    <div class="cd">contactar até<br><b>${contactar(o.key_date)}</b></div>
+    <div class="vl">${fmtCompact(o.value)}</div></div>`;
+
+  const maxMoney = Math.max(1, ...(mapData.items ?? []).map((d) => d.total_value));
+  const money = (mapData.items ?? []).filter((d) => d.district !== 'Desconhecido').slice(0, 5).map((d) => {
+    const pct = Math.round((d.total_value / maxMoney) * 100);
+    return `<div class="money-row"><span class="nm">${esc(d.district)}</span>
+      <div class="track"><div class="fill" style="width:${pct}%;background:${mapColor(d.total_value, maxMoney)}"></div></div>
+      <span class="vl">${fmtCompact(d.total_value)}</span></div>`;
+  }).join('');
+
+  const top = (compData.items ?? [])[0];
+  const competCard = top
+    ? `<div class="mini-card compet-card">
+        <div class="head"><span class="t">Concorrência</span><a href="#/radar/competitors">ver análise →</a></div>
+        <p>O <b>${esc(top.name)}</b> lidera a sua área com ${top.share_pct != null ? top.share_pct + '%' : '—'} de quota (${top.n_contracts} contrato${top.n_contracts === 1 ? '' : 's'}).${nRenov12 ? ' As renovações são a melhor via para ganhar terreno.' : ''}</p>
+      </div>`
+    : `<div class="mini-card">
+        <div class="head"><span class="t">Atividade</span><a href="#/config/profiles">gerir →</a></div>
+        <p class="compet-card">${esc(active.name)} — ${active.terms.map(esc).join(', ')}.</p>
+      </div>`;
+
+  app.innerHTML = `
+    <div class="hoje-head">
+      <div>
+        <div class="day">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
+        <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : 'Sem prazos urgentes esta semana.'}</h1>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex:none">
+        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+          ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+        </select>
+        <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>
+      </div>
+    </div>
+    <div class="hoje-grid">
+      <div class="hoje-col">
+        <div>
+          <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
+          <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem oportunidades com prazo nos próximos 30 dias.</p></div>'}</div>
+        </div>
+        <div>
+          <div class="sec-head"><span class="sd" style="background:#c99a3c"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
+          ${preparar.length ? `<div class="prep-card">${preparar.map(prepRow).join('')}</div>` : '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem renovações nesta janela.</p></div>'}
+        </div>
+        ${monitorizar.length ? `<div>
+          <div class="sec-head"><span class="sd" style="background:#9aa6a0"></span><span class="st">Monitorizar</span><a class="sh" href="#/radar/opportunities">${monitorizar.length} oportunidade${monitorizar.length === 1 ? '' : 's'} a mais de 6 meses · ver todas →</a></div>
+          <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${esc((o.title ?? '').slice(0, 44))} · ${fmtCompact(o.value)}</span>`).join('')}</div>
+        </div>` : ''}
+      </div>
+      <div class="hoje-col" style="gap:14px">
+        <div class="injogo-card">
+          <div class="k">EM JOGO · PRÓXIMOS 90 DIAS</div>
+          <div class="big">${fmtCompact(jogoTotal)}</div>
+          <div class="sub">${jogo.length} procedimento${jogo.length === 1 ? '' : 's'} · ${jogoConc} concurso${jogoConc === 1 ? '' : 's'} + ${jogoRenov} renovaç${jogoRenov === 1 ? 'ão' : 'ões'}</div>
+          <div class="injogo-stats">
+            <div><div class="n">${totals.open_announcements ?? jogoConc}</div><div class="l">concursos abertos</div></div>
+            <div><div class="n">${nRenov12}</div><div class="l">renovações 12m</div></div>
+            <div><div class="n">${(totals.n_contracts ?? 0).toLocaleString('pt-PT')}</div><div class="l">contratos</div></div>
+          </div>
+        </div>
+        ${money ? `<div class="mini-card">
+          <div class="head"><span class="t">Onde está o dinheiro</span><a href="#/radar/map">ver mapa →</a></div>
+          ${money}
+        </div>` : ''}
+        ${competCard}
+      </div>
+    </div>`;
+
+  const sel = document.getElementById('ctx-select');
+  if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
+}
+
 async function renderRadar(tab = 'opportunities') {
   const profilesData = await api('/api/profiles');
   const profiles = profilesData.items;
@@ -1620,11 +1767,12 @@ async function route() {
   const hash = location.hash || '#/';
   document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo');
   // Estado ativo da navegação lateral. A raiz mapeia para Oportunidades.
-  const navHash = (hash === '#/' || hash === '') ? '#/radar/opportunities' : hash;
+  const navHash = (hash === '#/' || hash === '') ? '#/hoje' : hash;
   document.querySelectorAll('#topbar nav a').forEach((a) => {
     const href = a.getAttribute('href');
     let on = false;
-    if (href.startsWith('#/radar/')) on = navHash === href;
+    if (href === '#/hoje') on = navHash === '#/hoje';
+    else if (href.startsWith('#/radar/')) on = navHash === href;
     else if (href === '#/entities') on = navHash.startsWith('#/entities');
     else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
     a.classList.toggle('active', on);
@@ -1657,6 +1805,7 @@ async function route() {
   const announcement = hash.match(/^#\/announcements\/(\d+)$/);
   document.querySelector('main')?.classList.remove('wide');
   try {
+    if (hash === '#/hoje') return await renderHoje();
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
     if (profile) return await renderProfile(Number(profile[1]), profile[2] || 'opportunities');
@@ -1674,7 +1823,7 @@ async function route() {
     if (entity) return await renderEntity(Number(entity[1]));
     if (hash === '#/entities') return await renderEntities();
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
-    return await renderRadar('opportunities');
+    return await renderHoje();
   } catch (err) {
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   }
