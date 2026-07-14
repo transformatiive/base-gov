@@ -529,7 +529,13 @@ async function renderContract(id) {
         <div class="d-price">
           <div class="k">PREÇO CONTRATUAL</div>
           <div class="big">${fmtPrice(c.initial_contractual_price)}</div>
-          ${c.total_effective_price != null ? `<div class="eff">preço efetivo: ${fmtPrice(c.total_effective_price)}</div>` : ''}
+          ${(() => {
+            const ini = Number(c.initial_contractual_price), eff = Number(c.total_effective_price);
+            if (c.total_effective_price == null) return '';
+            const diverge = Number.isFinite(ini) && Number.isFinite(eff) && ini > 0 && Math.abs(eff - ini) / ini >= 0.005;
+            const pct = diverge ? Math.round(((eff - ini) / ini) * 100) : 0;
+            return `<div class="eff">preço efetivo: ${fmtPrice(c.total_effective_price)}${diverge ? ` <span class="fim-badge" style="background:#e9b99a">${pct > 0 ? '+' : ''}${pct}% · contrato modificado</span>` : ''}</div>`;
+          })()}
           <div class="sep">
             <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="k">FIM PREVISTO</span>${fimBadge}</div>
             ${c.estimated_end_date
