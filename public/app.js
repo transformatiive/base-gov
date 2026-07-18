@@ -407,22 +407,22 @@ async function renderPlans() {
         } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
         return;
       }
-      // checkout: escolher método de pagamento
+      // checkout: escolher a forma de pagamento (subscrição cartão vs pontual)
       const plan = b.dataset.plan;
       const methods = document.getElementById('plan-method');
-      methods.innerHTML = `<p style="margin:0 0 .4rem">Método de pagamento para o plano <strong>${PLAN_LABEL[plan]}</strong>:</p>
+      methods.innerHTML = `<p style="margin:0 0 .5rem">Como quer pagar o plano <strong>${PLAN_LABEL[plan]}</strong>?</p>
         <div class="inline" style="gap:.5rem;flex-wrap:wrap">
-          <button data-m="mb" class="pay-m" data-plan="${plan}">Multibanco</button>
-          <button data-m="mbw" class="pay-m btn-secondary" data-plan="${plan}">MB WAY</button>
-          <button data-m="cc" class="pay-m btn-secondary" data-plan="${plan}">Cartão</button>
-        </div>`;
-      methods.querySelectorAll('.pay-m').forEach((pm) => {
+          <button class="pay-mode" data-mode="subscription" data-plan="${plan}">Cartão — subscrição automática</button>
+          <button class="pay-mode btn-secondary" data-mode="payment" data-plan="${plan}">MB WAY / Multibanco / transferência — 1 mês</button>
+        </div>
+        <p class="muted" style="font-size:.8rem;margin:.5rem 0 0">O cartão renova automaticamente todos os meses. Os restantes métodos são um pagamento único de 1 mês.</p>`;
+      methods.querySelectorAll('.pay-mode').forEach((pm) => {
         pm.onclick = async () => {
-          out.innerHTML = '<p class="muted">A criar pagamento…</p>';
+          out.innerHTML = '<p class="muted">A abrir o pagamento seguro…</p>';
           try {
-            const r = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ method: pm.dataset.m, plan: pm.dataset.plan }) });
-            out.innerHTML = `<div class="hint">Pagamento criado (método ${esc(r.method)}, plano ${PLAN_LABEL[r.plan] || r.plan}). Siga as instruções para concluir; o plano é ativado assim que o pagamento é confirmado.</div>
-              <pre style="white-space:pre-wrap;font-size:.8rem;background:var(--panel-2,#f6f8fb);padding:.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r.payment, null, 2))}</pre>`;
+            const r = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan: pm.dataset.plan, mode: pm.dataset.mode }) });
+            if (r.url) { location.href = r.url; return; }   // redireciona para o Stripe Checkout
+            out.innerHTML = '<p class="error">Não foi possível iniciar o pagamento.</p>';
           } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
         };
       });
@@ -433,6 +433,8 @@ async function renderPlans() {
 /* ---------- Conta: plano, uso de IA e equipa (seats) ---------- */
 async function renderAccount() {
   topbar.hidden = false;
+  const paid = /[?&]pago=1/.test(location.hash);
+  if (paid) { window._me = null; window._caps = null; }   // força releitura do plano após pagamento
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
   let caps, summary, seats;
   try {
@@ -451,6 +453,7 @@ async function renderAccount() {
   app.innerHTML = `
     <div class="card" style="max-width:820px;margin:1.5rem auto">
       <div class="eyebrow" style="color:var(--brand)">Conta</div>
+      ${paid ? '<div class="hint" style="margin:.4rem 0">Pagamento recebido. Assim que for confirmado pelo banco, o plano é ativado automaticamente — pode demorar alguns instantes nos métodos MB WAY / Multibanco / transferência.</div>' : ''}
       <h2 style="margin:.3rem 0 .2rem">${esc(c.name ?? window._me?.username ?? '')}</h2>
       <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
 
@@ -658,7 +661,7 @@ async function renderResults(searchId, page = 0) {
         </div>
         <div>
           ${search.status === 'failed' ? `<button id="retry-btn">${ico('refresh')} Retomar pesquisa</button>` : ''}
-          <a href="/api/searches/${search.id}/export.xlsx"><button>${ico('download')} Exportar Excel</button></a>
+          ${can('export_excel') ? `<a href="/api/searches/${search.id}/export.xlsx"><button>${ico('download')} Exportar Excel</button></a>` : ''}
           <button class="btn-secondary" onclick="location.hash='#/'">${ico('back')} Voltar</button>
         </div>
       </div>
@@ -2296,13 +2299,14 @@ async function renderAdmin() {
         ${stat('Pagantes', sub.paying ?? 0, 'subscrição ativa')}
         ${stat('Em trial', sub.trialing ?? 0, 'Pro 7 dias')}
         ${stat('Free / inativas', sub.free_inactive ?? 0, null)}
-        ${stat('Utilizadores', t.users ?? 0, null)}
+        ${stat('Receita (mês)', ((stats.payments?.cents_month ?? 0) / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }), `${stats.payments?.n_month ?? 0} pagamento(s)`)}
         ${stat('Análises IA (mês)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
       </div>
 
       <div class="admin-grid2">
         <div class="card"><h3 style="margin:0 0 .6rem">Distribuição de planos</h3><p class="muted" style="margin:0 0 .8rem">${planBreak || '—'}</p>
-          <h4 style="margin:.6rem 0 .4rem">Análises de IA por tipo (mês)</h4>${aiKinds}</div>
+          <div class="admin-row"><span>Faturas Moloni (mês)</span><strong>${stats.payments?.invoiced ?? 0}${stats.payments?.invoice_errors ? ` · ${stats.payments.invoice_errors} erro(s)` : ''}</strong></div>
+          <h4 style="margin:.8rem 0 .4rem">Análises de IA por tipo (mês)</h4>${aiKinds}</div>
         <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo</h3>${searchKinds}
           <h4 style="margin:.8rem 0 .4rem">Recolhas (profile runs)</h4>
           <div class="admin-row"><span>Total</span><strong>${stats.profile_runs?.total ?? 0}</strong></div>
@@ -2451,9 +2455,10 @@ async function route() {
   updateSidebar();
   ensureHelpButton();
   ensureAdminNav();
-  if (hash === '#/subscrever' || hash === '#/planos') return renderPlans();
-  if (hash === '#/conta') return renderAccount();
-  if (hash === '#/admin') return renderAdmin();
+  const hashBase = hash.split('?')[0];
+  if (hashBase === '#/subscrever' || hashBase === '#/planos') return renderPlans();
+  if (hashBase === '#/conta') return renderAccount();
+  if (hashBase === '#/admin') return renderAdmin();
   // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 

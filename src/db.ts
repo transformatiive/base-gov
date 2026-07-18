@@ -251,6 +251,9 @@ ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS reasons JSONB;
 -- Planos de subscrição (free | pro | business). O plano é a fonte de gating.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS renewal_at TIMESTAMPTZ;  -- próxima renovação/cobrança
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS pending_plan TEXT;       -- plano em checkout, promovido no webhook pago
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS access_until TIMESTAMPTZ; -- fim do acesso em pagamento pontual (1 mês); null em subscrição
 ALTER TABLE companies ALTER COLUMN plan SET DEFAULT 'free';             -- novos registos = free
 -- Backfill legado: o antigo plano único "baseradar" corresponde ao Pro.
 UPDATE companies SET plan = 'pro' WHERE plan = 'baseradar';
@@ -299,6 +302,21 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);
+
+-- Pagamentos confirmados (Stripe). stripe_event_id garante idempotência dos webhooks.
+CREATE TABLE IF NOT EXISTS payments (
+  id                 SERIAL PRIMARY KEY,
+  company_id         INT REFERENCES companies(id) ON DELETE SET NULL,
+  stripe_event_id    TEXT UNIQUE,
+  kind               TEXT NOT NULL,               -- subscription | one_time
+  plan               TEXT,
+  amount_cents       INT NOT NULL DEFAULT 0,      -- valor pago (bruto, com IVA)
+  currency           TEXT NOT NULL DEFAULT 'eur',
+  moloni_document_id BIGINT,                       -- fatura Moloni emitida (se aplicável)
+  moloni_status      TEXT,                         -- ok | draft | skipped | error
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_payments_company ON payments (company_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));

@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   app.get('/app/', sendApp);
 
   // Guarda o corpo cru dos pedidos JSON (necessário para verificar a assinatura
-  // HMAC dos webhooks do Easypay antes de mutar estado).
+  // dos webhooks do Stripe antes de mutar estado).
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     (req as unknown as { rawBody?: string }).rawBody = body as string;
     try {

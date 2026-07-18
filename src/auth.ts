@@ -22,7 +22,7 @@ const ACCESS_OK_SQL = `(c.subscription_status = 'active'
   OR (c.subscription_status = 'trialing' AND (c.trial_ends_at IS NULL OR c.trial_ends_at > now())))`;
 
 const USER_COLS = `u.id, u.username, u.company_id, u.is_admin,
-  c.plan, c.subscription_status, c.trial_ends_at,
+  c.plan, c.subscription_status, c.trial_ends_at, c.access_until,
   COALESCE(${ACCESS_OK_SQL}, true) AS access_ok`;
 const USER_FROM = `FROM users u LEFT JOIN companies c ON c.id = u.company_id`;
 
@@ -38,6 +38,7 @@ function toUser(row: Record<string, unknown>): AuthUser {
       plan: row.plan,
       subscription_status: row.subscription_status,
       trial_ends_at: row.trial_ends_at,
+      access_until: row.access_until,
     }),
   };
 }

@@ -53,6 +53,32 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `BASEGOV_API_VERSION` | `91.0` | Parâmetro `version` da API do BASE |
 | `SCRAPE_DELAY_MS` | `500` | Pausa entre pedidos ao BASE |
 | `MAX_RESULTS_PER_SEARCH` | `5000` | Limite de segurança por pesquisa |
+| `OPENROUTER_API_KEY` | vazio | Chave OpenRouter (análises de IA) |
+| `IVA_RATE` | `0.23` | Taxa de IVA aplicada aos preços dos planos |
+| `AI_SOFT_CAP_ENABLED` | `false` | Teto de IA em modo aviso (não bloqueia) |
+
+### Pagamentos (Stripe) e faturação (Moloni)
+
+Todas as chaves vivem em variáveis de ambiente — nunca em código.
+
+| Variável | Descrição |
+|---|---|
+| `STRIPE_SECRET_KEY` | Chave secreta Stripe (`sk_live_…`) |
+| `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook (`whsec_…`) |
+| `STRIPE_PRICE_PRO` | Price ID da subscrição mensal Pro (recorrente) |
+| `STRIPE_PRICE_BUSINESS` | Price ID da subscrição mensal Business (recorrente) |
+| `APP_BASE_URL` | URL público (success/cancel do Checkout e webhook) |
+| `MOLONI_CLIENT_ID` / `MOLONI_CLIENT_SECRET` | Credenciais da API Moloni |
+| `MOLONI_USERNAME` / `MOLONI_PASSWORD` | Utilizador Moloni |
+| `MOLONI_COMPANY_ID` | ID da empresa no Moloni |
+| `MOLONI_DOCUMENT_SET_ID` | Série de faturas |
+| `MOLONI_TAX_ID` | ID do IVA a aplicar na linha |
+| `MOLONI_FINALIZE` | `true` finaliza a fatura (comunica à AT); `false` (default) cria rascunho |
+
+Notas:
+- **Modelo de cobrança**: cartão → subscrição automática mensal; MB WAY / Multibanco / transferência → pagamento pontual de 1 mês (o acesso expira e é renovado com novo pagamento). Os métodos disponíveis no Checkout são os que ativar no dashboard Stripe.
+- Configure o webhook Stripe para `APP_BASE_URL/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`.
+- Defina os preços Stripe (`STRIPE_PRICE_*`) com o valor **com IVA** (ou ative o Stripe Tax); a fatura Moloni é emitida com o preço sem IVA + IVA.
 
 ## API (resumo)
 
