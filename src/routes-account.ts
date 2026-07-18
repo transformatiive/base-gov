@@ -250,6 +250,25 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return { items: rows };
   });
 
+  // Repor a password de um utilizador (por email ou id). Reservado a admins —
+  // é a via de recuperação de acesso enquanto não há "esqueci-me da password".
+  app.post('/api/admin/users/reset-password', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    const b = (req.body ?? {}) as { email?: string; user_id?: number; new_password?: string };
+    const newPassword = String(b.new_password ?? '');
+    if (newPassword.length < 8) {
+      return reply.code(400).send({ error: { code: 'weak_password', message: 'A password deve ter pelo menos 8 caracteres.' } });
+    }
+    const email = String(b.email ?? '').trim().toLowerCase();
+    const { rows } = b.user_id != null
+      ? await pool.query('SELECT id, username FROM users WHERE id = $1', [Number(b.user_id)])
+      : await pool.query('SELECT id, username FROM users WHERE lower(email) = $1 OR lower(username) = $1', [email]);
+    if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Utilizador não encontrado.' } });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, rows[0].id]);
+    return { ok: true, user_id: rows[0].id, username: rows[0].username };
+  });
+
   // ---------- Admin: estatísticas de utilização ----------
   app.get('/api/admin/stats', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });

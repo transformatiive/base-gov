@@ -2323,6 +2323,17 @@ async function renderAdmin() {
       </div>
 
       <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .3rem">Repor password de utilizador</h3>
+        <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Define uma nova password para um utilizador (por email). Recuperação de acesso.</p>
+        <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
+          <input type="email" id="rp-email" placeholder="email@empresa.pt" style="flex:1;min-width:220px">
+          <input type="text" id="rp-pass" placeholder="nova password (mín. 8)" style="flex:1;min-width:200px">
+          <button id="rp-btn">Repor password</button>
+        </div>
+        <div id="rp-result" style="margin-top:.5rem"></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .8rem">Feedback e pedidos de ajuda</h3>
         <div style="overflow-x:auto"><table class="admin-table">
           <thead><tr><th>Tipo</th><th>Mensagem</th><th>De</th><th>Data</th><th></th></tr></thead>
@@ -2330,6 +2341,19 @@ async function renderAdmin() {
         </table></div>
       </div>
     </div>`;
+
+  const rpBtn = document.getElementById('rp-btn');
+  if (rpBtn) rpBtn.onclick = async () => {
+    const email = document.getElementById('rp-email').value.trim();
+    const new_password = document.getElementById('rp-pass').value;
+    const out = document.getElementById('rp-result');
+    out.innerHTML = '<span class="muted">A repor…</span>';
+    try {
+      const r = await api('/api/admin/users/reset-password', { method: 'POST', body: JSON.stringify({ email, new_password }) });
+      out.innerHTML = `<span class="admin-msg">✓ Password reposta para ${esc(r.username)}.</span>`;
+      document.getElementById('rp-pass').value = '';
+    } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  };
 
   app.querySelectorAll('#admin-companies .adm-save').forEach((btn) => btn.onclick = async () => {
     const tr = btn.closest('tr'); const id = tr.dataset.id;
