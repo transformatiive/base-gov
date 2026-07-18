@@ -34,6 +34,9 @@ async function main(): Promise<void> {
 
   // Landing comercial na raiz do domínio.
   app.get('/', (_req, reply) => reply.sendFile('landing.html'));
+  // Páginas legais (públicas).
+  app.get('/privacidade', (_req, reply) => reply.sendFile('privacidade.html'));
+  app.get('/termos', (_req, reply) => reply.sendFile('termos.html'));
   // Aplicação (SPA com routing por hash) servida em /app.
   const sendApp = (_req: unknown, reply: import('fastify').FastifyReply) => reply.sendFile('index.html');
   app.get('/app', sendApp);

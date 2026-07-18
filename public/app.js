@@ -236,6 +236,7 @@ async function renderRegister() {
         <div class="error" id="reg-error" style="margin-top:0.6rem"></div>
         <p style="margin-top:0.9rem"><button type="submit" id="reg-submit">Criar conta e começar</button></p>
         <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie score, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
+        <p class="muted" style="font-size:0.78rem">Ao criar conta, aceita os <a href="/termos" target="_blank" rel="noopener">Termos e Condições</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
       </form>
       <p class="login-foot">Já tem conta? <a href="#/login">Entrar</a></p>
     </div>`;
