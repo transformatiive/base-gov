@@ -286,6 +286,20 @@ CREATE INDEX IF NOT EXISTS idx_company_invites_company ON company_invites (compa
 CREATE UNIQUE INDEX IF NOT EXISTS idx_company_invites_pending
   ON company_invites (company_id, lower(email)) WHERE accepted_at IS NULL;
 
+-- Feedback / pedidos de ajuda dos utilizadores. O envio por email é feito à parte
+-- (a implementar); aqui fica sempre o registo interno para acompanhamento.
+CREATE TABLE IF NOT EXISTS feedback (
+  id         SERIAL PRIMARY KEY,
+  company_id INT REFERENCES companies(id) ON DELETE SET NULL,
+  user_id    INT REFERENCES users(id) ON DELETE SET NULL,
+  kind       TEXT NOT NULL DEFAULT 'feedback',   -- feedback | help
+  message    TEXT NOT NULL,
+  email      TEXT,
+  handled    BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);

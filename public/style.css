@@ -557,3 +557,36 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
   background: var(--brand-tint-2, #e6efe9); color: var(--brand, #173f35); }
 button.lnk { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-decoration: underline; }
 .upgrade-card { border: 1px solid var(--line, #e2e8f0); }
+
+/* ---------- Admin ---------- */
+.admin-wrap { max-width: 1080px; margin: 1.2rem auto; }
+.admin-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 1.2rem; }
+.admin-stat { background: var(--card, #fff); border: 1px solid var(--line, #e2e8f0); border-radius: 12px; padding: 14px 16px; }
+.admin-stat .asv { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink, #191c1e); }
+.admin-stat .asl { font-size: 0.74rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted, #7d8681); margin-top: 2px; }
+.admin-stat .asn { font-size: 0.76rem; color: var(--brand, #173f35); margin-top: 4px; }
+.admin-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.admin-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--line2, #eef1ef); font-size: 0.9rem; }
+.admin-row:last-child { border-bottom: 0; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.admin-table th { text-align: left; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted, #7d8681); padding: 6px 10px; border-bottom: 2px solid var(--line, #e2e8f0); }
+.admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--line2, #eef1ef); vertical-align: middle; }
+.admin-table select { padding: 4px 6px; font-size: 0.82rem; border: 1px solid var(--line, #e2e8f0); border-radius: 6px; background: #fff; }
+.admin-table tr.fb-done { opacity: 0.5; }
+.admin-msg { font-size: 0.8rem; color: var(--brand, #173f35); }
+@media (max-width: 900px) {
+  .admin-stats { grid-template-columns: repeat(2, 1fr); }
+  .admin-grid2 { grid-template-columns: 1fr; }
+}
+
+/* ---------- Botão flutuante de ajuda + modal ---------- */
+#help-fab { position: fixed; right: 20px; bottom: 20px; z-index: 900; display: inline-flex; align-items: center; gap: 7px;
+  background: var(--brand, #173f35); color: #fff; border: 0; border-radius: 99px; padding: 11px 16px; font-size: 0.9rem; font-weight: 600;
+  cursor: pointer; box-shadow: 0 8px 24px rgba(20,30,25,.22); }
+#help-fab:hover { background: var(--brand-dark, #0f2b24); }
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(15,25,20,.45); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal-box { background: var(--card, #fff); border-radius: 16px; padding: 24px; width: 100%; max-width: 460px; position: relative; box-shadow: 0 24px 60px rgba(20,30,25,.28); }
+.modal-x { position: absolute; top: 12px; right: 14px; background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--muted, #7d8681); cursor: pointer; padding: 4px; }
+.fb-tabs { display: inline-flex; gap: 4px; background: var(--panel-2, #eef2f7); border-radius: 10px; padding: 4px; }
+.fb-tab { background: none; border: 0; padding: 7px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; color: var(--ink2, #4c5551); cursor: pointer; }
+.fb-tab.active { background: #fff; color: var(--brand, #173f35); box-shadow: 0 1px 3px rgba(20,30,25,.12); }

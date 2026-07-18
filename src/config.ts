@@ -17,6 +17,7 @@ export const config = {
   planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
   planName: process.env.PLAN_NAME || 'BaseRadar',
   appBaseUrl: process.env.APP_BASE_URL || '',   // ex.: https://basegov-robot-production.up.railway.app
+  supportEmail: process.env.SUPPORT_EMAIL || '',  // destino dos pedidos de ajuda (envio a implementar)
 
   // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
   // capability → plano mínimo; seats/tetos/preços por plano; soft cap de IA.
