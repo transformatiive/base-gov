@@ -1186,7 +1186,8 @@ async function renderInsightTab(el, q, tab, p) {
         <span><span class="sw" style="background:${MAP_COLORS[2]}"></span>Médio</span>
         <span><span class="sw" style="background:${MAP_COLORS[3]}"></span>Alto</span>
         <span>· dimensão do círculo = valor contratado</span>
-      </div>`;
+      </div>
+      <div id="region-tables" class="region-tables"></div>`;
 
     const slider = el.querySelector('#map-slider');
     const label = el.querySelector('#map-month-label');
@@ -1311,11 +1312,14 @@ const COORDS_NORM = Object.fromEntries(
 /* Painel de drill-down de um distrito: contratos, renovações e perspetiva temporal. */
 async function loadRegionPanel(district, q) {
   const panel = document.getElementById('region-panel');
+  const tables = document.getElementById('region-tables');
   if (!panel) return;
   panel.innerHTML = '<p class="muted">A carregar dados do distrito…</p>';
+  if (tables) tables.innerHTML = '';
   const d = await api(`/api/insights/region${q}&district=${encodeURIComponent(district)}`);
   const maxY = Math.max(1, ...d.by_year.map((y) => y.count));
   const maxM = Math.max(1, ...d.by_month.map((m) => m.count));
+  // À direita do mapa: título + gráficos (evolução anual e sazonalidade).
   panel.innerHTML = `
     <div class="toolbar"><h3 style="margin:0">${ico('pin')} ${esc(d.district)}</h3>
       <button class="btn-secondary" onclick="window._annReloadMap ? window._annReloadMap() : location.reload()">${ico('back')} Todos os distritos</button></div>
@@ -1326,7 +1330,9 @@ async function loadRegionPanel(district, q) {
     <h4>Sazonalidade (mês do ano)</h4>
     <div class="chart-wrap"><div class="bar-chart" style="height:70px">
       ${d.by_month.map((m) => `<div class="bar" style="height:${Math.round((m.count / maxM) * 100)}%"><b>${m.count || ''}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
-    </div></div>
+    </div></div>`;
+  // Por baixo do mapa (largura total): renovações e contratos recentes.
+  if (tables) tables.innerHTML = `
     <h4>${ico('rotate')} Renovações próximas (${d.renewals.length})</h4>
     ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
@@ -2488,7 +2494,7 @@ async function route() {
   topbar.hidden = false;
   const planPill = window._me.plan && window._me.plan !== 'free'
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
-  whoami.innerHTML = `<a href="#/conta" style="text-decoration:none;color:inherit"><span class="nm">${esc(window._me.username)}</span>${window._me.company?.name ? `<span class="co">${esc(window._me.company.name)}${planPill}</span>` : planPill}</a>`;
+  whoami.innerHTML = `<a href="#/conta"><span class="nm">${esc(window._me.username)}</span><span class="co"><span class="co-nm">${esc(window._me.company?.name ?? '')}</span>${planPill}</span></a>`;
   renderTrialBanner(window._me);
   updateSidebar();
   ensureHelpButton();
