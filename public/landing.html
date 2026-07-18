@@ -162,6 +162,41 @@
     .mail .mr{padding:9px 13px;font-size:12px;color:var(--ink2);border-top:1px solid var(--line2);display:flex;align-items:center;gap:9px}
     .mail .mr .k{font-size:12.5px;font-weight:700;color:var(--brand);background:var(--tint);border-radius:6px;padding:1px 8px;flex:none}
     .mail .mr .k.amber{color:var(--amber-ink);background:var(--amber-bg)}
+    /* Pills de plano nos cartões */
+    .fcard .fbody b{flex-wrap:wrap}
+    .fpill{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:99px;margin-left:2px}
+    .fpill.pro{background:var(--tint);color:var(--tint-text);border:1px solid var(--tint-border)}
+    .fpill.biz{background:var(--brand);color:#fff}
+    /* Oportunidades — matriz de priorização (scatter) */
+    .scatter{position:relative;height:118px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);margin:2px 4px}
+    .scatter .zone{position:absolute;left:0;top:0;width:50%;height:52%;background:rgba(23,63,53,.07);border-radius:0 0 10px 0}
+    .scatter .zl{position:absolute;left:8px;top:7px;font-size:9.5px;font-weight:700;color:var(--brand)}
+    .scatter .dot{position:absolute;border-radius:50%;background:#c1ccc6;transform:translate(-50%,-50%)}
+    .scatter .dot.hi{background:var(--brand)}
+    .scatter .yl{position:absolute;left:5px;bottom:6px;font-size:9px;color:var(--faint);writing-mode:vertical-rl;transform:rotate(180deg)}
+    .scatter-x{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin:3px 4px 0}
+    /* Ficha de análise IA (mock) */
+    .ficha .fh{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+    .ficha .go{background:#2c6353;color:#fff;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 10px;border-radius:6px}
+    .ficha .fit{font-size:11.5px;color:var(--ink2)}
+    .ficha .fit b{color:var(--brand)}
+    .ficha .fl{display:flex;gap:8px;font-size:11.5px;color:var(--ink2);padding:5px 0;border-top:1px solid var(--line2)}
+    .ficha .fl .fk{color:var(--muted);min-width:78px;flex:none}
+    .ficha .fl.flag{color:var(--alert-ink,#a23a22)}
+    .ficha .fl.flag .fk{color:var(--alert)}
+    /* Dossier de resposta (mock) */
+    .doc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 14px}
+    .doc .dt{font-size:12px;font-weight:700;color:var(--ink);margin-bottom:9px;display:flex;align-items:center;gap:7px}
+    .doc .dt::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--brand);flex:none}
+    .doc .ln{height:7px;border-radius:99px;background:var(--line2);margin:7px 0}
+    .doc .ph{display:inline-block;font-size:10px;font-weight:600;color:var(--tint-text);background:var(--tint);border:1px solid var(--tint-border);border-radius:5px;padding:1px 7px;margin-top:5px}
+    /* Integração API — conectores */
+    .conn{display:flex;align-items:center;gap:14px}
+    .conn .hub{background:var(--brand);color:#fff;font-size:11.5px;font-weight:700;padding:10px 13px;border-radius:10px;white-space:nowrap;text-align:center;line-height:1.2}
+    .conn .wires{flex:1;display:flex;flex-direction:column;gap:9px}
+    .conn .wire{display:flex;align-items:center;gap:9px}
+    .conn .wire::before{content:"";width:24px;height:1.5px;background:var(--line);flex:none}
+    .conn .node{font-size:11.5px;font-weight:600;color:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;background:#fff}
 
     /* Footer */
     .foot{padding:24px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
@@ -262,6 +297,50 @@
 
       <div class="fcard">
         <div class="viz">
+          <div class="scatter">
+            <div class="zone"></div><div class="zl">Agir já</div>
+            <span class="dot hi" style="left:16%;top:18%;width:15px;height:15px"></span>
+            <span class="dot hi" style="left:28%;top:34%;width:11px;height:11px"></span>
+            <span class="dot hi" style="left:20%;top:46%;width:9px;height:9px"></span>
+            <span class="dot" style="left:47%;top:42%;width:10px;height:10px"></span>
+            <span class="dot" style="left:62%;top:26%;width:13px;height:13px"></span>
+            <span class="dot" style="left:70%;top:64%;width:8px;height:8px"></span>
+            <span class="dot" style="left:52%;top:74%;width:10px;height:10px"></span>
+            <span class="yl">valor</span>
+          </div>
+          <div class="scatter-x"><span>← prazo urgente</span><span>folgado</span></div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de oportunidades<span class="fpill pro">Pro</span></b><div class="d">Matriz de priorização por valor e prazo, com score 0-100. As oportunidades a agir já ficam no canto certo — sabe sempre onde atacar primeiro.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="ficha">
+            <div class="fh"><span class="go">GO</span><span class="fit">Fit com a atividade <b>84/100</b></span></div>
+            <div class="fl"><span class="fk">Critérios</span><span>Preço 60% · Técnica 40%</span></div>
+            <div class="fl"><span class="fk">Habilitação</span><span>Alvará, seguro RC, CCP art. 81.º</span></div>
+            <div class="fl flag"><span class="fk">Red flag</span><span>Prazo de entrega apertado (10 dias)</span></div>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Análise IA + recomendação<span class="fpill pro">Pro</span></b><div class="d">A IA lê o caderno de encargos e devolve go / condicional / no-go, critérios, requisitos de habilitação e red flags — fundamentado nos documentos reais.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="doc">
+            <div class="dt">Dossier de resposta — proposta</div>
+            <div class="ln" style="width:100%"></div>
+            <div class="ln" style="width:92%"></div>
+            <div class="ln" style="width:78%"></div>
+            <div class="ln" style="width:88%"></div>
+            <span class="ph">[EMPRESA]</span> <span class="ph">[Nº ALVARÁ]</span>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Gerador de resposta à candidatura<span class="fpill pro">Pro</span></b><div class="d">Dossier gerado por IA, alinhado aos critérios do concurso: memória descritiva, declarações do CCP e checklist — com placeholders da sua empresa, pronto a submeter.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
           <div class="rnv"><span class="rl">Braga · Festas</span><div class="rt"><i style="width:82%"></i><span class="flag" style="left:82%"></span></div><span class="rr">jul</span></div>
           <div class="rnv"><span class="rl">Barcelos</span><div class="rt"><i style="width:58%"></i><span class="flag" style="left:58%"></span></div><span class="rr">set</span></div>
           <div class="rnv"><span class="rl">Guimarães</span><div class="rt"><i style="width:38%"></i><span class="flag" style="left:38%"></span></div><span class="rr">nov</span></div>
@@ -270,7 +349,7 @@
             <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--amber);border-radius:50%"></span>contactar</span>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Radar de renovações</b><div class="d">Fim previsto de cada contrato em curso e data sugerida de contacto — 4 meses antes do novo procedimento.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de renovações<span class="fpill pro">Pro</span></b><div class="d">Fim previsto de cada contrato em curso e data sugerida de contacto — 4 meses antes do novo procedimento.</div></div>
       </div>
 
       <div class="fcard">
@@ -280,7 +359,7 @@
           <div class="qbar"><span class="ql">Pirotec, Lda</span><div class="qt"><i style="width:56%"></i></div><span class="qv">18%</span></div>
           <div class="qbar"><span class="ql">Eventos SA</span><div class="qt"><i style="width:37%"></i></div><span class="qv">12%</span></div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Inteligência competitiva</b><div class="d">Quota de mercado, valores médios e clientes de cada concorrente. Saiba contra quem concorre e onde ganhar terreno.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Inteligência competitiva<span class="fpill pro">Pro</span></b><div class="d">Quota de mercado, valores médios e clientes de cada concorrente. Saiba contra quem concorre e onde ganhar terreno.</div></div>
       </div>
 
       <div class="fcard">
@@ -290,7 +369,8 @@
             <i style="height:50%"></i><i style="height:40%"></i><i style="height:46%"></i><i class="hi" style="height:88%"></i>
             <i class="hi" style="height:96%"></i><i style="height:66%"></i><i style="height:58%"></i><i style="height:42%"></i>
           </div>
-          <div class="szx"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+          <div class="szx"><span>Jan</span><span>Fev</span><span>Mar</span><span>Abr</span><span>Mai</span><span>Jun</span><span>Jul</span><span>Ago</span><span>Set</span><span>Out</span><span>Nov</span><span>Dez</span></div>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:7px">Pico de contratação: <strong style="color:var(--brand)">agosto–setembro</strong></div>
         </div>
         <div class="fbody"><b><span class="bullet"></span>Mapa e sazonalidade</b><div class="d">Onde está o dinheiro por distrito e em que meses se contrata — para planear a prospeção com antecedência.</div></div>
       </div>
@@ -305,6 +385,20 @@
           </div>
         </div>
         <div class="fbody"><b><span class="bullet"></span>Digest semanal</b><div class="d">Todas as semanas, o essencial no seu email: novos concursos e renovações a entrar na janela de contacto.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="conn">
+            <div class="hub">Base<br>Radar</div>
+            <div class="wires">
+              <div class="wire"><span class="node">CRM</span></div>
+              <div class="wire"><span class="node">ERP</span></div>
+              <div class="wire"><span class="node">API / Webhooks</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Integração com os seus sistemas<span class="fpill biz">Business · 149€</span></b><div class="d">Ligue o BaseRadar ao seu CRM e ERP via API e webhooks — oportunidades e renovações entram diretamente no seu fluxo comercial. Exclusivo do plano Business.</div></div>
       </div>
 
     </div>
@@ -362,6 +456,7 @@
           <ul>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Pro</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Até 10 utilizadores</b> (seats)</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Integração API</b> (CRM / ERP)</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Uso elevado de IA</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Exportação avançada</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Apoio prioritário</li>

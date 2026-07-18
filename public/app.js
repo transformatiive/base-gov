@@ -349,7 +349,7 @@ const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDi
 const PLAN_FEATURES = {
   free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal'],
   pro: ['Tudo do Grátis', 'Oportunidades com score + fit IA', 'Radar de renovações', 'Concursos europeus (TED)', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação Excel', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Uso elevado de IA', 'Exportação avançada'],
+  business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Integração API (CRM / ERP)', 'Uso elevado de IA', 'Exportação avançada'],
 };
 
 async function renderPlans() {
