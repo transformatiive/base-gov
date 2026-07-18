@@ -245,7 +245,9 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
          (SELECT count(*) FROM users u WHERE u.company_id = c.id) AS n_users,
          (SELECT count(*) FROM profiles p WHERE p.company_id = c.id) AS n_profiles,
          (SELECT count(*) FROM ai_usage_events ae WHERE ae.company_id = c.id
-            AND ae.created_at >= date_trunc('month', now())) AS ai_month
+            AND ae.created_at >= date_trunc('month', now())) AS ai_month,
+         (SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin) ORDER BY u.id)
+            FROM users u WHERE u.company_id = c.id) AS users
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);
     return { items: rows };
   });
