@@ -543,3 +543,17 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 }
 /* alinha o topo da coluna direita de "Hoje" com o primeiro cartão */
 @media (min-width: 901px) { .hoje-right { padding-top: 29px; } }
+
+/* ---------- Planos, conta e seats ---------- */
+.plan-pill { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 99px;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--brand-tint-2, #e6efe9); color: var(--brand, #173f35); vertical-align: middle; }
+.plan-pill.business { background: #173f35; color: #fff; }
+#topbar nav a.nav-locked { opacity: 0.62; }
+#topbar nav a .nav-lock { font-size: 0.72em; }
+.plan-box.current { box-shadow: 0 0 0 1px var(--brand, #173f35) inset; }
+.plan-cta { width: 100%; }
+.chip { display: inline-block; padding: 0 0.45rem; border-radius: 99px; font-size: 0.7rem; font-weight: 600;
+  background: var(--brand-tint-2, #e6efe9); color: var(--brand, #173f35); }
+button.lnk { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-decoration: underline; }
+.upgrade-card { border: 1px solid var(--line, #e2e8f0); }

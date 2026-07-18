@@ -15,7 +15,19 @@ export function aiEnabled(): boolean {
   return Boolean(config.openrouterApiKey);
 }
 
-async function chat(model: string, system: string, user: string, maxTokens = 3000): Promise<string> {
+export interface AiUsage { tokens_in: number; tokens_out: number }
+export interface ChatResult { content: string; usage: AiUsage }
+
+// Blocos de conteúdo para prompt caching (Anthropic via OpenRouter): um bloco
+// marcado com cache_control:ephemeral é reutilizado (mais barato) em chamadas
+// seguintes com o MESMO prefixo. Marcamos os blocos grandes e ESTÁVEIS entre
+// pedidos (instruções fixas, documentos de um anúncio) para poupar tokens.
+type Part = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
+type Content = string | Part[];
+const cached = (text: string): Part => ({ type: 'text', text, cache_control: { type: 'ephemeral' } });
+const plain = (text: string): Part => ({ type: 'text', text });
+
+async function chat(model: string, system: Content, user: Content, maxTokens = 3000): Promise<ChatResult> {
   if (!aiEnabled()) throw new Error('IA não configurada (OPENROUTER_API_KEY em falta)');
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -28,6 +40,7 @@ async function chat(model: string, system: string, user: string, maxTokens = 300
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
+      usage: { include: true },   // pede detalhe de tokens (prompt/completion/cache)
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -36,10 +49,19 @@ async function chat(model: string, system: string, user: string, maxTokens = 300
     signal: AbortSignal.timeout(180_000),
   });
   if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Resposta vazia do modelo');
-  return content;
+  return {
+    content,
+    usage: {
+      tokens_in: data.usage?.prompt_tokens ?? 0,
+      tokens_out: data.usage?.completion_tokens ?? 0,
+    },
+  };
 }
 
 /** Extrai o primeiro objeto JSON da resposta (tolerante a cercas de código). */
@@ -179,12 +201,12 @@ async function profileContext(profileId: number): Promise<string> {
 }
 
 /** Ficha de oportunidade + go/no-go para um anúncio, contextualizada à atividade. */
-export async function analyzeAnnouncement(announcementId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number }> {
-  const { rows: cached } = await pool.query(
+export async function analyzeAnnouncement(announcementId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
+  const { rows: hit } = await pool.query(
     'SELECT analysis, model FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
     [announcementId, profileId]
   );
-  if (cached.length > 0) return { analysis: cached[0].analysis, cached: true, model: cached[0].model, docs_used: -1 };
+  if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
 
   const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [announcementId]);
   if (rows.length === 0) throw new Error('Anúncio não encontrado');
@@ -197,8 +219,8 @@ export async function analyzeAnnouncement(announcementId: number, profileId: num
   const proc = a.contracting_procedure_url ? await fetchProcedureDocsText(a.contracting_procedure_url) : { text: '', count: 0 };
   const ctx = await profileContext(profileId);
 
+  // Instruções ESTÁVEIS (iguais em todos os anúncios) → bloco cacheável.
   const system = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-${ctx}
 Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), baseia os critérios de adjudicação, requisitos de habilitação, cauções, prazos e red flags NO TEXTO desses documentos (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação.
 Analisa o procedimento e responde APENAS com um objeto JSON válido com esta estrutura:
 {
@@ -214,7 +236,9 @@ Analisa o procedimento e responde APENAS com um objeto JSON válido com esta est
  "fit_atividade": {"score": 0-100, "razao": "1 frase sobre a relevância para a atividade da empresa"}
 }`;
 
-  const user = `DADOS ESTRUTURADOS DO ANÚNCIO:
+  // Bloco de DOCUMENTOS/dados do anúncio: igual para o mesmo anúncio
+  // independentemente do perfil → cacheável (reutilizado entre empresas/perfis).
+  const docBlock = `DADOS ESTRUTURADOS DO ANÚNCIO:
 - Designação: ${a.contract_designation}
 - Entidade adjudicante: ${a.contracting_entity}
 - Tipo: ${a.announcement_type} / ${a.model_type ?? a.contracting_procedure_type}
@@ -226,8 +250,11 @@ Analisa o procedimento e responde APENAS com um objeto JSON válido com esta est
 
 ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${proc.text ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${proc.count} documento(s) da plataforma):\n${proc.text}` : ''}${!pdfText && !proc.text ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
 
+  // Contexto da atividade (varia por perfil) → bloco NÃO cacheável, no fim.
+  const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}`;
+
   const model = config.aiModelDeep;
-  const raw = await chat(model, system, user, 3500);
+  const { content: raw, usage } = await chat(model, [cached(system)], [cached(docBlock), plain(activityBlock)], 3500);
   const analysis = parseJson(raw);
 
   await pool.query(
@@ -235,7 +262,7 @@ ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n
      ON CONFLICT (announcement_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
     [announcementId, profileId, model, JSON.stringify(analysis)]
   );
-  return { analysis, cached: false, model, docs_used: proc.count };
+  return { analysis, cached: false, model, docs_used: proc.count, usage };
 }
 
 export interface FitItem {
@@ -247,7 +274,7 @@ export interface FitItem {
 }
 
 /** Fit 0-100 de cada oportunidade face à atividade do perfil (batch, com cache). */
-export async function fitScores(profileId: number, items: FitItem[]): Promise<Record<string, { fit: number; reason: string; reasons?: string[] }>> {
+export async function fitScores(profileId: number, items: FitItem[]): Promise<{ scores: Record<string, { fit: number; reason: string; reasons?: string[] }>; usage: AiUsage }> {
   const result: Record<string, { fit: number; reason: string; reasons?: string[] }> = {};
   const missing: FitItem[] = [];
 
@@ -259,7 +286,7 @@ export async function fitScores(profileId: number, items: FitItem[]): Promise<Re
     if (rows.length > 0) result[`${it.type}:${it.id}`] = { fit: rows[0].fit, reason: rows[0].reason, reasons: rows[0].reasons ?? [] };
     else missing.push(it);
   }
-  if (missing.length === 0) return result;
+  if (missing.length === 0) return { scores: result, usage: { tokens_in: 0, tokens_out: 0 } };
 
   const ctx = await profileContext(profileId);
   const batch = missing.slice(0, 60);
@@ -271,7 +298,7 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
   ).join('\n');
 
   const model = config.aiModelFast;
-  const raw = await chat(model, system, user, 4000);
+  const { content: raw, usage } = await chat(model, system, user, 4000);
   const parsed = parseJson(raw) as { scores?: { key: string; fit: number; razao: string; motivos?: string[] }[] };
 
   for (const s of parsed.scores ?? []) {
@@ -287,16 +314,16 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
       [profileId, type, id, fit, s.razao ?? '', JSON.stringify(reasons), model]
     );
   }
-  return result;
+  return { scores: result, usage };
 }
 
 /** Ficha de preparação para um CONTRATO: usa os documentos PDF guardados na BD. */
-export async function analyzeContract(contractId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number }> {
-  const { rows: cached } = await pool.query(
+export async function analyzeContract(contractId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
+  const { rows: hit } = await pool.query(
     'SELECT analysis, model FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
     [contractId, profileId]
   );
-  if (cached.length > 0) return { analysis: cached[0].analysis, cached: true, model: cached[0].model, docs_used: -1 };
+  if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
 
   const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [contractId]);
   if (rows.length === 0) throw new Error('Contrato não encontrado');
@@ -327,8 +354,8 @@ export async function analyzeContract(contractId: number, profileId: number): Pr
   }
 
   const ctx = await profileContext(profileId);
+  // Instruções ESTÁVEIS → cacheáveis.
   const system = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-${ctx}
 Este é um CONTRATO já celebrado — o objetivo é preparar a empresa para a RENOVAÇÃO/próximo procedimento desta entidade.
 Responde APENAS com um objeto JSON válido:
 {
@@ -343,7 +370,8 @@ Responde APENAS com um objeto JSON válido:
  "go_no_go": {"recomendacao": "go|condicional|no-go", "justificacao": "vale a pena perseguir a renovação? porquê"},
  "fit_atividade": {"score": 0-100, "razao": "1 frase"}
 }`;
-  const user = `DADOS DO CONTRATO:
+  // Dados + documentos do contrato: iguais por contrato → cacheáveis.
+  const docBlock = `DADOS DO CONTRATO:
 - Objeto: ${c.object_brief_description ?? c.description}
 - Entidades: ${ents.map((e) => `${e.role}: ${e.name}`).join('; ')}
 - Procedimento: ${c.contracting_procedure_type} · Tipo: ${c.contract_types}
@@ -352,16 +380,17 @@ Responde APENAS com um objeto JSON válido:
 - CPV: ${c.cpvs ?? 'n/d'} (${c.cpvs_designation ?? ''})
 - Fundamentação: ${c.contract_fundamentation ?? 'n/d'}
 ${docsText ? `\nDOCUMENTOS DO CONTRATO (texto extraído):${docsText}` : '\nSem documentos PDF descarregados para este contrato — analisa com os dados estruturados e indica essa limitação; sugere ativar o download de documentos na pesquisa para uma análise completa.'}`;
+  const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}`;
 
   const model = config.aiModelDeep;
-  const raw = await chat(model, system, user, 3500);
+  const { content: raw, usage } = await chat(model, [cached(system)], [cached(docBlock), plain(activityBlock)], 3500);
   const analysis = parseJson(raw);
   await pool.query(
     `INSERT INTO ai_contract_analyses (contract_id, profile_id, model, analysis) VALUES ($1,$2,$3,$4)
      ON CONFLICT (contract_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
     [contractId, profileId, model, JSON.stringify(analysis)]
   );
-  return { analysis, cached: false, model, docs_used: docsUsed };
+  return { analysis, cached: false, model, docs_used: docsUsed, usage };
 }
 
 /**
@@ -369,7 +398,7 @@ ${docsText ? `\nDOCUMENTOS DO CONTRATO (texto extraído):${docsText}` : '\nSem d
  * descritiva alinhada aos critérios + declarações standard do CCP + checklist
  * de submissão na plataforma. Em markdown, pronto a copiar/descarregar.
  */
-export async function responseTemplate(announcementId: number, profileId: number): Promise<{ markdown: string; model: string }> {
+export async function responseTemplate(announcementId: number, profileId: number): Promise<{ markdown: string; model: string; usage: AiUsage }> {
   const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [announcementId]);
   if (rows.length === 0) throw new Error('Anúncio não encontrado');
   const a = rows[0];
@@ -402,20 +431,20 @@ ${an.length > 0 ? `\nANÁLISE JÁ EFETUADA (usa os critérios daqui):\n${JSON.st
 ${pdfText ? `\nTEXTO DO ANÚNCIO (DR):\n${pdfText}` : ''}`;
 
   const model = config.aiModelDeep;
-  const markdown = await chat(model, system, user, 6000);
-  return { markdown: markdown.replace(/^```(?:markdown)?\n?|```$/g, ''), model };
+  const { content: markdown, usage } = await chat(model, system, user, 6000);
+  return { markdown: markdown.replace(/^```(?:markdown)?\n?|```$/g, ''), model, usage };
 }
 
 /** Parágrafo de análise semanal para o digest (Haiku). */
 export async function digestIntro(profileName: string, stats: string): Promise<string> {
   try {
-    const raw = await chat(
+    const { content } = await chat(
       config.aiModelFast,
       `És um analista comercial. Escreve um parágrafo único (3-4 frases, português de Portugal, tom profissional e direto) a resumir a semana de oportunidades de contratação pública para a atividade "${profileName}". Sem saudações, sem markdown.`,
       stats,
       400
     );
-    return raw.trim();
+    return content.trim();
   } catch {
     return '';
   }

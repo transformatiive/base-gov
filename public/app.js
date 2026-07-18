@@ -79,15 +79,66 @@ async function api(path, opts = {}) {
     throw new Error('unauthorized');
   }
   if (res.status === 402) {
-    // Subscrição necessária (trial terminado) — encaminha para a página de subscrição.
-    if (location.hash !== '#/subscrever') location.hash = '#/subscrever';
+    // Subscrição necessária (trial terminado) — encaminha para a página de planos.
+    if (location.hash !== '#/planos') location.hash = '#/planos';
     throw new Error('subscription_required');
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // 403 por plano: funcionalidade fora do plano atual (backend é a verdade).
+    if (res.status === 403 && body?.error?.code === 'plan_required') {
+      const err = new Error(body.error.message || 'Funcionalidade indisponível no seu plano.');
+      err.planRequired = body.error;   // { feature, required_plan, current_plan }
+      throw err;
+    }
     throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
   }
   return res.json();
+}
+
+/* Capabilities do plano (espelho do backend). O backend é sempre a verdade;
+   isto serve só para a UI antecipar o gating e mostrar upgrades. */
+async function loadCaps(force = false) {
+  if (window._caps && !force) return window._caps;
+  try { window._caps = await api('/api/me/capabilities'); } catch { window._caps = null; }
+  return window._caps;
+}
+function can(feature) {
+  const c = window._caps;
+  if (!c) return true;               // sem info ainda → não bloqueia a UI (backend valida)
+  if (window._me?.is_admin) return true;
+  return Array.isArray(c.capabilities) && c.capabilities.includes(feature);
+}
+const PLAN_LABEL = { free: 'Grátis', pro: 'Pro', business: 'Business' };
+
+// Mapa item de navegação → feature exigida (vazio = livre no plano free).
+const NAV_FEATURE = {
+  '#/radar/opportunities': 'score_fit',
+  '#/radar/renewals': 'renovacoes',
+  '#/radar/competitors': 'concorrentes',
+  '#/entities': 'entidades',
+};
+/* Marca visualmente os itens de navegação fora do plano (cadeado). O clique
+   continua a funcionar — o backend responde 403 e a vista mostra o upgrade. */
+function applyNavGating() {
+  document.querySelectorAll('#topbar nav a').forEach((a) => {
+    const feat = NAV_FEATURE[a.getAttribute('href')];
+    const locked = feat && !can(feat);
+    a.classList.toggle('nav-locked', !!locked);
+    a.querySelector('.nav-lock')?.remove();
+    if (locked) a.insertAdjacentHTML('beforeend', ' <span class="nav-lock" aria-hidden="true" title="Plano superior">🔒</span>');
+  });
+}
+
+/* Painel de upgrade mostrado quando uma vista bate num 403 de plano. */
+function upgradePanel(info) {
+  const req = (info?.required_plan || 'pro').toUpperCase();
+  return `<div class="card upgrade-card" style="max-width:560px;margin:2rem auto;text-align:center">
+    <div class="eyebrow" style="color:var(--brand)">Plano ${req}</div>
+    <h2 style="margin:.4rem 0 .3rem">Funcionalidade do plano ${req}</h2>
+    <p class="muted" style="margin:0 0 1rem">${esc(info?.message || 'Esta funcionalidade requer um plano superior.')}</p>
+    <p><a class="btn" href="#/planos" style="display:inline-block;padding:.6rem 1.2rem;background:var(--brand);color:#fff;border-radius:8px;text-decoration:none">Ver planos</a></p>
+  </div>`;
 }
 
 function stopPolling() {
@@ -155,8 +206,8 @@ async function renderRegister() {
   app.innerHTML = `
     <div class="card register-box">
       ${wordmark(24)}
-      <h2 style="margin:0.4rem 0 0.2rem">Comece grátis — 7 dias</h2>
-      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado.</p>
+      <h2 style="margin:0.4rem 0 0.2rem">Comece grátis</h2>
+      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado. Pode experimentar o Pro 7 dias grátis a qualquer momento.</p>
       <form id="reg-form">
         <div class="reg-grid">
           <div><label>Primeiro nome *</label><input type="text" name="first_name" required></div>
@@ -184,7 +235,7 @@ async function renderRegister() {
 
         <div class="error" id="reg-error" style="margin-top:0.6rem"></div>
         <p style="margin-top:0.9rem"><button type="submit" id="reg-submit">Criar conta e começar</button></p>
-        <p class="muted" style="font-size:0.8rem">Ao criar conta, começa um teste gratuito de 7 dias. Depois, ${'29€/mês + IVA'} — cancele quando quiser.</p>
+        <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie score, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
       </form>
       <p class="login-foot">Já tem conta? <a href="#/login">Entrar</a></p>
     </div>`;
@@ -246,22 +297,27 @@ function renderTrialBanner(me) {
   const host = document.getElementById('trial-banner');
   const c = me?.company;
   if (!host) return;
-  if (!c || me.is_admin || c.subscription_status === 'active') { host.hidden = true; host.innerHTML = ''; return; }
+  if (!c || me.is_admin) { host.hidden = true; host.innerHTML = ''; return; }
+  const plan = me.plan || 'free';
   let title = '';
-  let sub = 'Depois, 29€/mês + IVA.';
+  let sub = '';
   let cls = 'trial';
-  let cta = 'Subscrever';
-  if (c.subscription_status === 'trialing') {
+  let cta = 'Ver planos';
+  if (c.subscription_status === 'trialing' && plan !== 'free') {
     const d = c.trial_days_left;
-    title = `Teste gratuito — ${d} dia${d === 1 ? '' : 's'}`;
+    title = `Teste Pro — ${d} dia${d === 1 ? '' : 's'}`;
+    sub = 'Subscreva para manter o acesso Pro.'; cta = 'Subscrever';
   } else if (c.subscription_status === 'past_due') {
-    cls = 'past-due'; title = 'Pagamento pendente'; sub = 'Regularize para manter o acesso.'; cta = 'Regularizar';
-  } else if (c.subscription_status === 'canceled') {
-    cls = 'past-due'; title = 'Subscrição cancelada'; sub = 'Reative para voltar a aceder.'; cta = 'Reativar';
+    cls = 'past-due'; title = 'Pagamento pendente'; sub = 'Regularize para manter o plano.'; cta = 'Regularizar';
+  } else if (plan === 'free') {
+    // Convite discreto a experimentar/upgrade — sem alarme (o free é um plano válido).
+    title = 'Plano Grátis'; sub = 'Desbloqueie score, IA e renovações.'; cta = 'Fazer upgrade';
+  } else {
+    host.hidden = true; host.innerHTML = ''; return;   // Pro/Business ativos: sem banner
   }
   host.hidden = false;
   host.className = cls;
-  host.innerHTML = `<div class="tb-title">${title}</div><div class="tb-sub">${sub}</div><a href="#/subscrever">${cta}</a>`;
+  host.innerHTML = `<div class="tb-title">${title}</div><div class="tb-sub">${sub}</div><a href="#/planos">${cta}</a>`;
 }
 
 /* Preenche o bloco "Atividade" da barra lateral com o perfil ativo. */
@@ -288,46 +344,221 @@ async function updateSidebar() {
   } catch { /* silencioso — não bloqueia a navegação */ }
 }
 
-/* ---------- Página de subscrição ---------- */
-async function renderSubscribe() {
+/* ---------- Planos (grátis / pro / business): trial, upgrade e pagamento ---------- */
+const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
+const PLAN_FEATURES = {
+  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal'],
+  pro: ['Tudo do Grátis', 'Oportunidades com score + fit IA', 'Radar de renovações', 'Concursos europeus (TED)', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação Excel', '2 utilizadores'],
+  business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Uso elevado de IA', 'Exportação avançada'],
+};
+
+async function renderPlans() {
   topbar.hidden = false;
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let s;
-  try { s = await api('/api/billing/summary'); } catch { return; }
-  const c = s.company || {};
-  const statusLabel = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' }[c.subscription_status] || c.subscription_status;
-  app.innerHTML = `
-    <div class="card" style="max-width:640px;margin:2rem auto">
-      <div class="eyebrow" style="color:var(--brand)">Subscrição</div>
-      <h2 style="margin:0.3rem 0 0.2rem">${esc(s.plan)}</h2>
-      <div class="price" style="display:flex;align-items:baseline;gap:0.4rem;margin:0.4rem 0">
-        <span style="font-size:2rem;font-weight:700">${esc(s.price)}</span>
-      </div>
-      <p class="muted">Empresa: <strong>${esc(c.name ?? '—')}</strong> · Estado: <strong>${esc(statusLabel ?? '—')}</strong>${
-        c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · ${c.trial_days_left} dia(s) de teste restantes` : ''}</p>
-      <div class="hint">Tudo incluído: oportunidades priorizadas, radar de renovações, mapa e sazonalidade, análise IA do caderno de encargos, inteligência competitiva e digest semanal.</div>
-      ${s.billing_enabled ? `
-        <p style="margin-top:1rem">Escolha o método de pagamento:</p>
-        <div class="inline" style="gap:0.5rem;flex-wrap:wrap">
-          <button data-m="mb" class="pay-m">Multibanco</button>
-          <button data-m="mbw" class="pay-m btn-secondary">MB WAY</button>
-          <button data-m="cc" class="pay-m btn-secondary">Cartão</button>
-        </div>
-        <div id="pay-result" style="margin-top:1rem"></div>`
-        : `<div class="error" style="margin-top:1rem">Os pagamentos ainda não estão ativos nesta instalação. Contacte o suporte para subscrever.</div>`}
-      <p style="margin-top:1.2rem"><a href="#/">← Voltar ao radar</a></p>
+  let cat, summary;
+  try {
+    [cat, summary] = await Promise.all([api('/api/plans'), api('/api/billing/summary')]);
+  } catch { return; }
+  await loadCaps(true);
+  const current = summary.plan || 'free';
+  const c = summary.company || {};
+  const canTrial = current === 'free' && c.trial_ends_at == null;
+
+  const card = (p) => {
+    const isCurrent = p.key === current;
+    const paid = p.key !== 'free';
+    let cta = '';
+    if (isCurrent) cta = `<button class="btn-secondary" disabled>Plano atual</button>`;
+    else if (p.key === 'free') cta = '';
+    else if (p.key === 'pro' && canTrial) cta = `<button class="plan-cta" data-act="trial">Experimentar 7 dias grátis</button>`;
+    else cta = `<button class="plan-cta" data-plan="${p.key}" data-act="checkout">${current === 'free' ? 'Subscrever' : 'Mudar para ' + PLAN_LABEL[p.key]}</button>`;
+    return `<div class="plan-box${isCurrent ? ' current' : ''}" style="flex:1;min-width:210px;border:1px solid ${isCurrent ? 'var(--brand)' : 'var(--line,#e2e8f0)'};border-radius:12px;padding:1.1rem;display:flex;flex-direction:column;gap:.6rem">
+      <div class="eyebrow" style="color:var(--brand)">${PLAN_LABEL[p.key]}</div>
+      <div style="font-size:1.7rem;font-weight:700">${paid ? eur(p.price_cents) + ' €' : 'Grátis'}${paid ? '<span style="font-size:.8rem;font-weight:400;color:var(--muted,#64748b)"> + IVA / mês</span>' : ''}</div>
+      <ul style="list-style:none;padding:0;margin:.2rem 0;font-size:.85rem;line-height:1.7">${(PLAN_FEATURES[p.key] || []).map((f) => `<li>✓ ${esc(f)}</li>`).join('')}</ul>
+      <div style="margin-top:auto">${cta}</div>
     </div>`;
-  document.querySelectorAll('.pay-m').forEach((b) => {
+  };
+
+  app.innerHTML = `
+    <div class="card" style="max-width:900px;margin:1.5rem auto">
+      <div class="eyebrow" style="color:var(--brand)">Planos</div>
+      <h2 style="margin:.3rem 0 .2rem">Escolha o seu plano</h2>
+      <p class="muted" style="margin:0 0 1rem">Plano atual: <strong>${PLAN_LABEL[current]}</strong>${
+        c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · teste Pro termina em ${c.trial_days_left} dia(s)` : ''}</p>
+      <div class="inline" style="gap:1rem;flex-wrap:wrap;align-items:stretch">${(cat.plans || []).map(card).join('')}</div>
+      ${!cat.billing_enabled ? '<div class="hint" style="margin-top:1rem">Os pagamentos ainda não estão ativos nesta instalação. O teste gratuito funciona; para subscrever contacte o suporte.</div>' : ''}
+      <div id="plan-method" style="margin-top:1rem"></div>
+      <div id="plan-result" style="margin-top:1rem"></div>
+      <p style="margin-top:1.2rem"><a href="#/conta">← Conta e subscrição</a></p>
+    </div>`;
+
+  app.querySelectorAll('.plan-cta').forEach((b) => {
     b.onclick = async () => {
-      const out = document.getElementById('pay-result');
-      out.innerHTML = '<p class="muted">A criar pagamento…</p>';
-      try {
-        const r = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ method: b.dataset.m }) });
-        out.innerHTML = `<div class="hint">Pagamento criado (método ${esc(r.method)}). Siga as instruções para concluir; o acesso é ativado assim que o pagamento é confirmado.</div>
-          <pre style="white-space:pre-wrap;font-size:0.8rem;background:var(--panel-2,#f6f8fb);padding:0.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r.payment, null, 2))}</pre>`;
-      } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+      const out = document.getElementById('plan-result');
+      if (b.dataset.act === 'trial') {
+        out.innerHTML = '<p class="muted">A ativar o teste…</p>';
+        try {
+          await api('/api/billing/trial', { method: 'POST' });
+          window._me = null; await loadCaps(true);
+          out.innerHTML = '<div class="hint">Teste Pro de 7 dias ativado! A recarregar…</div>';
+          setTimeout(() => { location.hash = '#/hoje'; }, 900);
+        } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+        return;
+      }
+      // checkout: escolher método de pagamento
+      const plan = b.dataset.plan;
+      const methods = document.getElementById('plan-method');
+      methods.innerHTML = `<p style="margin:0 0 .4rem">Método de pagamento para o plano <strong>${PLAN_LABEL[plan]}</strong>:</p>
+        <div class="inline" style="gap:.5rem;flex-wrap:wrap">
+          <button data-m="mb" class="pay-m" data-plan="${plan}">Multibanco</button>
+          <button data-m="mbw" class="pay-m btn-secondary" data-plan="${plan}">MB WAY</button>
+          <button data-m="cc" class="pay-m btn-secondary" data-plan="${plan}">Cartão</button>
+        </div>`;
+      methods.querySelectorAll('.pay-m').forEach((pm) => {
+        pm.onclick = async () => {
+          out.innerHTML = '<p class="muted">A criar pagamento…</p>';
+          try {
+            const r = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ method: pm.dataset.m, plan: pm.dataset.plan }) });
+            out.innerHTML = `<div class="hint">Pagamento criado (método ${esc(r.method)}, plano ${PLAN_LABEL[r.plan] || r.plan}). Siga as instruções para concluir; o plano é ativado assim que o pagamento é confirmado.</div>
+              <pre style="white-space:pre-wrap;font-size:.8rem;background:var(--panel-2,#f6f8fb);padding:.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r.payment, null, 2))}</pre>`;
+          } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+        };
+      });
     };
   });
+}
+
+/* ---------- Conta: plano, uso de IA e equipa (seats) ---------- */
+async function renderAccount() {
+  topbar.hidden = false;
+  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  let caps, summary, seats;
+  try {
+    [caps, summary] = await Promise.all([api('/api/me/capabilities'), api('/api/billing/summary')]);
+  } catch { return; }
+  window._caps = caps;
+  try { seats = await api('/api/seats'); } catch { seats = null; }
+  const c = summary.company || {};
+  const plan = caps.plan || 'free';
+  const statusLabel = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' }[c.subscription_status] || c.subscription_status || '—';
+  const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
+  const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
+  const seatMax = caps.seats?.max ?? 1;
+  const seatUsed = caps.seats?.used ?? 1;
+
+  app.innerHTML = `
+    <div class="card" style="max-width:820px;margin:1.5rem auto">
+      <div class="eyebrow" style="color:var(--brand)">Conta</div>
+      <h2 style="margin:.3rem 0 .2rem">${esc(c.name ?? window._me?.username ?? '')}</h2>
+      <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
+
+      <div class="inline" style="gap:1rem;flex-wrap:wrap;align-items:stretch">
+        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Plano</div>
+          <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${PLAN_LABEL[plan]}</div>
+          <div class="muted" style="font-size:.85rem">Estado: ${esc(statusLabel)}${
+            c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · ${c.trial_days_left} dia(s) restantes` : ''}${
+            c.renewal_at ? ` · renova a ${new Date(c.renewal_at).toLocaleDateString('pt-PT')}` : ''}</div>
+          <p style="margin:.8rem 0 0"><a class="btn" href="#/planos" style="display:inline-block;padding:.45rem .9rem;background:var(--brand);color:#fff;border-radius:8px;text-decoration:none;font-size:.85rem">${plan === 'business' ? 'Ver planos' : 'Fazer upgrade'}</a></p>
+        </div>
+
+        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA este mês</div>
+          <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${ai.used}${ai.cap > 0 ? ` <span style="font-size:.9rem;font-weight:400;color:var(--muted,#64748b)">/ ${ai.cap}</span>` : ''}</div>
+          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct >= 100 ? '#e11d48' : 'var(--brand)'}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
+          <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.enabled ? 'O teto é indicativo — avisamos, não bloqueamos.' : 'Contagem informativa; sem bloqueio.'}</div>
+        </div>
+      </div>
+
+      ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
+    </div>`;
+
+  wireSeats();
+}
+
+function renderSeatsBlock(seats, used, max, plan) {
+  const canInvite = max > used;
+  const members = (seats?.members || []).map((m) => `
+    <tr><td>${esc([m.first_name, m.last_name].filter(Boolean).join(' ') || m.username)}</td>
+        <td class="muted">${esc(m.email || m.username)}</td>
+        <td>${m.is_admin ? '<span class="chip">admin</span>' : ''}</td>
+        <td style="text-align:right">${m.id === window._me?.user_id || (seats?.members || []).length <= 1 ? '' : `<button class="lnk seat-rm" data-id="${m.id}" style="color:#e11d48">Remover</button>`}</td></tr>`).join('');
+  const invites = (seats?.invites || []).map((i) => `
+    <tr><td colspan="2" class="muted">${esc(i.email)} <span class="chip">convite pendente</span></td><td></td>
+        <td style="text-align:right"><button class="lnk seat-inv-rm" data-id="${i.id}" style="color:#e11d48">Cancelar</button></td></tr>`).join('');
+  return `
+    <div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+      <div class="inline" style="justify-content:space-between;align-items:baseline">
+        <h3 style="margin:0">Equipa <span class="muted" style="font-size:.85rem;font-weight:400">(${used}/${max} lugares)</span></h3>
+      </div>
+      <table style="width:100%;margin-top:.6rem;font-size:.9rem"><tbody>${members}${invites || ''}</tbody></table>
+      ${max <= 1
+        ? '<div class="hint" style="margin-top:.8rem">O plano atual permite apenas 1 utilizador. Faça upgrade para convidar a sua equipa.</div>'
+        : canInvite
+          ? `<div class="inline" style="gap:.5rem;margin-top:.8rem">
+               <input type="email" id="seat-email" placeholder="email@empresa.pt" style="flex:1">
+               <button id="seat-invite">Convidar</button>
+             </div><div id="seat-result" style="margin-top:.5rem"></div>`
+          : '<div class="hint" style="margin-top:.8rem">Limite de lugares atingido para o plano atual.</div>'}
+    </div>`;
+}
+
+function wireSeats() {
+  const inviteBtn = document.getElementById('seat-invite');
+  if (inviteBtn) inviteBtn.onclick = async () => {
+    const email = document.getElementById('seat-email').value.trim();
+    const out = document.getElementById('seat-result');
+    out.innerHTML = '<span class="muted">A convidar…</span>';
+    try {
+      const r = await api('/api/seats/invite', { method: 'POST', body: JSON.stringify({ email }) });
+      out.innerHTML = `<div class="hint">Convite criado para ${esc(email)}. Link de aceitação: <code>${esc(location.origin + r.accept_url)}</code></div>`;
+      setTimeout(renderAccount, 1400);
+    } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+  };
+  document.querySelectorAll('.seat-rm').forEach((b) => b.onclick = async () => {
+    if (!confirm('Remover este utilizador da empresa?')) return;
+    try { await api('/api/seats/' + b.dataset.id, { method: 'DELETE' }); renderAccount(); } catch (err) { alert(err.message); }
+  });
+  document.querySelectorAll('.seat-inv-rm').forEach((b) => b.onclick = async () => {
+    try { await api('/api/seats/invites/' + b.dataset.id, { method: 'DELETE' }); renderAccount(); } catch (err) { alert(err.message); }
+  });
+}
+
+/* ---------- Aceitar convite de equipa ---------- */
+async function renderAcceptInvite(token) {
+  topbar.hidden = true;
+  document.body.classList.add('login-bg');
+  app.innerHTML = '<div class="card login-box"><p class="muted">A validar convite…</p></div>';
+  let inv;
+  try { inv = await api('/api/public/invite/' + encodeURIComponent(token)); }
+  catch (err) { app.innerHTML = `<div class="card login-box">${wordmark(24)}<div class="error" style="margin-top:1rem">${esc(err.message)}</div><p class="login-foot"><a href="#/login">Entrar</a></p></div>`; return; }
+  app.innerHTML = `
+    <div class="card login-box">
+      ${wordmark(24)}
+      <h2 style="margin:.4rem 0 .2rem">Juntar-se à equipa</h2>
+      <p class="muted" style="margin:0 0 1rem">Convite para <strong>${esc(inv.company_name)}</strong> (${esc(inv.email)}).</p>
+      <form id="inv-form">
+        <div class="reg-grid">
+          <div><label>Primeiro nome *</label><input type="text" name="first_name" required></div>
+          <div><label>Apelido</label><input type="text" name="last_name"></div>
+        </div>
+        <label>Password *</label><input type="password" name="password" minlength="8" autocomplete="new-password" required>
+        <div class="error" id="inv-error" style="margin-top:.6rem"></div>
+        <p style="margin-top:.8rem"><button type="submit">Criar conta e entrar</button></p>
+      </form>
+    </div>`;
+  localizeValidation(document.getElementById('inv-form'));
+  document.getElementById('inv-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api('/api/public/invite/accept', { method: 'POST', body: JSON.stringify({
+        token, password: fd.get('password'), first_name: fd.get('first_name'), last_name: fd.get('last_name') }) });
+      window._me = null; window._caps = null;
+      location.hash = '#/hoje';
+    } catch (err) { document.getElementById('inv-error').textContent = err.message; }
+  };
 }
 
 /* ---------- Lista de pesquisas ---------- */
@@ -2025,6 +2256,8 @@ async function route() {
   });
   if (hash === '#/login') { window._me = null; return renderLogin(); }
   if (hash === '#/registo') { window._me = null; return renderRegister(); }
+  const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
+  if (invite) { window._me = null; return renderAcceptInvite(decodeURIComponent(invite[1])); }
 
   // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
   // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
@@ -2035,11 +2268,15 @@ async function route() {
       return; /* api() já redirecionou para login */
     }
   }
+  loadCaps().then(applyNavGating);   // capabilities em 2.º plano (não bloqueia a navegação)
   topbar.hidden = false;
-  whoami.innerHTML = `<span class="nm">${esc(window._me.username)}</span>${window._me.company?.name ? `<span class="co">${esc(window._me.company.name)}</span>` : ''}`;
+  const planPill = window._me.plan && window._me.plan !== 'free'
+    ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
+  whoami.innerHTML = `<a href="#/conta" style="text-decoration:none;color:inherit"><span class="nm">${esc(window._me.username)}</span>${window._me.company?.name ? `<span class="co">${esc(window._me.company.name)}${planPill}</span>` : planPill}</a>`;
   renderTrialBanner(window._me);
   updateSidebar();
-  if (hash === '#/subscrever') return renderSubscribe();
+  if (hash === '#/subscrever' || hash === '#/planos') return renderPlans();
+  if (hash === '#/conta') return renderAccount();
   // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
@@ -2072,6 +2309,7 @@ async function route() {
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
     return await renderHoje();
   } catch (err) {
+    if (err.planRequired) { app.innerHTML = upgradePanel(err.planRequired); return; }
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   }
 }

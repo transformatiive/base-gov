@@ -14,9 +14,29 @@ export const config = {
 
   // Subscrição / trial
   trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
-  planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA)
+  planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
   planName: process.env.PLAN_NAME || 'BaseRadar',
   appBaseUrl: process.env.APP_BASE_URL || '',   // ex.: https://basegov-robot-production.up.railway.app
+
+  // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
+  // capability → plano mínimo; seats/tetos/preços por plano; soft cap de IA.
+  plans: {
+    features: {
+      // free
+      concursos: 'free', digest: 'free', mapa: 'free', sazonalidade: 'free',
+      // pro
+      score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
+      analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
+      // business
+      seats: 'business', export_avancada: 'business', ia_elevada: 'business',
+    } as Record<string, 'free' | 'pro' | 'business'>,
+    seats: { free: 1, pro: 2, business: 10 } as Record<string, number>,
+    aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises/mês (teto; ver flag)
+    priceCents: { free: 0, pro: 2900, business: 14900 } as Record<string, number>,  // sem IVA
+    order: ['free', 'pro', 'business'] as const,
+    // Soft cap de IA: quando true, AVISA (não bloqueia). Desligado por defeito.
+    aiSoftCapEnabled: (process.env.AI_SOFT_CAP_ENABLED || 'false').toLowerCase() === 'true',
+  },
 
   // Easypay (pagamentos PT: Multibanco, MB WAY, cartão, subscrições)
   easypay: {

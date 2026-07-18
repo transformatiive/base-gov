@@ -86,7 +86,7 @@ Resumo por email (rascunho no Gmail / versão web): novos concursos, renovaçõe
 
 ## 6. Como funciona
 
-1. **Registo (7 dias grátis, sem cartão)** — nome, email, empresa e NIF.
+1. **Registo (grátis, sem cartão)** — nome, email, empresa e NIF. Pode experimentar o Pro 7 dias a qualquer momento.
 2. **Atividade** — palavras-chave e/ou códigos **CPV** (com pesquisa assistida). O radar fica **pré-configurado** em minutos.
 3. **Recolha** — o sistema cruza o histórico completo do BASE e vigia as novas publicações (recolha diária).
 4. **Radar** — a partir daí, tudo é apresentado no contexto da atividade: oportunidades, renovações, mapa, concorrentes.
@@ -113,16 +113,19 @@ Multi-empresa: cada conta vê **apenas os seus** perfis e dados; o corpus públi
 
 ---
 
-## 9. Preço
+## 9. Planos e preço
 
-**Preço único — 29 € / mês + IVA. Tudo incluído.**
+Três planos, todos sem compromisso — comece grátis e suba quando precisar. Pagamento nacional (Multibanco, MB WAY ou cartão) via **Easypay**; cancele quando quiser.
 
-- **7 dias de teste gratuito**, sem cartão.
-- Depois, subscrição mensal simples — sem escalões, sem extras, cancele quando quiser.
-- Pagamento nacional (Multibanco, MB WAY ou cartão) via **Easypay**.
-- Ao fim dos 7 dias, o acesso continua só com subscrição ativa.
+| Plano | Preço (sem IVA) | Inclui |
+|---|---|---|
+| **Grátis** | 0 € | Concursos abertos, mapa por distrito, sazonalidade e digest semanal. 1 utilizador. |
+| **Pro** | 29 € / mês | Tudo do Grátis + oportunidades com **score e fit IA**, radar de **renovações**, concursos europeus (**TED**), **análise IA** do caderno de encargos + dossier de resposta, **concorrentes** e **entidades**, exportação Excel. **2 utilizadores**. |
+| **Business** | 149 € / mês | Tudo do Pro + **equipa até 10 utilizadores** (seats), **uso elevado de IA** e **exportação avançada**. |
 
-**Inclui:** oportunidades priorizadas com score e fit IA · radar de renovações e concursos abertos · concursos europeus (TED) · análise IA do caderno de encargos + dossier de resposta · mapa, sazonalidade e concorrentes · digest semanal · exportação Excel.
+- **Experimente o Pro 7 dias grátis, sem cartão** — ao fim do período, a conta volta ao plano Grátis se não subscrever.
+- O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade).
+- O uso de IA é contabilizado por conta (com visibilidade no painel da conta); a contagem é informativa e não bloqueia.
 
 ## 10. Diferenciadores
 

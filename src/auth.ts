@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { config } from './config.js';
+import { effectivePlan, Plan } from './plans.js';
 
 export const SESSION_COOKIE = 'basegov_session';
 
@@ -11,6 +12,7 @@ export interface AuthUser {
   companyId: number | null;   // null = acesso global (chave de API / integrações)
   isAdmin: boolean;
   accessOk: boolean;          // subscrição ativa ou trial a decorrer
+  plan: Plan;                 // plano efetivo (free|pro|business) — fonte de gating
 }
 
 type AuthedRequest = FastifyRequest & { auth?: AuthUser };
@@ -20,6 +22,7 @@ const ACCESS_OK_SQL = `(c.subscription_status = 'active'
   OR (c.subscription_status = 'trialing' AND (c.trial_ends_at IS NULL OR c.trial_ends_at > now())))`;
 
 const USER_COLS = `u.id, u.username, u.company_id, u.is_admin,
+  c.plan, c.subscription_status, c.trial_ends_at,
   COALESCE(${ACCESS_OK_SQL}, true) AS access_ok`;
 const USER_FROM = `FROM users u LEFT JOIN companies c ON c.id = u.company_id`;
 
@@ -30,6 +33,12 @@ function toUser(row: Record<string, unknown>): AuthUser {
     companyId: (row.company_id as number) ?? null,
     isAdmin: row.is_admin === true,
     accessOk: row.access_ok !== false,
+    // Plano efetivo resolvido no backend — fonte única de verdade do gating.
+    plan: effectivePlan({
+      plan: row.plan,
+      subscription_status: row.subscription_status,
+      trial_ends_at: row.trial_ends_at,
+    }),
   };
 }
 
@@ -49,16 +58,6 @@ export async function verifyCredentials(identifier: string, password: string): P
 async function loadByUsername(username: string): Promise<AuthUser | null> {
   const { rows } = await pool.query(`SELECT ${USER_COLS} ${USER_FROM} WHERE u.username = $1`, [username]);
   return rows.length ? toUser(rows[0]) : null;
-}
-
-// Prefixos de API que continuam acessíveis mesmo sem subscrição ativa
-// (autenticação, faturação, dados abertos públicos da conta e info da própria conta).
-const UNGATED = ['/api/auth/', '/api/billing/', '/api/public/'];
-
-function isGated(url: string): boolean {
-  const path = url.split('?')[0];
-  if (!path.startsWith('/api/')) return false;
-  return !UNGATED.some((p) => path.startsWith(p));
 }
 
 async function checkBasicAuth(header: string): Promise<AuthUser | null> {
@@ -84,7 +83,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
     const apiKey = req.headers['x-api-key'];
     if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
       // Integrações têm acesso global (sem empresa) — para uso interno/administrativo.
-      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true };
+      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true, plan: 'business' };
     }
   }
 
@@ -100,11 +99,9 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
 
   (req as AuthedRequest).auth = user;
 
-  // Gating de subscrição: empresas sem acesso (trial terminado, sem subscrição
-  // ativa) só podem usar autenticação/faturação. Admin e api-key não são gated.
-  if (!user.isAdmin && user.companyId != null && !user.accessOk && isGated(req.url)) {
-    reply.code(402).send({ error: { code: 'subscription_required', message: 'Subscrição necessária para continuar' } });
-  }
+  // O acesso depende do PLANO, não de um estado ativo/inativo único (R10):
+  // toda a conta autenticada tem o plano free como base; as features Pro/Business
+  // são bloqueadas com 403 por requirePlan() nas rotas respetivas. Sem 402 global.
 }
 
 /** Contexto autenticado do pedido (após requireAuth). */

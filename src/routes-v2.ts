@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, auth } from './auth.js';
+import { requirePlan } from './plans.js';
+import { recordUsage } from './aiUsage.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
@@ -198,50 +200,70 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- IA (OpenRouter): ficha de oportunidade, fit scores, digest ----------
   app.get('/api/ai/status', { preHandler: requireAuth }, async () => ({ enabled: aiEnabled() }));
 
-  app.post('/api/announcements/:id/analyze', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/announcements/:id/analyze', { preHandler: [requireAuth, requirePlan('analise_ia')] }, async (req, reply) => {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      return await analyzeAnnouncement(id, profileId);
+      const r = await analyzeAnnouncement(id, profileId);
+      // R4: regista utilização só quando houve chamada real ao modelo (não em cache).
+      if (!r.cached) {
+        const { companyId, userId } = auth(req);
+        await recordUsage({ companyId, userId, kind: 'analise_anuncio', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
+      }
+      return r;
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
   });
 
-  app.post('/api/contracts/:id/analyze', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/contracts/:id/analyze', { preHandler: [requireAuth, requirePlan('analise_ia')] }, async (req, reply) => {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      return await analyzeContract(id, profileId);
+      const r = await analyzeContract(id, profileId);
+      if (!r.cached) {
+        const { companyId, userId } = auth(req);
+        await recordUsage({ companyId, userId, kind: 'analise_contrato', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
+      }
+      return r;
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
   });
 
   // Template de resposta (dossier com placeholders) para um anúncio
-  app.post('/api/announcements/:id/response-template', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/announcements/:id/response-template', { preHandler: [requireAuth, requirePlan('analise_ia')] }, async (req, reply) => {
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      return await responseTemplate(id, profileId);
+      const r = await responseTemplate(id, profileId);
+      const { companyId, userId } = auth(req);
+      await recordUsage({ companyId, userId, kind: 'dossier', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
+      return { markdown: r.markdown, model: r.model };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
   });
 
-  app.post('/api/profiles/:id/fit-scores', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/profiles/:id/fit-scores', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {
     const profileId = Number((req.params as { id: string }).id);
     if (!(await ensureProfile(req, reply, profileId))) return;
     if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
     try {
-      return { scores: await fitScores(profileId, items) };
+      const { scores, usage } = await fitScores(profileId, items);
+      // Só conta quando houve chamada real (fit calculado, não vindo todo da cache).
+      if (usage.tokens_in > 0 || usage.tokens_out > 0) {
+        const { companyId, userId } = auth(req);
+        await recordUsage({ companyId, userId, kind: 'fit', tokensIn: usage.tokens_in, tokensOut: usage.tokens_out, model: 'anthropic/claude-haiku-4.5' });
+      }
+      return { scores };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
@@ -496,7 +518,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: renovações ----------
-  app.get('/api/insights/renewals', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/insights/renewals', { preHandler: [requireAuth, requirePlan('renovacoes')] }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const profileId = parseProfileId(q);
     if (!(await ensureProfile(req, reply, profileId))) return;
@@ -630,7 +652,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Entidades ----------
-  app.get('/api/entities', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/entities', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req) => {
     const q = req.query as Record<string, unknown>;
     const role = q.role === 'contracted' ? 'contracted' : 'contracting';
     const params: unknown[] = [role];
@@ -666,7 +688,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.get('/api/entities/:id', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/entities/:id', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const { rows: ent } = await pool.query('SELECT * FROM entities WHERE id = $1', [id]);
     if (ent.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Entidade não encontrada' } });
@@ -727,7 +749,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: concorrentes (adjudicatários no scope) ----------
-  app.get('/api/insights/competitors', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/insights/competitors', { preHandler: [requireAuth, requirePlan('concorrentes')] }, async (req, reply) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
     if (!(await ensureProfile(req, reply, profileId))) return;
     const scope = contractScope(profileId);
@@ -790,7 +812,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- TED: concursos europeus (read-through, sem persistência) ----------
-  app.get('/api/insights/ted', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/insights/ted', { preHandler: [requireAuth, requirePlan('ted')] }, async (req, reply) => {
     const profileId = parseProfileId(req.query as Record<string, unknown>);
     if (!(await ensureProfile(req, reply, profileId))) return;
     let cpvCodes: string[] = [];
@@ -810,7 +832,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Insights: oportunidades (scoring) ----------
-  app.get('/api/insights/opportunities', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/insights/opportunities', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {
     const query = req.query as Record<string, unknown>;
     const profileId = parseProfileId(query);
     if (!(await ensureProfile(req, reply, profileId))) return;

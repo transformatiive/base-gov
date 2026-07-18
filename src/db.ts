@@ -248,6 +248,44 @@ CREATE TABLE IF NOT EXISTS ai_fit_scores (
 );
 ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS reasons JSONB;
 
+-- Planos de subscrição (free | pro | business). O plano é a fonte de gating.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS renewal_at TIMESTAMPTZ;  -- próxima renovação/cobrança
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS pending_plan TEXT;       -- plano em checkout, promovido no webhook pago
+ALTER TABLE companies ALTER COLUMN plan SET DEFAULT 'free';             -- novos registos = free
+-- Backfill legado: o antigo plano único "baseradar" corresponde ao Pro.
+UPDATE companies SET plan = 'pro' WHERE plan = 'baseradar';
+-- Empresas sem plano reconhecido (nulo/vazio/desconhecido) resolvem como free.
+UPDATE companies SET plan = 'free' WHERE plan IS NULL OR plan NOT IN ('free', 'pro', 'business');
+
+-- Registo de utilização de IA (uma linha por análise BEM-SUCEDIDA). Conta e regista;
+-- NÃO bloqueia (o teto é soft, controlado por flag). Falhas não contam.
+CREATE TABLE IF NOT EXISTS ai_usage_events (
+  id             SERIAL PRIMARY KEY,
+  company_id     INT REFERENCES companies(id) ON DELETE CASCADE,
+  user_id        INT REFERENCES users(id) ON DELETE SET NULL,
+  kind           TEXT NOT NULL,               -- fit | analise_anuncio | analise_contrato | dossier
+  tokens_in      INT NOT NULL DEFAULT 0,
+  tokens_out     INT NOT NULL DEFAULT 0,
+  cost_estimate  NUMERIC(12,6) NOT NULL DEFAULT 0,  -- USD estimado
+  model          TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_company_month ON ai_usage_events (company_id, created_at);
+
+-- Convites de utilizadores por empresa (seats). Limite por plano validado na app.
+CREATE TABLE IF NOT EXISTS company_invites (
+  id          SERIAL PRIMARY KEY,
+  company_id  INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  email       TEXT NOT NULL,
+  token       TEXT UNIQUE NOT NULL,
+  invited_by  INT REFERENCES users(id) ON DELETE SET NULL,
+  accepted_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_company_invites_company ON company_invites (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_company_invites_pending
+  ON company_invites (company_id, lower(email)) WHERE accepted_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);
@@ -285,7 +323,7 @@ export async function migrateAndSeed(): Promise<void> {
     `SELECT id FROM companies WHERE name = 'Conta principal' ORDER BY id LIMIT 1`);
   if (co.length === 0) {
     co = (await pool.query(
-      `INSERT INTO companies (name, subscription_status) VALUES ('Conta principal', 'active') RETURNING id`)).rows;
+      `INSERT INTO companies (name, plan, subscription_status) VALUES ('Conta principal', 'business', 'active') RETURNING id`)).rows;
     console.log('Seeded default company: Conta principal');
   }
   const defaultCompanyId = co[0].id;
