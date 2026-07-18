@@ -33,7 +33,7 @@ export const config = {
     } as Record<string, 'free' | 'pro' | 'business'>,
     seats: { free: 1, pro: 2, business: 10 } as Record<string, number>,
     aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises/mês (teto; ver flag)
-    priceCents: { free: 0, pro: 2900, business: 14900 } as Record<string, number>,  // sem IVA
+    priceCents: { free: 0, pro: 2900, business: 9900 } as Record<string, number>,  // sem IVA
     order: ['free', 'pro', 'business'] as const,
     // Soft cap de IA: quando true, AVISA (não bloqueia). Desligado por defeito.
     aiSoftCapEnabled: (process.env.AI_SOFT_CAP_ENABLED || 'false').toLowerCase() === 'true',

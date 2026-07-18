@@ -121,7 +121,7 @@ Três planos, todos sem compromisso — comece grátis e suba quando precisar. P
 |---|---|---|
 | **Grátis** | 0 € | Concursos abertos, mapa por distrito, sazonalidade e digest semanal. 1 utilizador. |
 | **Pro** | 29 € / mês | Tudo do Grátis + oportunidades com **score e fit IA**, radar de **renovações**, concursos europeus (**TED**), **análise IA** do caderno de encargos + dossier de resposta, **concorrentes** e **entidades**, exportação Excel. **2 utilizadores**. |
-| **Business** | 149 € / mês | Tudo do Pro + **equipa até 10 utilizadores** (seats), **uso elevado de IA** e **exportação avançada**. |
+| **Business** | 99 € / mês | Tudo do Pro + **equipa até 10 utilizadores** (seats), **uso elevado de IA** e **exportação avançada**. |
 
 - **Experimente o Pro 7 dias grátis, sem cartão** — ao fim do período, a conta volta ao plano Grátis se não subscrever.
 - O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade).
