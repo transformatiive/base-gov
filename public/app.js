@@ -2268,9 +2268,13 @@ async function renderAdmin() {
 
   const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
   const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
+  const userLine = (u) => `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}</span>
+      <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(u.email || u.username)}">repor password</button></div>`;
   const compRows = (companies.items || []).map((c) => `
     <tr data-id="${c.id}">
-      <td><strong>${esc(c.name)}</strong>${c.nif ? `<div class="muted" style="font-size:.8rem">NIF ${esc(c.nif)}</div>` : ''}</td>
+      <td><strong>${esc(c.name)}</strong>${c.nif ? `<div class="muted" style="font-size:.8rem">NIF ${esc(c.nif)}</div>` : ''}
+        ${(c.users || []).map(userLine).join('')}</td>
       <td>${c.n_users}</td>
       <td>${c.n_profiles}</td>
       <td>${c.ai_month ?? 0}</td>
@@ -2341,6 +2345,16 @@ async function renderAdmin() {
         </table></div>
       </div>
     </div>`;
+
+  app.querySelectorAll('.rp-user').forEach((btn) => btn.onclick = async () => {
+    const pw = prompt(`Nova password para ${btn.dataset.email} (mín. 8 caracteres):`);
+    if (pw == null) return;
+    if (pw.length < 8) { alert('A password deve ter pelo menos 8 caracteres.'); return; }
+    try {
+      const r = await api('/api/admin/users/reset-password', { method: 'POST', body: JSON.stringify({ user_id: Number(btn.dataset.uid), new_password: pw }) });
+      alert(`✓ Password reposta para ${r.username}. Já pode iniciar sessão com esse email/utilizador.`);
+    } catch (e) { alert(e.message); }
+  });
 
   const rpBtn = document.getElementById('rp-btn');
   if (rpBtn) rpBtn.onclick = async () => {
