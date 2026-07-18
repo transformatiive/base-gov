@@ -29,7 +29,7 @@ export const config = {
       score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
       analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
       // business
-      seats: 'business', export_avancada: 'business', ia_elevada: 'business',
+      seats: 'business', export_avancada: 'business', ia_elevada: 'business', api_integration: 'business',
     } as Record<string, 'free' | 'pro' | 'business'>,
     seats: { free: 1, pro: 2, business: 10 } as Record<string, number>,
     aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises/mês (teto; ver flag)
