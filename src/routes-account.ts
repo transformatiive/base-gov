@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { billingConfigured, createSubscription, applyWebhook, verifyWebhookSignature, planPriceCents } from './billing.js';
+import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents } from './stripe.js';
 import { normalizePlan, Plan } from './plans.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -120,9 +120,10 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       seats: p.seats[key] ?? 1,
     });
     return {
-      billing_enabled: billingConfigured(),
+      billing_enabled: stripeConfigured(),
       trial_days: config.trialDays,
-      methods: ['mb', 'mbw', 'cc'],
+      // Cartão → subscrição automática; MB WAY / Multibanco / transferência → pontual.
+      pay_modes: ['subscription', 'payment'],
       plans: (p.order as readonly Plan[]).map(plan),
     };
   });
@@ -130,12 +131,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   // ---------- Faturação ----------
   app.get('/api/billing/summary', { preHandler: requireAuth }, async (req) => {
     const { companyId, plan } = auth(req);
-    const priceEur = (planPriceCents(plan === 'business' ? 'business' : 'pro') / 100)
-      .toLocaleString('pt-PT', { minimumFractionDigits: 2 });
+    const payPlan: Plan = plan === 'business' ? 'business' : 'pro';
+    const priceEur = (grossCents(payPlan) / 100).toLocaleString('pt-PT', { minimumFractionDigits: 2 });
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
-        `SELECT name, nif, plan, subscription_status, trial_ends_at, renewal_at,
+        `SELECT name, nif, plan, subscription_status, trial_ends_at, renewal_at, access_until,
            CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
                 THEN GREATEST(0, ceil(extract(epoch FROM (trial_ends_at - now())) / 86400)::int) END AS trial_days_left
          FROM companies WHERE id = $1`, [companyId]);
@@ -144,9 +145,8 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return {
       plan,   // plano efetivo
       plan_name: config.planName,
-      price: `${priceEur} € + IVA / mês`,
-      billing_enabled: billingConfigured(),
-      methods: ['mb', 'mbw', 'cc'],
+      price: `${priceEur} € (c/ IVA) / mês`,
+      billing_enabled: stripeConfigured(),
       company,
     };
   });
@@ -170,54 +170,53 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return { ok: true, plan: 'pro', trial_days: config.trialDays };
   });
 
+  // Cria uma sessão de Checkout Stripe. mode: 'subscription' (cartão, recorrente)
+  // ou 'payment' (MB WAY / Multibanco / transferência, pontual de 1 mês).
   app.post('/api/billing/checkout', { preHandler: requireAuth }, async (req, reply) => {
     const { companyId, username } = auth(req);
     if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
-    if (!billingConfigured()) {
+    if (!stripeConfigured()) {
       return reply.code(503).send({ error: { code: 'billing_disabled', message: 'Pagamentos ainda não configurados. Contacte o suporte.' } });
     }
-    const body = (req.body ?? {}) as { method?: string; plan?: string };
-    const method = String(body.method ?? 'mb');
+    const body = (req.body ?? {}) as { mode?: string; plan?: string };
+    const mode = body.mode === 'payment' ? 'payment' : 'subscription';
     const targetPlan = normalizePlan(body.plan ?? 'pro');
-    if (!['mb', 'mbw', 'cc', 'dd'].includes(method)) {
-      return reply.code(400).send({ error: { code: 'invalid_method', message: 'Método de pagamento inválido.' } });
-    }
     if (targetPlan !== 'pro' && targetPlan !== 'business') {
-      return reply.code(400).send({ error: { code: 'invalid_plan', message: 'Plano inválido para subscrição.' } });
+      return reply.code(400).send({ error: { code: 'invalid_plan', message: 'Plano inválido.' } });
     }
     const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.nif, u.first_name, u.last_name, u.email, u.phone
+      `SELECT c.id, c.name, c.nif, c.stripe_customer_id, u.first_name, u.last_name, u.email
        FROM companies c JOIN users u ON u.company_id = c.id AND u.username = $1 WHERE c.id = $2`,
       [username, companyId]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Empresa não encontrada.' } });
     const r = rows[0];
     try {
-      const result = await createSubscription(
-        { id: r.id, name: r.name, nif: r.nif },
-        { name: `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || r.email, email: r.email, phone: r.phone },
-        method, targetPlan);
-      return { ok: true, plan: result.plan, method: result.method, payment: result.payment, subscription_id: result.id };
+      const result = await createCheckout({
+        company: { id: r.id, name: r.name, nif: r.nif, stripeCustomerId: r.stripe_customer_id },
+        customer: { email: r.email, name: `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || r.email },
+        plan: targetPlan, mode,
+      });
+      return { ok: true, url: result.url, plan: targetPlan, mode };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'billing_failed', message: String(err).slice(0, 300) } });
     }
   });
 
-  // Webhook do Easypay (público). Regra inviolável: a assinatura é verificada
+  // Webhook do Stripe (público). Regra inviolável: a assinatura é verificada
   // ANTES de qualquer mutação de estado; sem verificação, nada muda.
   app.post('/api/billing/webhook', async (req, reply) => {
     const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
-    const sig = (req.headers['x-easypay-signature'] as string | undefined)
-      ?? (req.headers['x-signature'] as string | undefined);
-    const querySecret = (req.query as Record<string, unknown>)?.secret as string | undefined;
-    if (!verifyWebhookSignature(rawBody, sig, querySecret)) {
+    const sig = req.headers['stripe-signature'] as string | undefined;
+    if (!verifyStripeSignature(rawBody, sig)) {
       return reply.code(401).send({ ok: false, error: 'invalid_signature' });
     }
     try {
-      const result = await applyWebhook((req.body ?? {}) as Record<string, unknown>);
+      const event = JSON.parse(rawBody) as Record<string, unknown>;
+      const result = await handleStripeEvent(event);
       return reply.code(200).send(result);
     } catch (err) {
-      console.error('[billing] webhook erro:', err);
-      return reply.code(200).send({ ok: false });   // 200 para o Easypay não repetir indefinidamente
+      console.error('[stripe] webhook erro:', err);
+      return reply.code(200).send({ ok: false });   // 200 para o Stripe não repetir indefinidamente
     }
   });
 
@@ -278,6 +277,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     const signups = await pool.query(
       `SELECT count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30,
               count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7 FROM companies`);
+    const payments = await pool.query(
+      `SELECT count(*)::int AS n_month,
+              coalesce(sum(amount_cents),0)::int AS cents_month,
+              count(*) FILTER (WHERE moloni_status IN ('ok','draft'))::int AS invoiced,
+              count(*) FILTER (WHERE moloni_status = 'error')::int AS invoice_errors
+       FROM payments WHERE created_at >= date_trunc('month', now())`);
     return {
       totals: totals.rows[0],
       subscriptions: split.rows[0],
@@ -287,6 +292,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       searches_by_kind: searchesByKind.rows,
       profile_runs: runs.rows[0],
       signups: signups.rows[0],
+      payments: payments.rows[0],
     };
   });
 

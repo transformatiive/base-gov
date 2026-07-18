@@ -39,11 +39,33 @@ export const config = {
     aiSoftCapEnabled: (process.env.AI_SOFT_CAP_ENABLED || 'false').toLowerCase() === 'true',
   },
 
-  // Easypay (pagamentos PT: Multibanco, MB WAY, cartão, subscrições)
-  easypay: {
-    accountId: process.env.EASYPAY_ACCOUNT_ID || '',
-    apiKey: process.env.EASYPAY_API_KEY || '',
-    baseUrl: process.env.EASYPAY_BASE_URL || 'https://api.prod.easypay.pt/2.0',
-    webhookSecret: process.env.EASYPAY_WEBHOOK_SECRET || '',  // valida os webhooks recebidos
+  // Taxa de IVA aplicada aos preços "sem IVA" dos planos (para cobrança e fatura).
+  ivaRate: parseFloat(process.env.IVA_RATE || '0.23'),
+
+  // Stripe (pagamentos: cartão em subscrição; MB WAY / Multibanco / transferência
+  // em pagamento pontual). Chaves e price IDs vêm de variáveis de ambiente.
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    // Price IDs de subscrição mensal (cartão) — criados no dashboard Stripe.
+    pricePro: process.env.STRIPE_PRICE_PRO || '',
+    priceBusiness: process.env.STRIPE_PRICE_BUSINESS || '',
+    // Métodos pontuais (payment mode) usam price_data inline; os métodos são os
+    // ativados no dashboard Stripe (cartão, MB WAY, Multibanco, transferência).
+  },
+
+  // Moloni (faturação certificada PT). Emite fatura a cada pagamento confirmado.
+  // Tudo por variáveis de ambiente — nenhuma credencial em código.
+  moloni: {
+    clientId: process.env.MOLONI_CLIENT_ID || '',
+    clientSecret: process.env.MOLONI_CLIENT_SECRET || '',
+    username: process.env.MOLONI_USERNAME || '',
+    password: process.env.MOLONI_PASSWORD || '',
+    companyId: process.env.MOLONI_COMPANY_ID || '',
+    documentSetId: process.env.MOLONI_DOCUMENT_SET_ID || '',   // série de faturas (ex.: IVCX)
+    taxId: process.env.MOLONI_TAX_ID || '',                    // id do IVA no Moloni (para a linha)
+    // Finalizar a fatura (status=1, comunicada à AT) ou criar rascunho (status=0).
+    // Por segurança, por omissão fica em rascunho até confirmação.
+    finalize: (process.env.MOLONI_FINALIZE || 'false').toLowerCase() === 'true',
   },
 };

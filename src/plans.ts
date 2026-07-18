@@ -21,13 +21,16 @@ export function normalizePlan(raw: unknown): Plan {
  * - caso contrário (sem plano, trial expirado, cancelado, past_due) → free.
  * Empresa sem plano definido resolve sempre como free (nunca pago por omissão).
  */
-export function effectivePlan(company: { plan?: unknown; subscription_status?: unknown; trial_ends_at?: unknown } | null | undefined): Plan {
+export function effectivePlan(company: { plan?: unknown; subscription_status?: unknown; trial_ends_at?: unknown; access_until?: unknown } | null | undefined): Plan {
   if (!company) return 'free';
   const plan = normalizePlan(company.plan);
   if (plan === 'free') return 'free';
   const status = String(company.subscription_status ?? '').toLowerCase();
   const trialOk = !company.trial_ends_at || new Date(company.trial_ends_at as string) > new Date();
-  if (status === 'active') return plan;
+  // Pagamento pontual: o acesso é válido até access_until; depois cai para free.
+  // Subscrição por cartão: access_until é null → sem janela, o estado manda.
+  const accessOk = !company.access_until || new Date(company.access_until as string) > new Date();
+  if (status === 'active' && accessOk) return plan;
   if (status === 'trialing' && trialOk) return plan;
   return 'free';
 }

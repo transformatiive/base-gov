@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } from './auth.js';
-import { capabilitiesFor, seatLimit, aiCap } from './plans.js';
+import { capabilitiesFor, seatLimit, aiCap, requirePlan } from './plans.js';
 import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
 
@@ -328,7 +328,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { total: rows.length ? Number(rows[0].full_count) : 0, page, size, items };
   });
 
-  app.get('/api/searches/:id/export.xlsx', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/api/searches/:id/export.xlsx', { preHandler: [requireAuth, requirePlan('export_excel')] }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     if (!(await searchOwned(req, id))) return reply.code(404).send({ error: { code: 'not_found', message: 'Pesquisa não encontrada' } });
     const { rows } = await pool.query('SELECT term FROM searches WHERE id = $1', [id]);
