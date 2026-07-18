@@ -222,6 +222,11 @@
       .plan{padding:26px 20px 22px}
       .plan .pprice .n{font-size:34px}
     }
+    /* Animações de scroll (revelar ao entrar na viewport) — respeitam reduced-motion */
+    @media (prefers-reduced-motion: no-preference){
+      .reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease, transform .7s cubic-bezier(.16,1,.3,1)}
+      .reveal.in{opacity:1;transform:none}
+    }
   </style>
 </head>
 <body>
@@ -479,5 +484,47 @@
       <a href="/app#/registo">Começar grátis</a>
     </div>
   </div>
+
+  <script>
+    (function () {
+      // Anima elementos ao entrar na viewport. Não faz nada com reduced-motion
+      // (o conteúdo fica sempre visível). Revela também o que já ficou acima do
+      // ecrã (ex.: saltos por âncora "Preço") para nada ficar invisível.
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var sel = '.hero .eyebrow,.hero h1,.hero p.lead,.hero-cta,.stats,.herocard,' +
+        '.band .sect-eyebrow,.band h2.sect,.step,' +
+        '.feat-sect .sect-eyebrow,.feat-sect h2.sect,.fcard,' +
+        '.plans-sect .sect-eyebrow,.plans-sect h2.sect,.plans-sect .sub,.plan';
+      var els = Array.prototype.slice.call(document.querySelectorAll(sel));
+      els.forEach(function (el) { el.classList.add('reveal'); });
+      // Escalonamento suave dentro de cada grupo de cartões.
+      ['.steps', '.feat-cards', '.plans'].forEach(function (g) {
+        document.querySelectorAll(g).forEach(function (group) {
+          Array.prototype.slice.call(group.children).forEach(function (child, i) {
+            if (child.classList.contains('reveal')) child.style.transitionDelay = (i * 70) + 'ms';
+          });
+        });
+      });
+      var pending = els, ticking = false;
+      function check() {
+        ticking = false;
+        var h = window.innerHeight || document.documentElement.clientHeight;
+        var still = [];
+        for (var i = 0; i < pending.length; i++) {
+          var el = pending[i];
+          // Revela se o topo já está dentro (ou acima) da viewport.
+          if (el.getBoundingClientRect().top < h * 0.92) el.classList.add('in');
+          else still.push(el);
+        }
+        pending = still;
+        if (!pending.length) { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); }
+      }
+      function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(check); } }
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
+      window.addEventListener('hashchange', function () { setTimeout(check, 60); });
+      check();
+    })();
+  </script>
 </body>
 </html>
