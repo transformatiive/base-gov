@@ -5,7 +5,8 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { billingConfigured, createSubscription, applyWebhook } from './billing.js';
+import { billingConfigured, createSubscription, applyWebhook, verifyWebhookSignature, planPriceCents } from './billing.js';
+import { normalizePlan, Plan } from './plans.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NIF_RE = /^\d{9}$/;
@@ -51,10 +52,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // R1: todo o novo registo começa no plano FREE (nunca pago por omissão).
+      // O trial Pro de 7 dias é opt-in, ativado no ecrã de planos (R6).
       const { rows: [company] } = await client.query(
-        `INSERT INTO companies (name, nif, subscription_status, trial_ends_at)
-         VALUES ($1, $2, 'trialing', now() + ($3 || ' days')::interval) RETURNING id`,
-        [companyName, nif, String(config.trialDays)]
+        `INSERT INTO companies (name, nif, plan, subscription_status)
+         VALUES ($1, $2, 'free', 'active') RETURNING id`,
+        [companyName, nif]
       );
       const hash = await bcrypt.hash(password, 10);
       await client.query(
@@ -105,27 +108,66 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return { items: rows };
   });
 
+  // ---------- Planos ----------
+  // Catálogo de planos (preços/limites) para o ecrã de subscrição.
+  app.get('/api/plans', { preHandler: requireAuth }, async () => {
+    const p = config.plans;
+    const plan = (key: Plan) => ({
+      key,
+      name: key === 'free' ? 'Grátis' : key === 'pro' ? 'Pro' : 'Business',
+      price_cents: p.priceCents[key] ?? 0,
+      ai_cap: p.aiCap[key] ?? 0,
+      seats: p.seats[key] ?? 1,
+    });
+    return {
+      billing_enabled: billingConfigured(),
+      trial_days: config.trialDays,
+      methods: ['mb', 'mbw', 'cc'],
+      plans: (p.order as readonly Plan[]).map(plan),
+    };
+  });
+
   // ---------- Faturação ----------
   app.get('/api/billing/summary', { preHandler: requireAuth }, async (req) => {
-    const { companyId } = auth(req);
-    const priceEur = (config.planPriceCents / 100).toLocaleString('pt-PT', { minimumFractionDigits: 2 });
+    const { companyId, plan } = auth(req);
+    const priceEur = (planPriceCents(plan === 'business' ? 'business' : 'pro') / 100)
+      .toLocaleString('pt-PT', { minimumFractionDigits: 2 });
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
-        `SELECT name, nif, subscription_status, trial_ends_at,
+        `SELECT name, nif, plan, subscription_status, trial_ends_at, renewal_at,
            CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
                 THEN GREATEST(0, ceil(extract(epoch FROM (trial_ends_at - now())) / 86400)::int) END AS trial_days_left
          FROM companies WHERE id = $1`, [companyId]);
       company = rows[0] ?? null;
     }
     return {
-      plan: config.planName,
+      plan,   // plano efetivo
+      plan_name: config.planName,
       price: `${priceEur} € + IVA / mês`,
-      price_cents: config.planPriceCents,
       billing_enabled: billingConfigured(),
       methods: ['mb', 'mbw', 'cc'],
       company,
     };
+  });
+
+  // Inicia o trial Pro de 7 dias, sem cartão (R6). Só a partir do free e uma vez.
+  app.post('/api/billing/trial', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const { rows } = await pool.query('SELECT plan, subscription_status, trial_ends_at FROM companies WHERE id = $1', [companyId]);
+    const c = rows[0];
+    if (!c) return reply.code(404).send({ error: { code: 'not_found', message: 'Empresa não encontrada.' } });
+    // Trial só é oferecido a quem nunca teve um (evita renovar trial indefinidamente).
+    if (c.trial_ends_at != null || normalizePlan(c.plan) !== 'free') {
+      return reply.code(409).send({ error: { code: 'trial_unavailable', message: 'O período de teste já foi utilizado ou já tem um plano ativo.' } });
+    }
+    await pool.query(
+      `UPDATE companies SET plan = 'pro', subscription_status = 'trialing',
+         trial_ends_at = now() + ($2 || ' days')::interval WHERE id = $1`,
+      [companyId, String(config.trialDays)]
+    );
+    return { ok: true, plan: 'pro', trial_days: config.trialDays };
   });
 
   app.post('/api/billing/checkout', { preHandler: requireAuth }, async (req, reply) => {
@@ -134,9 +176,14 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     if (!billingConfigured()) {
       return reply.code(503).send({ error: { code: 'billing_disabled', message: 'Pagamentos ainda não configurados. Contacte o suporte.' } });
     }
-    const method = String((req.body as { method?: string })?.method ?? 'mb');
+    const body = (req.body ?? {}) as { method?: string; plan?: string };
+    const method = String(body.method ?? 'mb');
+    const targetPlan = normalizePlan(body.plan ?? 'pro');
     if (!['mb', 'mbw', 'cc', 'dd'].includes(method)) {
       return reply.code(400).send({ error: { code: 'invalid_method', message: 'Método de pagamento inválido.' } });
+    }
+    if (targetPlan !== 'pro' && targetPlan !== 'business') {
+      return reply.code(400).send({ error: { code: 'invalid_plan', message: 'Plano inválido para subscrição.' } });
     }
     const { rows } = await pool.query(
       `SELECT c.id, c.name, c.nif, u.first_name, u.last_name, u.email, u.phone
@@ -148,18 +195,22 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       const result = await createSubscription(
         { id: r.id, name: r.name, nif: r.nif },
         { name: `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || r.email, email: r.email, phone: r.phone },
-        method);
-      return { ok: true, method: result.method, payment: result.payment, subscription_id: result.id };
+        method, targetPlan);
+      return { ok: true, plan: result.plan, method: result.method, payment: result.payment, subscription_id: result.id };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'billing_failed', message: String(err).slice(0, 300) } });
     }
   });
 
-  // Webhook do Easypay (público — validado por segredo partilhado se configurado).
+  // Webhook do Easypay (público). Regra inviolável: a assinatura é verificada
+  // ANTES de qualquer mutação de estado; sem verificação, nada muda.
   app.post('/api/billing/webhook', async (req, reply) => {
-    if (config.easypay.webhookSecret) {
-      const sig = req.headers['x-easypay-signature'] ?? (req.query as Record<string, unknown>)?.secret;
-      if (sig !== config.easypay.webhookSecret) return reply.code(401).send({ ok: false });
+    const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
+    const sig = (req.headers['x-easypay-signature'] as string | undefined)
+      ?? (req.headers['x-signature'] as string | undefined);
+    const querySecret = (req.query as Record<string, unknown>)?.secret as string | undefined;
+    if (!verifyWebhookSignature(rawBody, sig, querySecret)) {
+      return reply.code(401).send({ ok: false, error: 'invalid_signature' });
     }
     try {
       const result = await applyWebhook((req.body ?? {}) as Record<string, unknown>);
@@ -174,19 +225,24 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/companies/:id/subscription', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
     const id = Number((req.params as { id: string }).id);
-    const status = String((req.body as { status?: string })?.status ?? '');
+    const body = (req.body ?? {}) as { status?: string; plan?: string };
+    const status = String(body.status ?? '');
     if (!['trialing', 'active', 'past_due', 'canceled'].includes(status)) {
       return reply.code(400).send({ error: { code: 'invalid_status', message: 'Estado inválido.' } });
     }
-    const { rowCount } = await pool.query('UPDATE companies SET subscription_status = $1 WHERE id = $2', [status, id]);
+    // Permite (opcionalmente) definir o plano em simultâneo — gestão manual.
+    const plan = body.plan != null ? normalizePlan(body.plan) : null;
+    const { rowCount } = plan
+      ? await pool.query('UPDATE companies SET subscription_status = $1, plan = $2 WHERE id = $3', [status, plan, id])
+      : await pool.query('UPDATE companies SET subscription_status = $1 WHERE id = $2', [status, id]);
     if (!rowCount) return reply.code(404).send({ error: { code: 'not_found', message: 'Empresa não encontrada.' } });
-    return { ok: true, id, status };
+    return { ok: true, id, status, plan };
   });
 
   app.get('/api/admin/companies', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
     const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.nif, c.subscription_status, c.trial_ends_at, c.created_at,
+      `SELECT c.id, c.name, c.nif, c.plan, c.subscription_status, c.trial_ends_at, c.renewal_at, c.created_at,
          (SELECT count(*) FROM users u WHERE u.company_id = c.id) AS n_users,
          (SELECT count(*) FROM profiles p WHERE p.company_id = c.id) AS n_profiles
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);

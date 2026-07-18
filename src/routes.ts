@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } from './auth.js';
+import { capabilitiesFor, seatLimit, aiCap } from './plans.js';
+import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
 
 interface Paging {
@@ -177,11 +179,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
-    const { username, companyId, isAdmin } = auth(req);
+    const { username, companyId, isAdmin, plan } = auth(req);
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
-        `SELECT id, name, nif, plan, subscription_status, trial_ends_at,
+        `SELECT id, name, nif, plan, subscription_status, trial_ends_at, renewal_at,
            (subscription_status = 'active'
              OR (subscription_status = 'trialing' AND (trial_ends_at IS NULL OR trial_ends_at > now()))) AS access_ok,
            CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
@@ -189,7 +191,27 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
          FROM companies WHERE id = $1`, [companyId]);
       company = rows[0] ?? null;
     }
-    return { username, is_admin: isAdmin, company };
+    // plan aqui é o plano EFETIVO (resolvido no backend) — não o valor bruto da coluna.
+    return { username, is_admin: isAdmin, plan, company };
+  });
+
+  // Capabilities: fonte única para o frontend espelhar o gating (o backend é
+  // sempre a verdade — 403 nas rotas fora do plano, independentemente disto).
+  app.get('/api/me/capabilities', { preHandler: requireAuth }, async (req) => {
+    const { companyId, isAdmin, plan } = auth(req);
+    // Admin/acesso global: plano efetivo business (tudo desbloqueado).
+    const effPlan = isAdmin ? 'business' : plan;
+    const [seatUsed] = companyId != null
+      ? (await pool.query('SELECT count(*)::int AS n FROM users WHERE company_id = $1', [companyId])).rows
+      : [{ n: 0 }];
+    const ai = await aiUsageSummary(companyId, effPlan);
+    return {
+      plan: effPlan,
+      capabilities: capabilitiesFor(effPlan),
+      ai_usage: ai,
+      seats: { used: seatUsed.n, max: seatLimit(effPlan) },
+      caps: { ai_cap: aiCap(effPlan) },
+    };
   });
 
   // ---- Searches ----

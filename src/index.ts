@@ -8,6 +8,7 @@ import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { registerAccountRoutes } from './routes-account.js';
+import { registerSeatRoutes } from './seats.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
 import { ensureCpvCatalog } from './cpv.js';
@@ -38,9 +39,21 @@ async function main(): Promise<void> {
   app.get('/app', sendApp);
   app.get('/app/', sendApp);
 
+  // Guarda o corpo cru dos pedidos JSON (necessário para verificar a assinatura
+  // HMAC dos webhooks do Easypay antes de mutar estado).
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as unknown as { rawBody?: string }).rawBody = body as string;
+    try {
+      done(null, body ? JSON.parse(body as string) : {});
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
+
   await registerRoutes(app);
   await registerRoutesV2(app);
   await registerAccountRoutes(app);
+  await registerSeatRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
 
