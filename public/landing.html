@@ -126,6 +126,42 @@
     .plan ul li svg{flex:none;margin-top:1px}
     .plan ul li.off{color:var(--faint)}
     .plan ul li b{color:var(--ink);font-weight:600}
+    /* Cartões de funcionalidade com pré-visualização conceptual */
+    .feat-cards{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+    .fcard{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+    .fcard .viz{background:var(--panel);border-bottom:1px solid var(--line);padding:22px;min-height:172px;display:flex;flex-direction:column;justify-content:center;gap:11px}
+    .fcard .fbody{padding:18px 22px 22px}
+    .fcard .fbody b{font-size:15px;display:flex;align-items:center;gap:9px}
+    .fcard .fbody b .bullet{width:8px;height:8px;border-radius:50%;background:var(--brand);flex:none}
+    .fcard .fbody .d{font-size:13px;color:var(--ink2);line-height:1.6;margin-top:6px}
+    /* Renovações — mini timeline */
+    .rnv{display:grid;grid-template-columns:70px 1fr 40px;align-items:center;gap:10px;font-size:11.5px}
+    .rnv .rl{color:var(--ink2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rnv .rt{position:relative;height:8px;background:var(--line2);border-radius:99px}
+    .rnv .rt i{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:99px}
+    .rnv .rt .flag{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:var(--amber);border:2px solid var(--panel);transform:translate(-50%,-50%)}
+    .rnv .rr{color:var(--amber-ink);font-weight:700;text-align:right;white-space:nowrap}
+    /* Concorrentes — quota */
+    .qbar{display:grid;grid-template-columns:92px 1fr 32px;align-items:center;gap:10px;font-size:11.5px}
+    .qbar .ql{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .qbar.me .ql{font-weight:700;color:var(--ink)}
+    .qbar .qt{height:9px;background:var(--line2);border-radius:99px;overflow:hidden}
+    .qbar .qt i{display:block;height:100%;background:#b9c4bf;border-radius:99px}
+    .qbar.me .qt i{background:var(--brand)}
+    .qbar .qv{font-size:11px;font-weight:700;color:var(--ink2);text-align:right}
+    .qbar.me .qv{color:var(--brand)}
+    /* Sazonalidade — barras mensais */
+    .szbars{display:flex;align-items:flex-end;gap:6px;height:98px}
+    .szbars i{flex:1;background:#cdd8d2;border-radius:3px 3px 0 0}
+    .szbars i.hi{background:var(--brand)}
+    .szx{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:0.1em;color:var(--faint);margin-top:9px;padding:0 1px}
+    /* Digest — mini email */
+    .mail{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    .mail .mh{background:var(--brand);color:var(--on);padding:9px 13px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+    .mail .mh .md{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+    .mail .mr{padding:9px 13px;font-size:12px;color:var(--ink2);border-top:1px solid var(--line2);display:flex;align-items:center;gap:9px}
+    .mail .mr .k{font-size:12.5px;font-weight:700;color:var(--brand);background:var(--tint);border-radius:6px;padding:1px 8px;flex:none}
+    .mail .mr .k.amber{color:var(--amber-ink);background:var(--amber-bg)}
 
     /* Footer */
     .foot{padding:24px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
@@ -143,6 +179,7 @@
       .steps{grid-template-columns:1fr}
       .feat-grid{grid-template-columns:1fr;gap:32px}
       .feat-only{grid-template-columns:1fr;gap:20px}
+      .feat-cards{grid-template-columns:1fr;gap:16px}
       .pricing{position:static}
       .plans{grid-template-columns:1fr;gap:16px}
     }
@@ -221,11 +258,55 @@
   <div class="wrap feat-sect" id="funcionalidades">
     <div class="sect-eyebrow">FUNCIONALIDADES</div>
     <h2 class="sect" style="margin-bottom:24px">Tudo o que a sua equipa comercial precisa.</h2>
-    <div class="feat-only">
-      <div class="feat"><span class="bullet"></span><div><b>Radar de renovações</b><div class="d">Fim previsto de cada contrato em curso e data sugerida de contacto — 4 meses antes do novo procedimento.</div></div></div>
-      <div class="feat"><span class="bullet"></span><div><b>Inteligência competitiva</b><div class="d">Quota de mercado, valores médios e clientes de cada concorrente. Saiba contra quem concorre e onde ganhar terreno.</div></div></div>
-      <div class="feat"><span class="bullet"></span><div><b>Mapa e sazonalidade</b><div class="d">Onde está o dinheiro por distrito e em que meses se contrata — para planear a prospeção com antecedência.</div></div></div>
-      <div class="feat"><span class="bullet"></span><div><b>Digest semanal</b><div class="d">Todas as semanas, o essencial no seu email: novos concursos e renovações a entrar na janela de contacto.</div></div></div>
+    <div class="feat-cards">
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="rnv"><span class="rl">Braga · Festas</span><div class="rt"><i style="width:82%"></i><span class="flag" style="left:82%"></span></div><span class="rr">jul</span></div>
+          <div class="rnv"><span class="rl">Barcelos</span><div class="rt"><i style="width:58%"></i><span class="flag" style="left:58%"></span></div><span class="rr">set</span></div>
+          <div class="rnv"><span class="rl">Guimarães</span><div class="rt"><i style="width:38%"></i><span class="flag" style="left:38%"></span></div><span class="rr">nov</span></div>
+          <div style="display:flex;gap:14px;font-size:10.5px;color:var(--muted);margin-top:4px">
+            <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;height:5px;background:var(--brand);border-radius:99px"></span>tempo até ao fim</span>
+            <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--amber);border-radius:50%"></span>contactar</span>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de renovações</b><div class="d">Fim previsto de cada contrato em curso e data sugerida de contacto — 4 meses antes do novo procedimento.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="qbar me"><span class="ql">A sua empresa</span><div class="qt"><i style="width:100%"></i></div><span class="qv">32%</span></div>
+          <div class="qbar"><span class="ql">Grupo Luso</span><div class="qt"><i style="width:81%"></i></div><span class="qv">26%</span></div>
+          <div class="qbar"><span class="ql">Pirotec, Lda</span><div class="qt"><i style="width:56%"></i></div><span class="qv">18%</span></div>
+          <div class="qbar"><span class="ql">Eventos SA</span><div class="qt"><i style="width:37%"></i></div><span class="qv">12%</span></div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Inteligência competitiva</b><div class="d">Quota de mercado, valores médios e clientes de cada concorrente. Saiba contra quem concorre e onde ganhar terreno.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="szbars">
+            <i style="height:34%"></i><i style="height:46%"></i><i style="height:58%"></i><i style="height:70%"></i>
+            <i style="height:50%"></i><i style="height:40%"></i><i style="height:46%"></i><i class="hi" style="height:88%"></i>
+            <i class="hi" style="height:96%"></i><i style="height:66%"></i><i style="height:58%"></i><i style="height:42%"></i>
+          </div>
+          <div class="szx"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Mapa e sazonalidade</b><div class="d">Onde está o dinheiro por distrito e em que meses se contrata — para planear a prospeção com antecedência.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
+          <div class="mail">
+            <div class="mh"><span class="md"></span>Digest semanal · A minha atividade</div>
+            <div class="mr"><span class="k">3</span> novos concursos esta semana</div>
+            <div class="mr"><span class="k amber">2</span> renovações a entrar na janela de contacto</div>
+            <div class="mr" style="color:var(--brand);font-weight:600">Ver oportunidades →</div>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Digest semanal</b><div class="d">Todas as semanas, o essencial no seu email: novos concursos e renovações a entrar na janela de contacto.</div></div>
+      </div>
+
     </div>
   </div>
 

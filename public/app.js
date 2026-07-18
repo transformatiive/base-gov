@@ -2010,7 +2010,7 @@ function renderAiFicha(an, cached, model) {
     <h3>Requisitos de habilitação</h3>${list(an.requisitos_habilitacao)}
     <h3>Red flags</h3>${list(an.red_flags)}
     <h3>Checklist para a proposta</h3>${list(an.checklist)}
-    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'} · modelo ${esc(model ?? '')}</p>`;
+    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}</p>`;
 }
 
 /* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
@@ -2238,6 +2238,179 @@ async function renderEntity(id) {
 }
 
 /* ---------- Router ---------- */
+/* ---------- Admin: gestão de utilizadores, planos e utilização ---------- */
+const AI_KIND_LABEL = { fit: 'Fit IA', analise_anuncio: 'Análise de anúncio', analise_contrato: 'Análise de contrato', dossier: 'Dossier de resposta' };
+const STATUS_LABEL = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' };
+
+async function renderAdmin() {
+  topbar.hidden = false;
+  if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
+  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  let stats, companies, feedback;
+  try {
+    [stats, companies, feedback] = await Promise.all([
+      api('/api/admin/stats'), api('/api/admin/companies'), api('/api/admin/feedback').catch(() => ({ items: [] })),
+    ]);
+  } catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
+
+  const t = stats.totals || {}; const sub = stats.subscriptions || {};
+  const money = (v) => '$' + Number(v || 0).toFixed(2);
+  const stat = (label, value, note) => `<div class="admin-stat">
+    <div class="asv">${value}</div><div class="asl">${esc(label)}</div>${note ? `<div class="asn">${esc(note)}</div>` : ''}</div>`;
+
+  const planBreak = (stats.companies_by_plan || []).map((r) => `${PLAN_LABEL[r.plan] || r.plan}: <strong>${r.n}</strong>`).join(' · ');
+  const aiKinds = (stats.ai_usage?.by_kind || []).map((r) => `<div class="admin-row"><span>${esc(AI_KIND_LABEL[r.kind] || r.kind)}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem análises este mês.</p>';
+  const searchKinds = (stats.searches_by_kind || []).map((r) => `<div class="admin-row"><span>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem pesquisas.</p>';
+
+  const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
+  const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
+  const compRows = (companies.items || []).map((c) => `
+    <tr data-id="${c.id}">
+      <td><strong>${esc(c.name)}</strong>${c.nif ? `<div class="muted" style="font-size:.8rem">NIF ${esc(c.nif)}</div>` : ''}</td>
+      <td>${c.n_users}</td>
+      <td>${c.n_profiles}</td>
+      <td>${c.ai_month ?? 0}</td>
+      <td><select class="adm-plan">${planOpts(normalizeAdminPlan(c.plan))}</select></td>
+      <td><select class="adm-status">${statusOpts(c.subscription_status)}</select></td>
+      <td>${new Date(c.created_at).toLocaleDateString('pt-PT')}</td>
+      <td><button class="adm-save btn-secondary" style="padding:.3rem .7rem;font-size:.8rem">Guardar</button><span class="adm-msg"></span></td>
+    </tr>`).join('');
+
+  const fbRows = (feedback.items || []).map((f) => `
+    <tr class="${f.handled ? 'fb-done' : ''}">
+      <td><span class="chip">${f.kind === 'help' ? 'Ajuda' : 'Sugestão'}</span></td>
+      <td>${esc(f.message)}</td>
+      <td class="muted" style="font-size:.82rem">${esc(f.company_name || '—')}<br>${esc(f.email || f.username || '')}</td>
+      <td class="muted" style="font-size:.8rem;white-space:nowrap">${new Date(f.created_at).toLocaleDateString('pt-PT')}</td>
+      <td><button class="fb-toggle lnk" data-id="${f.id}" data-h="${f.handled ? '1' : '0'}">${f.handled ? 'Reabrir' : 'Marcar tratado'}</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">Sem mensagens.</td></tr>';
+
+  app.innerHTML = `
+    <div class="admin-wrap">
+      <div class="eyebrow" style="color:var(--brand)">Administração</div>
+      <h2 style="margin:.3rem 0 1rem">Utilização do BaseRadar</h2>
+
+      <div class="admin-stats">
+        ${stat('Empresas', t.companies ?? 0, `${stats.signups?.last7 ?? 0} novas (7d)`)}
+        ${stat('Pagantes', sub.paying ?? 0, 'subscrição ativa')}
+        ${stat('Em trial', sub.trialing ?? 0, 'Pro 7 dias')}
+        ${stat('Free / inativas', sub.free_inactive ?? 0, null)}
+        ${stat('Utilizadores', t.users ?? 0, null)}
+        ${stat('Análises IA (mês)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
+      </div>
+
+      <div class="admin-grid2">
+        <div class="card"><h3 style="margin:0 0 .6rem">Distribuição de planos</h3><p class="muted" style="margin:0 0 .8rem">${planBreak || '—'}</p>
+          <h4 style="margin:.6rem 0 .4rem">Análises de IA por tipo (mês)</h4>${aiKinds}</div>
+        <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo</h3>${searchKinds}
+          <h4 style="margin:.8rem 0 .4rem">Recolhas (profile runs)</h4>
+          <div class="admin-row"><span>Total</span><strong>${stats.profile_runs?.total ?? 0}</strong></div>
+          <div class="admin-row"><span>Últimos 30 dias</span><strong>${stats.profile_runs?.last30 ?? 0}</strong></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .8rem">Empresas</h3>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Empresa</th><th>Utils</th><th>Perfis</th><th>IA/mês</th><th>Plano</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
+          <tbody id="admin-companies">${compRows}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .8rem">Feedback e pedidos de ajuda</h3>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Tipo</th><th>Mensagem</th><th>De</th><th>Data</th><th></th></tr></thead>
+          <tbody id="admin-feedback">${fbRows}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+
+  app.querySelectorAll('#admin-companies .adm-save').forEach((btn) => btn.onclick = async () => {
+    const tr = btn.closest('tr'); const id = tr.dataset.id;
+    const plan = tr.querySelector('.adm-plan').value;
+    const status = tr.querySelector('.adm-status').value;
+    const msg = tr.querySelector('.adm-msg');
+    msg.textContent = ' a guardar…';
+    try {
+      await api(`/api/admin/companies/${id}/subscription`, { method: 'POST', body: JSON.stringify({ status, plan }) });
+      msg.textContent = ' ✓'; setTimeout(() => { msg.textContent = ''; }, 1500);
+    } catch (e) { msg.textContent = ' ' + e.message; }
+  });
+  app.querySelectorAll('#admin-feedback .fb-toggle').forEach((btn) => btn.onclick = async () => {
+    const handled = btn.dataset.h !== '1';
+    try { await api(`/api/admin/feedback/${btn.dataset.id}/handled`, { method: 'POST', body: JSON.stringify({ handled }) }); renderAdmin(); }
+    catch (e) { alert(e.message); }
+  });
+}
+function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
+
+/* Liga "Admin" à navegação lateral (só para administradores). */
+function ensureAdminNav() {
+  const nav = document.querySelector('#topbar nav');
+  if (!nav) return;
+  const existing = nav.querySelector('a[href="#/admin"]');
+  if (!window._me?.is_admin) { existing?.remove(); return; }
+  if (existing) return;
+  const a = document.createElement('a');
+  a.href = '#/admin'; a.textContent = 'Admin';
+  nav.appendChild(a);
+}
+
+/* ---------- Feedback / ajuda: botão flutuante + modal ---------- */
+function ensureHelpButton() {
+  if (document.getElementById('help-fab')) return;
+  const b = document.createElement('button');
+  b.id = 'help-fab'; b.type = 'button'; b.title = 'Ajuda e feedback';
+  b.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12" y2="17"/><circle cx="12" cy="12" r="10"/></svg><span>Ajuda</span>`;
+  b.onclick = openFeedbackModal;
+  document.body.appendChild(b);
+}
+function openFeedbackModal() {
+  if (document.getElementById('fb-modal')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'fb-modal'; wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `
+    <div class="modal-box">
+      <button class="modal-x" aria-label="Fechar">×</button>
+      <h3 style="margin:0 0 .3rem">Como podemos ajudar?</h3>
+      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o BaseRadar.</p>
+      <div class="fb-tabs">
+        <button class="fb-tab active" data-kind="help">Pedir ajuda</button>
+        <button class="fb-tab" data-kind="feedback">Sugestão / feedback</button>
+      </div>
+      <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem"></textarea>
+      <div class="error" id="fb-error" style="margin-top:.4rem"></div>
+      <div id="fb-ok" class="hint" style="margin-top:.4rem;display:none">Obrigado! A sua mensagem foi registada.</div>
+      <div class="inline" style="justify-content:flex-end;gap:.5rem;margin-top:.8rem">
+        <button class="btn-secondary" id="fb-cancel">Cancelar</button>
+        <button id="fb-send">Enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  let kind = 'help';
+  const close = () => wrap.remove();
+  wrap.querySelector('.modal-x').onclick = close;
+  wrap.querySelector('#fb-cancel').onclick = close;
+  wrap.onclick = (e) => { if (e.target === wrap) close(); };
+  wrap.querySelectorAll('.fb-tab').forEach((tb) => tb.onclick = () => {
+    kind = tb.dataset.kind;
+    wrap.querySelectorAll('.fb-tab').forEach((x) => x.classList.toggle('active', x === tb));
+  });
+  wrap.querySelector('#fb-send').onclick = async () => {
+    const message = wrap.querySelector('#fb-msg').value.trim();
+    const err = wrap.querySelector('#fb-error');
+    if (message.length < 3) { err.textContent = 'Escreva a sua mensagem.'; return; }
+    err.textContent = '';
+    try {
+      await api('/api/feedback', { method: 'POST', body: JSON.stringify({ kind, message }) });
+      wrap.querySelector('#fb-ok').style.display = 'block';
+      wrap.querySelector('#fb-send').disabled = true;
+      setTimeout(close, 1400);
+    } catch (e) { err.textContent = e.message; }
+  };
+}
+
 async function route() {
   stopPolling();
   hideMatrixTip();
@@ -2275,8 +2448,11 @@ async function route() {
   whoami.innerHTML = `<a href="#/conta" style="text-decoration:none;color:inherit"><span class="nm">${esc(window._me.username)}</span>${window._me.company?.name ? `<span class="co">${esc(window._me.company.name)}${planPill}</span>` : planPill}</a>`;
   renderTrialBanner(window._me);
   updateSidebar();
+  ensureHelpButton();
+  ensureAdminNav();
   if (hash === '#/subscrever' || hash === '#/planos') return renderPlans();
   if (hash === '#/conta') return renderAccount();
+  if (hash === '#/admin') return renderAdmin();
   // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
