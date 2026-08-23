@@ -2353,7 +2353,8 @@ async function renderAdmin() {
   const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
   const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
   const userLine = (u) => `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}</span>
+      <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}${
+        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}</span>
       <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(u.email || u.username)}">repor password</button></div>`;
   const compRows = (companies.items || []).map((c) => `
     <tr data-id="${c.id}">

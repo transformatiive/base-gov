@@ -10,6 +10,12 @@ import { storageEnabled, putDocument, storageUsage } from './storage.js';
 import { sendMail, layout, esc, mailEnabled } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
 
+/** IP do cliente, respeitando o proxy à frente da aplicação. */
+function clientIp(req: { headers: Record<string, unknown>; ip?: string }): string {
+  const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  return (fwd || req.ip || '').slice(0, 60);
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NIF_RE = /^\d{9}$/;
 const CPV_RE = /^\d{4,8}(-\d)?$/;
@@ -62,10 +68,13 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         [companyName, nif]
       );
       const hash = await bcrypt.hash(password, 10);
+      // Guarda a prova de aceitação dos Termos e da Privacidade (versão, momento
+      // e IP): o ecrã de registo declara a aceitação, aqui fica o registo dela.
       await client.query(
-        `INSERT INTO users (username, email, password_hash, company_id, first_name, last_name, phone)
-         VALUES ($1, $1, $2, $3, $4, $5, $6)`,
-        [email, hash, company.id, firstName, lastName || null, phone]
+        `INSERT INTO users (username, email, password_hash, company_id, first_name, last_name, phone,
+                            terms_accepted_at, terms_version, terms_ip)
+         VALUES ($1, $1, $2, $3, $4, $5, $6, now(), $7, $8)`,
+        [email, hash, company.id, firstName, lastName || null, phone, config.termsVersion, clientIp(req)]
       );
       // Perfil inicial pré-configurado com a atividade escolhida.
       const profileTerms = terms.length ? terms : [companyName];
@@ -248,7 +257,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
          (SELECT count(*) FROM profiles p WHERE p.company_id = c.id) AS n_profiles,
          (SELECT count(*) FROM ai_usage_events ae WHERE ae.company_id = c.id
             AND ae.created_at >= date_trunc('month', now())) AS ai_month,
-         (SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin) ORDER BY u.id)
+         (SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin, 'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version) ORDER BY u.id)
             FROM users u WHERE u.company_id = c.id) AS users
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);
     return { items: rows };
