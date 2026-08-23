@@ -5,7 +5,9 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents } from './stripe.js';
+import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents,
+         provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
+import { discoverMoloniConfig, moloniStatus } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
 import { sendMail, layout, esc, mailEnabled } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
@@ -305,6 +307,49 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     });
     if (!r.ok) return reply.code(502).send({ error: { code: 'send_failed', message: r.error ?? 'Falha no envio.' } });
     return { ok: true, id: r.id, from: config.mail.from, to };
+  });
+
+  // ---------- Admin: configuração assistida de pagamentos e faturação ----------
+  // Mostra o que já está configurado e o que falta, sem revelar segredos.
+  app.get('/api/admin/setup', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    return {
+      stripe: await stripeStatus(),
+      moloni: moloniStatus(),
+      mail: { enabled: mailEnabled(), from: config.mail.from || null },
+      app_base_url: config.appBaseUrl || null,
+    };
+  });
+
+  // Cria no Stripe os produtos e preços mensais dos planos e devolve os price
+  // IDs. Idempotente: correr duas vezes reaproveita o que já existe.
+  app.post('/api/admin/setup/stripe-prices', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    try {
+      return { ok: true, prices: await provisionPrices() };
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'stripe_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
+  // Regista o endpoint de webhook no Stripe e devolve o segredo de assinatura.
+  app.post('/api/admin/setup/stripe-webhook', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    try {
+      return { ok: true, webhook: await provisionWebhook() };
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'stripe_failed', message: String(err).slice(0, 300) } });
+    }
+  });
+
+  // Lê da conta Moloni as taxas de IVA e as séries de documentos disponíveis.
+  app.post('/api/admin/setup/moloni-discover', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    try {
+      return { ok: true, ...(await discoverMoloniConfig()) };
+    } catch (err) {
+      return reply.code(502).send({ error: { code: 'moloni_failed', message: String(err).slice(0, 300) } });
+    }
   });
 
   // ---------- Admin: diagnóstico de armazenamento ----------

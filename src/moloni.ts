@@ -139,3 +139,42 @@ export async function createMoloniInvoice(input: {
   if (!documentId) throw new Error(`invoices/insert sem document_id: ${JSON.stringify(doc).slice(0, 160)}`);
   return { documentId, status: finalize ? 'ok' : 'draft' };
 }
+
+/**
+ * Descobre a configuração da conta Moloni: taxas de IVA e séries de documentos.
+ * Serve para preencher MOLONI_TAX_ID e MOLONI_DOCUMENT_SET_ID sem ter de andar
+ * à procura no dashboard. Só leitura.
+ */
+export async function discoverMoloniConfig(): Promise<{
+  taxes: { id: number; name: string; value: number }[];
+  document_sets: { id: number; name: string }[];
+  company_id: string;
+}> {
+  const companyId = config.moloni.companyId;
+  if (!companyId) throw new Error('Falta MOLONI_COMPANY_ID.');
+
+  const taxes = (await moloniPost('taxes/getAll', { company_id: companyId })) as Record<string, unknown>[];
+  const sets = (await moloniPost('documentSets/getAll', { company_id: companyId })) as Record<string, unknown>[];
+  return {
+    company_id: companyId,
+    taxes: (Array.isArray(taxes) ? taxes : []).map((t) => ({
+      id: Number(t.tax_id), name: String(t.name ?? ''), value: Number(t.value ?? 0),
+    })),
+    document_sets: (Array.isArray(sets) ? sets : []).map((s) => ({
+      id: Number(s.document_set_id), name: String(s.name ?? ''),
+    })),
+  };
+}
+
+/** Estado da configuração Moloni, para o ecrã de configuração. */
+export function moloniStatus(): Record<string, unknown> {
+  const m = config.moloni;
+  return {
+    credentials: Boolean(m.clientId && m.clientSecret && m.username && m.password),
+    company_id: m.companyId || null,
+    document_set_id: m.documentSetId || null,
+    tax_id: m.taxId || null,
+    finalize: m.finalize,
+    ready: moloniConfigured(),
+  };
+}
