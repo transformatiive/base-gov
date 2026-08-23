@@ -330,6 +330,21 @@ CREATE TABLE IF NOT EXISTS password_resets (
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets (user_id);
 
+-- Resumo histórico da contratação anterior ao corte de retenção. Guarda a
+-- quota de mercado por entidade/ano/CPV/distrito para que a inteligência
+-- competitiva sobreviva ao apagamento das linhas detalhadas dos contratos.
+CREATE TABLE IF NOT EXISTS contract_history_agg (
+  year         INT NOT NULL,
+  entity_id    INT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL,                 -- contracted | contracting
+  cpv_division TEXT NOT NULL DEFAULT '',      -- 2 primeiros dígitos do CPV
+  district     TEXT NOT NULL DEFAULT '',
+  n_contracts  INT NOT NULL DEFAULT 0,
+  total_value  NUMERIC(15,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (year, entity_id, role, cpv_division, district)
+);
+CREATE INDEX IF NOT EXISTS idx_history_agg_entity ON contract_history_agg (entity_id, role);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);

@@ -424,6 +424,54 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     };
   });
 
+  // Constrói o resumo histórico dos contratos anteriores ao ano de corte.
+  // NÃO apaga nada — é a etapa reversível, executada e verificada antes de
+  // qualquer remoção de dados detalhados.
+  app.post('/api/admin/db/aggregate-history', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    const body = (req.body ?? {}) as { before_year?: number };
+    const beforeYear = Math.min(Math.max(Number(body.before_year ?? 2019), 2013), 2026);
+    const t0 = Date.now();
+
+    // (contract_id, entity_id, role) é chave primária de contract_entities, por
+    // isso cada contrato entra uma só vez em cada grupo — a soma não duplica.
+    const ins = await pool.query(
+      `INSERT INTO contract_history_agg (year, entity_id, role, cpv_division, district, n_contracts, total_value)
+       SELECT date_part('year', c.publication_date)::int,
+              ce.entity_id, ce.role,
+              coalesce(substring(btrim(split_part(c.cpvs, ',', 1)) from '^[0-9]{2}'), ''),
+              coalesce(NULLIF(btrim(split_part(split_part(c.execution_place, '|', 1), ',', 2)), ''), ''),
+              count(*), coalesce(sum(c.initial_contractual_price), 0)
+         FROM contracts c
+         JOIN contract_entities ce ON ce.contract_id = c.id
+        WHERE c.publication_date IS NOT NULL
+          AND c.publication_date < make_date($1, 1, 1)
+        GROUP BY 1, 2, 3, 4, 5
+       ON CONFLICT (year, entity_id, role, cpv_division, district) DO UPDATE
+         SET n_contracts = EXCLUDED.n_contracts, total_value = EXCLUDED.total_value`,
+      [beforeYear]);
+
+    const stats = await pool.query(
+      `SELECT (SELECT count(*)::int FROM contract_history_agg)                       AS agg_rows,
+              (SELECT pg_total_relation_size('contract_history_agg')::bigint)        AS agg_bytes,
+              (SELECT count(*)::int FROM contracts
+                WHERE publication_date IS NOT NULL AND publication_date < make_date($1,1,1)) AS contracts_covered,
+              (SELECT coalesce(sum(initial_contractual_price),0) FROM contracts
+                WHERE publication_date IS NOT NULL AND publication_date < make_date($1,1,1)) AS value_covered,
+              (SELECT coalesce(sum(total_value),0) FROM contract_history_agg
+                WHERE role = 'contracted')                                            AS value_in_agg`,
+      [beforeYear]);
+    const r = stats.rows[0];
+    return {
+      ok: true, before_year: beforeYear, rows_written: ins.rowCount,
+      agg_rows: r.agg_rows, agg_bytes: Number(r.agg_bytes),
+      contracts_covered: r.contracts_covered,
+      value_covered: Number(r.value_covered),
+      value_in_agg: Number(r.value_in_agg),
+      seconds: Math.round((Date.now() - t0) / 1000),
+    };
+  });
+
   // Estado do armazenamento em volume (quantos ficheiros, que espaço).
   app.get('/api/admin/storage', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
