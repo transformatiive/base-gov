@@ -2411,6 +2411,16 @@ async function renderAdmin() {
       </div>
 
       <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .3rem">Email transacional</h3>
+        <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Envia um email de teste para confirmar que a chave e o remetente estão bem configurados.</p>
+        <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
+          <input type="email" id="te-to" placeholder="destinatário do teste" style="flex:1;min-width:240px">
+          <button id="te-btn">Enviar email de teste</button>
+        </div>
+        <div id="te-result" style="margin-top:.5rem"></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .3rem">Repor password de utilizador</h3>
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Define uma nova password para um utilizador (por email). Recuperação de acesso.</p>
         <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
@@ -2439,6 +2449,17 @@ async function renderAdmin() {
       alert(`✓ Password reposta para ${r.username}. Já pode iniciar sessão com esse email/utilizador.`);
     } catch (e) { alert(e.message); }
   });
+
+  const teBtn = document.getElementById('te-btn');
+  if (teBtn) teBtn.onclick = async () => {
+    const to = document.getElementById('te-to').value.trim();
+    const out = document.getElementById('te-result');
+    out.innerHTML = '<span class="muted">A enviar…</span>';
+    try {
+      const r = await api('/api/admin/test-email', { method: 'POST', body: JSON.stringify({ to }) });
+      out.innerHTML = `<span class="admin-msg">✓ Enviado de ${esc(r.from)} para ${esc(r.to)}.</span>`;
+    } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  };
 
   const rpBtn = document.getElementById('rp-btn');
   if (rpBtn) rpBtn.onclick = async () => {
