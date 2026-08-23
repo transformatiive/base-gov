@@ -68,4 +68,11 @@ export const config = {
     // Por segurança, por omissão fica em rascunho até confirmação.
     finalize: (process.env.MOLONI_FINALIZE || 'false').toLowerCase() === 'true',
   },
+  // Email transacional (Resend). Convites, recuperação de password,
+  // confirmações de pagamento e digest. Chave sempre por variável de ambiente.
+  mail: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.MAIL_FROM || '',            // ex.: "BaseRadar <noreply@dominio.pt>"
+    supportEmail: process.env.SUPPORT_EMAIL || '',
+  },
 };

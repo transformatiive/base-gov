@@ -5,6 +5,10 @@ import { capabilitiesFor, seatLimit, aiCap, requirePlan } from './plans.js';
 import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
 import { getDocument } from './storage.js';
+import { config } from './config.js';
+import { sendMail, layout, esc } from './mail.js';
+import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 
 interface Paging {
   page: number;
@@ -176,6 +180,67 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/auth/logout', async (_req, reply) => {
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  // ---------- Recuperação de password (self-service) ----------
+  // Pede um link de reposição. Responde SEMPRE ok, mesmo para emails que não
+  // existem: revelar quais existem daria uma lista de contas válidas a quem
+  // tentasse adivinhar.
+  app.post('/api/auth/forgot-password', async (req, reply) => {
+    const body = (req.body ?? {}) as { email?: string };
+    const email = String(body.email ?? '').trim().toLowerCase();
+    const generic = { ok: true, message: 'Se existir uma conta com esse email, enviámos as instruções de reposição.' };
+    if (!email) return reply.send(generic);
+
+    const { rows } = await pool.query(
+      'SELECT id, username, first_name, email FROM users WHERE lower(email) = $1 OR lower(username) = $1', [email]);
+    const user = rows[0];
+    if (!user || !user.email) return reply.send(generic);
+
+    // O token vai em claro no email mas só o seu hash fica guardado.
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token_hash, expires_at)
+       VALUES ($1, $2, now() + interval '1 hour')`, [user.id, tokenHash]);
+
+    const url = `${config.appBaseUrl}/app#/repor-password?token=${token}`;
+    await sendMail({
+      to: user.email,
+      subject: 'BaseRadar — repor a sua password',
+      html: layout({
+        title: 'Repor a sua password',
+        body: `<p>Olá${user.first_name ? ' ' + esc(user.first_name) : ''},</p>
+               <p>Recebemos um pedido para repor a password da sua conta BaseRadar. Clique no botão abaixo para escolher uma nova. <strong>A ligação é válida durante 1 hora.</strong></p>`,
+        cta: { label: 'Repor password', url },
+        footnote: 'Se não foi você que pediu, ignore este email — a sua password actual continua válida.',
+      }),
+      text: `Reponha a sua password do BaseRadar (válido 1 hora): ${url}`,
+    });
+    return reply.send(generic);
+  });
+
+  // Consome o token e define a nova password.
+  app.post('/api/auth/reset-password', async (req, reply) => {
+    const body = (req.body ?? {}) as { token?: string; new_password?: string };
+    const token = String(body.token ?? '');
+    const newPassword = String(body.new_password ?? '');
+    if (newPassword.length < 8) {
+      return reply.code(400).send({ error: { code: 'weak_password', message: 'A password deve ter pelo menos 8 caracteres.' } });
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const { rows } = await pool.query(
+      `SELECT pr.id, pr.user_id FROM password_resets pr
+        WHERE pr.token_hash = $1 AND pr.used_at IS NULL AND pr.expires_at > now()`, [tokenHash]);
+    if (rows.length === 0) {
+      return reply.code(400).send({ error: { code: 'invalid_token', message: 'Ligação inválida ou expirada. Peça uma nova reposição.' } });
+    }
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, rows[0].user_id]);
+    // O token é de uso único; os restantes pedidos pendentes do mesmo utilizador caducam.
+    await pool.query(
+      `UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`, [rows[0].user_id]);
     return { ok: true };
   });
 
