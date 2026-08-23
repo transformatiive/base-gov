@@ -2412,6 +2412,18 @@ async function renderAdmin() {
       </div>
 
       <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .3rem">Configuração de pagamentos e faturação</h3>
+        <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Estado das integrações. Os segredos nunca são mostrados — apenas se estão definidos.</p>
+        <div id="setup-state"><span class="muted">A carregar…</span></div>
+        <div class="inline" style="gap:.5rem;flex-wrap:wrap;margin-top:.8rem">
+          <button id="sp-prices" class="btn-secondary">Criar produtos e preços no Stripe</button>
+          <button id="sp-webhook" class="btn-secondary">Registar webhook do Stripe</button>
+          <button id="sp-moloni" class="btn-secondary">Ler configuração do Moloni</button>
+        </div>
+        <div id="setup-result" style="margin-top:.6rem"></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .3rem">Email transacional</h3>
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Envia um email de teste para confirmar que a chave e o remetente estão bem configurados.</p>
         <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
@@ -2450,6 +2462,38 @@ async function renderAdmin() {
       alert(`✓ Password reposta para ${r.username}. Já pode iniciar sessão com esse email/utilizador.`);
     } catch (e) { alert(e.message); }
   });
+
+  // Estado da configuração (Stripe / Moloni / email)
+  const okMark = (v) => v ? '<span style="color:#2c6353">✓</span>' : '<span class="error">✗</span>';
+  (async () => {
+    const box = document.getElementById('setup-state');
+    if (!box) return;
+    try {
+      const st = await api('/api/admin/setup');
+      const mb = st.stripe.mbway_active, mbc = st.stripe.multibanco_active;
+      box.innerHTML = `
+        <div class="admin-row"><span>Stripe — chave secreta</span><strong>${okMark(st.stripe.secret_key)}</strong></div>
+        <div class="admin-row"><span>Stripe — segredo do webhook</span><strong>${okMark(st.stripe.webhook_secret)}</strong></div>
+        <div class="admin-row"><span>Stripe — preços dos planos</span><strong>${okMark(st.stripe.price_pro && st.stripe.price_business)}</strong></div>
+        ${st.stripe.secret_key ? `<div class="admin-row"><span>Stripe — MB WAY / Multibanco activos</span><strong>${okMark(mb)} / ${okMark(mbc)}</strong></div>` : ''}
+        <div class="admin-row"><span>Moloni — pronto a faturar</span><strong>${okMark(st.moloni.ready)}${st.moloni.ready ? (st.moloni.finalize ? ' (finaliza)' : ' (rascunho)') : ''}</strong></div>
+        <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}</strong></div>`;
+    } catch (e) { box.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  })();
+
+  const setupRun = async (path, label) => {
+    const out = document.getElementById('setup-result');
+    out.innerHTML = `<span class="muted">${label}…</span>`;
+    try {
+      const r = await api(path, { method: 'POST' });
+      out.innerHTML = `<div class="hint"><strong>${label} — concluído.</strong> Copie os valores abaixo e peça para os guardar nas variáveis de ambiente:</div>
+        <pre style="white-space:pre-wrap;font-size:.78rem;background:var(--panel-2,#f6f8fb);padding:.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r, null, 2))}</pre>`;
+    } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  };
+  const bind = (id, path, label) => { const b = document.getElementById(id); if (b) b.onclick = () => setupRun(path, label); };
+  bind('sp-prices', '/api/admin/setup/stripe-prices', 'Criação de produtos e preços');
+  bind('sp-webhook', '/api/admin/setup/stripe-webhook', 'Registo do webhook');
+  bind('sp-moloni', '/api/admin/setup/moloni-discover', 'Leitura da configuração Moloni');
 
   const teBtn = document.getElementById('te-btn');
   if (teBtn) teBtn.onclick = async () => {
