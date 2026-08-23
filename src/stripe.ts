@@ -314,3 +314,121 @@ async function activateOneTime(companyId: number, plan: Plan, custId: string | n
        stripe_customer_id = COALESCE($2, stripe_customer_id)
      WHERE id = $3`, [plan, custId, companyId]);
 }
+
+/* ---------- Provisionamento assistido (para quem não conhece o Stripe) ---------- */
+
+/**
+ * Cria no Stripe os produtos e os preços mensais recorrentes dos planos Pro e
+ * Business, e devolve os price IDs para ficarem em variáveis de ambiente.
+ *
+ * É idempotente por lookup_key: correr duas vezes reaproveita os preços já
+ * criados em vez de duplicar. Os preços são criados com o valor COM IVA, para
+ * bater certo com o que a página de planos anuncia.
+ */
+export async function provisionPrices(): Promise<{
+  pro: { price_id: string; amount_cents: number };
+  business: { price_id: string; amount_cents: number };
+}> {
+  if (!stripeConfigured()) throw new Error('Falta STRIPE_SECRET_KEY.');
+
+  const ensure = async (plan: 'pro' | 'business') => {
+    const label = plan === 'business' ? 'Business' : 'Pro';
+    const lookupKey = `baseradar_${plan}_mensal`;
+    const amount = grossCents(plan);
+
+    // Já existe um preço com esta lookup_key e este valor? Reaproveita.
+    const found = await stripeGet(`/prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&limit=10`);
+    const existing = ((found.data as Record<string, unknown>[]) ?? [])
+      .find((p) => Number(p.unit_amount) === amount && String(p.currency) === 'eur');
+    if (existing) return { price_id: String(existing.id), amount_cents: amount };
+
+    // Um preço no Stripe é imutável: se o valor mudou, cria-se um novo e a
+    // lookup_key transfere-se para ele (transfer_lookup_key).
+    const product = await stripePost('/products', {
+      name: `${config.planName} ${label}`,
+      description: `Subscrição mensal do plano ${label} do ${config.planName}.`,
+      metadata: { plan },
+    });
+    const price = await stripePost('/prices', {
+      product: String(product.id),
+      currency: 'eur',
+      unit_amount: amount,
+      recurring: { interval: 'month' },
+      lookup_key: lookupKey,
+      transfer_lookup_key: 'true',
+      metadata: { plan },
+    });
+    return { price_id: String(price.id), amount_cents: amount };
+  };
+
+  return { pro: await ensure('pro'), business: await ensure('business') };
+}
+
+/**
+ * Regista (ou reaproveita) o endpoint de webhook e devolve o segredo de
+ * assinatura. O segredo só é revelado pelo Stripe na criação — se o endpoint
+ * já existir, é preciso indicá-lo à mão a partir do dashboard.
+ */
+export async function provisionWebhook(): Promise<{ url: string; secret?: string; created: boolean; id: string }> {
+  if (!stripeConfigured()) throw new Error('Falta STRIPE_SECRET_KEY.');
+  if (!config.appBaseUrl) throw new Error('Falta APP_BASE_URL.');
+  const url = `${config.appBaseUrl}/api/billing/webhook`;
+
+  const existingList = await stripeGet('/webhook_endpoints?limit=100');
+  const already = ((existingList.data as Record<string, unknown>[]) ?? []).find((w) => String(w.url) === url);
+  if (already) return { url, created: false, id: String(already.id) };
+
+  const events = [
+    'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+    'invoice.paid',
+    'invoice.payment_failed',
+    'customer.subscription.updated',
+    'customer.subscription.deleted',
+  ];
+  const body: Record<string, unknown> = { url, description: `${config.planName} — webhook de faturação` };
+  events.forEach((e, i) => { body[`enabled_events[${i}]`] = e; });
+  const created = await stripePost('/webhook_endpoints', body);
+  return { url, created: true, id: String(created.id), secret: created.secret ? String(created.secret) : undefined };
+}
+
+/** Estado da configuração do Stripe, para o ecrã de configuração. */
+export async function stripeStatus(): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {
+    secret_key: Boolean(config.stripe.secretKey),
+    webhook_secret: Boolean(config.stripe.webhookSecret),
+    price_pro: config.stripe.pricePro || null,
+    price_business: config.stripe.priceBusiness || null,
+    app_base_url: config.appBaseUrl || null,
+  };
+  if (!stripeConfigured()) return { ...out, ready: false };
+  try {
+    // Métodos de pagamento activos na conta — é o que decide se o MB WAY e o
+    // Multibanco aparecem no checkout (activam-se no dashboard, não por API).
+    const cfg = await stripeGet('/payment_method_configurations?limit=1');
+    const first = ((cfg.data as Record<string, unknown>[]) ?? [])[0] ?? {};
+    const active = Object.entries(first)
+      .filter(([, v]) => v && typeof v === 'object' && (v as Record<string, unknown>).display_preference)
+      .filter(([, v]) => {
+        const d = (v as Record<string, unknown>).display_preference as Record<string, unknown>;
+        return d && String(d.value ?? d.preference ?? '') !== 'off';
+      })
+      .map(([k]) => k);
+    out.payment_methods_active = active;
+    out.mbway_active = active.includes('mb_way');
+    out.multibanco_active = active.includes('multibanco');
+  } catch (err) {
+    out.payment_methods_error = String(err).slice(0, 200);
+  }
+  return { ...out, ready: Boolean(config.stripe.secretKey && config.stripe.webhookSecret && config.stripe.pricePro && config.stripe.priceBusiness) };
+}
+
+/** GET à API do Stripe (o resto do ficheiro só precisava de POST). */
+async function stripeGet(path: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${config.stripe.secretKey}` },
+  });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(`Stripe ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+  return json;
+}
