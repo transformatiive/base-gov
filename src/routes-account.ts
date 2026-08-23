@@ -7,6 +7,7 @@ import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents } from './stripe.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
+import { sendMail, layout, esc, mailEnabled } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -270,6 +271,31 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     const hash = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, rows[0].id]);
     return { ok: true, user_id: rows[0].id, username: rows[0].username };
+  });
+
+  // Envia um email de teste, para validar chave e remetente sem esperar por um
+  // evento real. Reservado a admins.
+  app.post('/api/admin/test-email', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    if (!mailEnabled()) {
+      return reply.code(503).send({ error: { code: 'mail_disabled', message: 'Email não configurado (falta RESEND_API_KEY ou MAIL_FROM).' } });
+    }
+    const body = (req.body ?? {}) as { to?: string };
+    const to = String(body.to ?? config.mail.supportEmail ?? '').trim();
+    if (!to) return reply.code(400).send({ error: { code: 'no_recipient', message: 'Indique o destinatário.' } });
+    const r = await sendMail({
+      to,
+      subject: 'BaseRadar — teste de configuração de email',
+      html: layout({
+        title: 'Configuração de email validada',
+        body: `<p>Se está a ler isto, o envio de email do BaseRadar está a funcionar.</p>
+               <p>Remetente: <strong>${esc(config.mail.from)}</strong></p>
+               <p>Ficam operacionais os convites de equipa, a recuperação de password e as confirmações de pagamento.</p>`,
+      }),
+      text: 'Teste de configuração de email do BaseRadar — está a funcionar.',
+    });
+    if (!r.ok) return reply.code(502).send({ error: { code: 'send_failed', message: r.error ?? 'Falha no envio.' } });
+    return { ok: true, id: r.id, from: config.mail.from, to };
   });
 
   // ---------- Admin: diagnóstico de armazenamento ----------

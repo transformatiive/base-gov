@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { seatLimit, effectivePlan } from './plans.js';
+import { config } from './config.js';
+import { sendMail, layout, esc } from './mail.js';
 
 /**
  * Seats (multi-utilizador por empresa) — R8 da spec de planos.
@@ -78,8 +80,30 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
       }
       throw err;
     }
-    // O envio do email está fora do âmbito; devolvemos a hiperligação de aceitação.
-    return reply.code(201).send({ ok: true, email, token, accept_url: `/app#/aceitar-convite?token=${token}` });
+    // Envio do convite por email. Falhar o email não invalida o convite — a
+    // hiperligação é sempre devolvida para quem convida a poder partilhar à mão.
+    const acceptPath = `/app#/aceitar-convite?token=${token}`;
+    const acceptUrl = config.appBaseUrl ? `${config.appBaseUrl}${acceptPath}` : acceptPath;
+    const { rows: ctx } = await pool.query(
+      `SELECT c.name AS company, u.first_name, u.last_name, u.email AS inviter_email
+         FROM companies c LEFT JOIN users u ON u.id = $2 WHERE c.id = $1`,
+      [companyId, userId]);
+    const companyName = ctx[0]?.company ?? 'a sua equipa';
+    const inviter = `${ctx[0]?.first_name ?? ''} ${ctx[0]?.last_name ?? ''}`.trim() || ctx[0]?.inviter_email || 'Um colega';
+    const mail = await sendMail({
+      to: email,
+      subject: `${inviter} convidou-o para o BaseRadar (${companyName})`,
+      replyTo: ctx[0]?.inviter_email || undefined,
+      html: layout({
+        title: 'Foi convidado para o BaseRadar',
+        body: `<p><strong>${esc(inviter)}</strong> convidou-o a juntar-se a <strong>${esc(companyName)}</strong> no BaseRadar — a plataforma que identifica que contratos públicos a empresa pode ganhar, quando e por quanto.</p>
+               <p>Aceite o convite para criar a sua conta e aceder ao radar da equipa.</p>`,
+        cta: { label: 'Aceitar convite', url: acceptUrl },
+        footnote: 'Se não estava à espera deste convite, pode simplesmente ignorar este email.',
+      }),
+      text: `${inviter} convidou-o para o BaseRadar (${companyName}). Aceite em: ${acceptUrl}`,
+    });
+    return reply.code(201).send({ ok: true, email, token, accept_url: acceptPath, email_sent: mail.ok, email_error: mail.ok ? undefined : mail.error });
   });
 
   // Remover um membro da equipa (isolado à própria empresa; não remove o último).

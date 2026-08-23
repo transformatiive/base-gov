@@ -3,6 +3,7 @@ import { pool } from './db.js';
 import { config } from './config.js';
 import { normalizePlan, Plan } from './plans.js';
 import { createMoloniInvoice } from './moloni.js';
+import { sendMail, layout, esc } from './mail.js';
 
 /**
  * Pagamentos via Stripe. Modelo híbrido:
@@ -172,6 +173,31 @@ async function recordPaymentAndInvoice(opts: {
   const { rows } = await pool.query('SELECT id, name, nif FROM companies WHERE id = $1', [opts.companyId]);
   const company = rows[0];
   if (!company) return;
+
+  // Confirmação ao cliente (best-effort — nunca compromete o pagamento).
+  const { rows: contacts } = await pool.query(
+    `SELECT email, first_name FROM users WHERE company_id = $1 AND email IS NOT NULL ORDER BY id LIMIT 1`,
+    [opts.companyId]);
+  if (contacts[0]?.email) {
+    const planLabel = opts.plan === 'business' ? 'Business' : 'Pro';
+    const valor = (opts.amountCents / 100).toLocaleString('pt-PT', { minimumFractionDigits: 2 });
+    const recorrente = opts.kind === 'subscription';
+    sendMail({
+      to: contacts[0].email,
+      subject: `BaseRadar — pagamento confirmado (plano ${planLabel})`,
+      html: layout({
+        title: 'Pagamento confirmado',
+        body: `<p>Olá${contacts[0].first_name ? ' ' + esc(contacts[0].first_name) : ''},</p>
+               <p>Recebemos o seu pagamento de <strong>${valor} €</strong> (IVA incluído) referente ao plano <strong>${planLabel}</strong>. O acesso já está ativo.</p>
+               <p>${recorrente
+                 ? 'A subscrição renova automaticamente todos os meses. Pode cancelar quando quiser na área de conta.'
+                 : 'Este pagamento dá acesso durante 1 mês. Não há renovação automática — receberá o aviso antes de terminar.'}</p>
+               <p>A fatura será emitida e enviada pela nossa contabilidade.</p>`,
+        cta: config.appBaseUrl ? { label: 'Abrir o BaseRadar', url: `${config.appBaseUrl}/app#/conta` } : undefined,
+      }),
+      text: `Pagamento de ${valor} EUR confirmado — plano ${planLabel}. O acesso está ativo.`,
+    }).catch((e) => console.error('[stripe] email de confirmação falhou:', String(e).slice(0, 150)));
+  }
   try {
     const inv = await createMoloniInvoice({
       company: { name: company.name, nif: company.nif },

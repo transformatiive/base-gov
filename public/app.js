@@ -168,6 +168,83 @@ function localizeValidation(form) {
 }
 
 /* ---------- Login ---------- */
+/* ---------- Recuperação de password (pedido) ---------- */
+function renderForgot() {
+  topbar.hidden = true;
+  hideTrialBanner();
+  app.innerHTML = `
+    <div class="card login-box">
+      ${wordmark(24)}
+      <p class="muted">Indique o email da sua conta. Enviamos-lhe uma ligação para definir uma nova password.</p>
+      <form id="forgot-form">
+        <label>Email</label>
+        <input type="email" name="email" autocomplete="email" required>
+        <div class="error" id="forgot-error"></div>
+        <p><button type="submit">Enviar ligação</button></p>
+      </form>
+      <div id="forgot-done"></div>
+      <p class="login-foot"><a href="#/login">← Voltar a entrar</a></p>
+    </div>`;
+  localizeValidation(document.getElementById('forgot-form'));
+  document.getElementById('forgot-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = e.target.querySelector('button');
+    btn.disabled = true; btn.textContent = 'A enviar…';
+    try {
+      const r = await api('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: fd.get('email') }) });
+      e.target.style.display = 'none';
+      document.getElementById('forgot-done').innerHTML = `<div class="hint">${esc(r.message)}</div>`;
+    } catch (err) {
+      document.getElementById('forgot-error').textContent = err.message;
+      btn.disabled = false; btn.textContent = 'Enviar ligação';
+    }
+  };
+}
+
+/* ---------- Recuperação de password (nova password) ---------- */
+function renderReset() {
+  topbar.hidden = true;
+  hideTrialBanner();
+  const token = new URLSearchParams(location.hash.split('?')[1] || '').get('token') || '';
+  app.innerHTML = `
+    <div class="card login-box">
+      ${wordmark(24)}
+      ${token ? `
+      <p class="muted">Escolha uma nova password para a sua conta.</p>
+      <form id="reset-form">
+        <label>Nova password</label>
+        <input type="password" name="pw" autocomplete="new-password" minlength="8" required>
+        <label>Confirmar password</label>
+        <input type="password" name="pw2" autocomplete="new-password" minlength="8" required>
+        <div class="error" id="reset-error"></div>
+        <p><button type="submit">Guardar nova password</button></p>
+      </form>` : '<div class="error">Ligação inválida. Peça uma nova reposição.</div>'}
+      <div id="reset-done"></div>
+      <p class="login-foot"><a href="#/login">← Voltar a entrar</a></p>
+    </div>`;
+  const form = document.getElementById('reset-form');
+  if (!form) return;
+  localizeValidation(form);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const err = document.getElementById('reset-error');
+    if (fd.get('pw') !== fd.get('pw2')) { err.textContent = 'As passwords não coincidem.'; return; }
+    const btn = e.target.querySelector('button');
+    btn.disabled = true; btn.textContent = 'A guardar…';
+    try {
+      await api('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password: fd.get('pw') }) });
+      e.target.style.display = 'none';
+      document.getElementById('reset-done').innerHTML = '<div class="hint">Password alterada. Já pode entrar com a nova password.</div>';
+      setTimeout(() => { location.hash = '#/login'; }, 1800);
+    } catch (e2) {
+      err.textContent = e2.message;
+      btn.disabled = false; btn.textContent = 'Guardar nova password';
+    }
+  };
+}
+
 function renderLogin() {
   topbar.hidden = true;
   hideTrialBanner();
@@ -183,6 +260,7 @@ function renderLogin() {
         <div class="error" id="login-error"></div>
         <p><button type="submit">Entrar</button></p>
       </form>
+      <p class="login-foot"><a href="#/recuperar">Esqueci-me da password</a></p>
       <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis — 7 dias</a></p>
     </div>`;
   localizeValidation(document.getElementById('login-form'));
@@ -2464,7 +2542,7 @@ async function route() {
   stopPolling();
   hideMatrixTip();
   const hash = location.hash || '#/';
-  document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo');
+  document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo' || hash.startsWith('#/recuperar') || hash.startsWith('#/repor-password'));
   // Estado ativo da navegação lateral. A raiz mapeia para Oportunidades.
   const navHash = (hash === '#/' || hash === '') ? '#/hoje' : hash;
   document.querySelectorAll('#topbar nav a').forEach((a) => {
@@ -2477,6 +2555,8 @@ async function route() {
     a.classList.toggle('active', on);
   });
   if (hash === '#/login') { window._me = null; return renderLogin(); }
+  if (hash.split('?')[0] === '#/recuperar') { window._me = null; return renderForgot(); }
+  if (hash.split('?')[0] === '#/repor-password') { window._me = null; return renderReset(); }
   if (hash === '#/registo') { window._me = null; return renderRegister(); }
   const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
   if (invite) { window._me = null; return renderAcceptInvite(decodeURIComponent(invite[1])); }
