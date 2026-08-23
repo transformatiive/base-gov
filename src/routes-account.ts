@@ -271,6 +271,76 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return { ok: true, user_id: rows[0].id, username: rows[0].username };
   });
 
+  // ---------- Admin: diagnóstico de armazenamento ----------
+  // Onde está o espaço em disco (o Postgres é o principal custo de infraestrutura).
+  // Só leitura, reservado a admins.
+  app.get('/api/admin/db-stats', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+
+    // Tamanho por tabela: dados, índices e TOAST (onde vivem JSONB e BYTEA grandes).
+    const tables = await pool.query(
+      `SELECT c.relname AS name,
+              pg_total_relation_size(c.oid)                        AS total_bytes,
+              pg_relation_size(c.oid)                              AS table_bytes,
+              pg_indexes_size(c.oid)                               AS index_bytes,
+              COALESCE(pg_total_relation_size(c.reltoastrelid), 0) AS toast_bytes,
+              c.reltuples::bigint                                  AS row_estimate
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        ORDER BY pg_total_relation_size(c.oid) DESC`);
+
+    // Peso médio das colunas JSON brutas (amostra), para estimar quanto se
+    // recupera ao deixar de as guardar. pg_column_size já reflete a compressão.
+    const jsonSample = await pool.query(
+      `SELECT count(*)::int                                  AS sampled,
+              COALESCE(avg(pg_column_size(raw_list_json)), 0)::bigint   AS avg_list_json,
+              COALESCE(avg(pg_column_size(raw_detail_json)), 0)::bigint AS avg_detail_json,
+              count(raw_detail_json)::int                    AS with_detail
+         FROM (SELECT raw_list_json, raw_detail_json FROM contracts TABLESAMPLE SYSTEM (0.2)) s`);
+
+    const docs = await pool.query(
+      `SELECT count(*)::int AS n,
+              count(*) FILTER (WHERE content IS NOT NULL)::int AS with_content,
+              COALESCE(sum(size_bytes), 0)::bigint            AS declared_bytes
+         FROM documents`);
+
+    const contractYears = await pool.query(
+      `SELECT date_part('year', publication_date)::int AS year, count(*)::int AS n
+         FROM contracts WHERE publication_date IS NOT NULL
+        GROUP BY 1 ORDER BY 1`);
+
+    const dbSize = await pool.query('SELECT pg_database_size(current_database())::bigint AS bytes');
+
+    const s = jsonSample.rows[0];
+    const nContracts = Number(tables.rows.find((t) => t.name === 'contracts')?.row_estimate ?? 0);
+    return {
+      database_bytes: Number(dbSize.rows[0].bytes),
+      tables: tables.rows.map((t) => ({
+        name: t.name,
+        total_bytes: Number(t.total_bytes),
+        table_bytes: Number(t.table_bytes),
+        index_bytes: Number(t.index_bytes),
+        toast_bytes: Number(t.toast_bytes),
+        row_estimate: Number(t.row_estimate),
+      })),
+      // Projeção: peso médio × nº de contratos = espaço recuperável ao largar a coluna.
+      raw_json: {
+        sampled: s.sampled,
+        with_detail: s.with_detail,
+        avg_list_json_bytes: Number(s.avg_list_json),
+        avg_detail_json_bytes: Number(s.avg_detail_json),
+        projected_list_bytes: Number(s.avg_list_json) * nContracts,
+        projected_detail_bytes: Number(s.avg_detail_json) * nContracts,
+      },
+      documents: {
+        n: docs.rows[0].n,
+        with_content: docs.rows[0].with_content,
+        declared_bytes: Number(docs.rows[0].declared_bytes),
+      },
+      contracts_by_year: contractYears.rows,
+    };
+  });
+
   // ---------- Admin: estatísticas de utilização ----------
   app.get('/api/admin/stats', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
