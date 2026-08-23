@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import yauzl from 'yauzl';
 import { pool } from './db.js';
 import { config } from './config.js';
+import { getDocument } from './storage.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
@@ -333,9 +334,9 @@ export async function analyzeContract(contractId: number, profileId: number): Pr
     [contractId]
   );
 
-  // documentos já descarregados (BYTEA) → texto
+  // documentos já descarregados (volume, com fallback a BYTEA) → texto
   const { rows: docs } = await pool.query(
-    `SELECT file_name, content FROM documents WHERE contract_id = $1 AND download_ok AND content IS NOT NULL
+    `SELECT id, file_name, content FROM documents WHERE contract_id = $1 AND download_ok
      ORDER BY size_bytes DESC LIMIT 3`,
     [contractId]
   );
@@ -343,7 +344,9 @@ export async function analyzeContract(contractId: number, profileId: number): Pr
   let docsUsed = 0;
   for (const d of docs) {
     try {
-      const { text } = await pdfParse(d.content as Buffer);
+      const buf = (await getDocument(d.id)) ?? (d.content as Buffer | null);
+      if (!buf) continue;
+      const { text } = await pdfParse(buf);
       const t = text.replace(/\s+\n/g, '\n').trim().slice(0, 18_000);
       if (t) {
         docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${t}`;

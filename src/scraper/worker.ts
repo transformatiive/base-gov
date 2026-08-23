@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { config } from '../config.js';
+import { putDocument } from '../storage.js';
 import {
   AnnouncementDetail,
   AnnouncementListItem,
@@ -123,11 +124,13 @@ async function downloadPendingDocuments(client: BaseGovClient, contractId: numbe
   for (const doc of rows) {
     try {
       const { content, contentType } = await client.downloadDocument(Number(doc.basegov_id));
+      // O binário vai para o volume; só fica em BYTEA se não houver volume.
+      const onVolume = await putDocument(doc.id, content);
       await pool.query(
         `UPDATE documents SET content = $2, content_type = $3, size_bytes = $4,
            download_ok = true, download_error = NULL, downloaded_at = now()
          WHERE id = $1`,
-        [doc.id, content, contentType, content.length]
+        [doc.id, onVolume ? null : content, contentType, content.length]
       );
     } catch (err) {
       // Falha de download não falha a pesquisa — fica registada no documento.

@@ -6,6 +6,7 @@ import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents } from './stripe.js';
+import { storageEnabled, putDocument, storageUsage } from './storage.js';
 import { normalizePlan, Plan } from './plans.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -339,6 +340,45 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       },
       contracts_by_year: contractYears.rows,
     };
+  });
+
+  // Migra os binários dos documentos da coluna BYTEA para o volume de disco.
+  // Corre por lotes (idempotente e retomável): cada chamada move até `batch`
+  // documentos e devolve quantos faltam. Só liberta a linha depois de o
+  // ficheiro estar gravado, por isso é seguro interromper a meio.
+  app.post('/api/admin/documents/migrate-to-volume', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    if (!(await storageEnabled())) {
+      return reply.code(503).send({ error: { code: 'no_volume', message: 'Volume de disco indisponível — nada foi migrado.' } });
+    }
+    const body = (req.body ?? {}) as { batch?: number };
+    const batch = Math.min(Math.max(Number(body.batch ?? 200), 1), 1000);
+
+    const { rows } = await pool.query(
+      'SELECT id, content FROM documents WHERE content IS NOT NULL ORDER BY id LIMIT $1', [batch]);
+
+    let moved = 0, failed = 0, bytes = 0;
+    for (const d of rows) {
+      const buf = d.content as Buffer;
+      if (await putDocument(d.id, buf)) {
+        await pool.query('UPDATE documents SET content = NULL WHERE id = $1', [d.id]);
+        moved++; bytes += buf.length;
+      } else {
+        failed++;
+      }
+    }
+    const left = await pool.query('SELECT count(*)::int AS n FROM documents WHERE content IS NOT NULL');
+    return { ok: true, moved, failed, bytes, remaining: left.rows[0].n, usage: await storageUsage() };
+  });
+
+  // Estado do armazenamento em volume (quantos ficheiros, que espaço).
+  app.get('/api/admin/storage', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    const inDb = await pool.query(
+      `SELECT count(*) FILTER (WHERE content IS NOT NULL)::int AS in_db,
+              count(*) FILTER (WHERE download_ok)::int        AS downloaded,
+              count(*)::int                                    AS total FROM documents`);
+    return { volume: await storageUsage(), documents: inDb.rows[0] };
   });
 
   // ---------- Admin: estatísticas de utilização ----------
