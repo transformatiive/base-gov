@@ -772,31 +772,53 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
          JOIN entities e ON e.id = ce.entity_id
        ),
        per_contract AS (SELECT DISTINCT grp, contract_id, price FROM links),
+       -- Corta para os 50 primeiros JÁ AQUI: tudo o que vem a seguir (nome
+       -- canónico e principais clientes) passa a trabalhar sobre 50 grupos em
+       -- vez de sobre todos os adjudicatários da atividade.
        agg AS (
          SELECT grp, count(*) AS n, coalesce(sum(price),0) AS total
          FROM per_contract GROUP BY grp
+         ORDER BY total DESC LIMIT 50
        ),
        name_rank AS (
-         SELECT grp, entity_id, name, nif,
+         SELECT l.grp, l.entity_id, l.name, l.nif,
            row_number() OVER (
-             PARTITION BY grp
-             ORDER BY count(DISTINCT contract_id) DESC, length(name) DESC, name
+             PARTITION BY l.grp
+             ORDER BY count(DISTINCT l.contract_id) DESC, length(l.name) DESC, l.name
            ) AS rn
-         FROM links GROUP BY grp, entity_id, name, nif
+         FROM links l JOIN agg a ON a.grp = l.grp
+         GROUP BY l.grp, l.entity_id, l.name, l.nif
        ),
-       canon AS (SELECT grp, entity_id, name, nif FROM name_rank WHERE rn = 1)
+       canon AS (SELECT grp, entity_id, name, nif FROM name_rank WHERE rn = 1),
+       -- Principais clientes: agregado UMA vez para os 50 grupos (antes era uma
+       -- subconsulta correlacionada, reexecutada por cada linha do resultado) e
+       -- limitado aos 3 maiores por valor — que é o que a coluna promete.
+       client_links AS (
+         SELECT DISTINCT l.grp, l.contract_id, l.price, e2.name AS client
+         FROM links l
+         JOIN agg a ON a.grp = l.grp
+         JOIN contract_entities ce2 ON ce2.contract_id = l.contract_id AND ce2.role = 'contracting'
+         JOIN entities e2 ON e2.id = ce2.entity_id
+       ),
+       client_rank AS (
+         SELECT grp, client,
+           row_number() OVER (PARTITION BY grp ORDER BY coalesce(sum(price),0) DESC, client) AS rn
+         FROM client_links GROUP BY grp, client
+       ),
+       clients AS (
+         SELECT grp, string_agg(client, '; ' ORDER BY rn) AS top_clients
+         FROM client_rank WHERE rn <= 3 GROUP BY grp
+       )
        SELECT canon.entity_id AS id, canon.name, canon.nif,
          agg.n,
          agg.total,
          CASE WHEN agg.n > 0 THEN agg.total / agg.n ELSE 0 END AS avg,
          round(100.0 * agg.total / NULLIF((SELECT v FROM tot),0), 1) AS share_pct,
-         (SELECT string_agg(DISTINCT e2.name, '; ')
-            FROM links l3
-            JOIN contract_entities ce2 ON ce2.contract_id = l3.contract_id AND ce2.role = 'contracting'
-            JOIN entities e2 ON e2.id = ce2.entity_id
-            WHERE l3.grp = canon.grp) AS top_clients
-       FROM agg JOIN canon ON canon.grp = agg.grp
-       ORDER BY agg.total DESC LIMIT 50`,
+         clients.top_clients
+       FROM agg
+       JOIN canon ON canon.grp = agg.grp
+       LEFT JOIN clients ON clients.grp = agg.grp
+       ORDER BY agg.total DESC`,
       scope.params
     );
     return {
