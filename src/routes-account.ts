@@ -371,6 +371,33 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return { ok: true, moved, failed, bytes, remaining: left.rows[0].n, usage: await storageUsage() };
   });
 
+  // Recupera espaço em disco depois de apagar dados (o Postgres só devolve o
+  // espaço ao sistema com VACUUM FULL — apagar linhas apenas as marca mortas).
+  // ATENÇÃO: bloqueia a tabela enquanto corre. Tabelas restritas a uma lista.
+  app.post('/api/admin/db/vacuum', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    const body = (req.body ?? {}) as { table?: string };
+    const table = String(body.table ?? '');
+    const allowed = ['documents', 'contracts', 'contract_entities', 'entities', 'search_results'];
+    if (!allowed.includes(table)) {
+      return reply.code(400).send({ error: { code: 'invalid_table', message: `Tabela não permitida. Use uma de: ${allowed.join(', ')}.` } });
+    }
+    const sizeSql = 'SELECT pg_total_relation_size($1)::bigint AS bytes';
+    const before = await pool.query(sizeSql, [table]);
+    const t0 = Date.now();
+    // O nome da tabela vem de uma lista fechada, por isso a interpolação é segura.
+    await pool.query(`VACUUM FULL ${table}`);
+    await pool.query(`ANALYZE ${table}`);
+    const after = await pool.query(sizeSql, [table]);
+    return {
+      ok: true, table,
+      before_bytes: Number(before.rows[0].bytes),
+      after_bytes: Number(after.rows[0].bytes),
+      freed_bytes: Number(before.rows[0].bytes) - Number(after.rows[0].bytes),
+      seconds: Math.round((Date.now() - t0) / 1000),
+    };
+  });
+
   // Estado do armazenamento em volume (quantos ficheiros, que espaço).
   app.get('/api/admin/storage', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
