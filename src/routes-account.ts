@@ -455,19 +455,39 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       `SELECT (SELECT count(*)::int FROM contract_history_agg)                       AS agg_rows,
               (SELECT pg_total_relation_size('contract_history_agg')::bigint)        AS agg_bytes,
               (SELECT count(*)::int FROM contracts
-                WHERE publication_date IS NOT NULL AND publication_date < make_date($1,1,1)) AS contracts_covered,
-              (SELECT coalesce(sum(initial_contractual_price),0) FROM contracts
-                WHERE publication_date IS NOT NULL AND publication_date < make_date($1,1,1)) AS value_covered,
-              (SELECT coalesce(sum(total_value),0) FROM contract_history_agg
-                WHERE role = 'contracted')                                            AS value_in_agg`,
+                WHERE publication_date IS NOT NULL AND publication_date < make_date($1,1,1)) AS contracts_covered`,
       [beforeYear]);
-    const r = stats.rows[0];
+
+    // Verificação de fidelidade: para CADA entidade adjudicatária, o total no
+    // agregado tem de bater certo com o total calculado a partir dos contratos.
+    // (Comparar o somatório global não serve: contratos em consórcio creditam o
+    // valor a cada membro, tal como faz a página de concorrentes.)
+    const check = await pool.query(
+      `WITH live AS (
+         SELECT ce.entity_id, coalesce(sum(c.initial_contractual_price),0) AS v
+           FROM contracts c
+           JOIN contract_entities ce ON ce.contract_id = c.id AND ce.role = 'contracted'
+          WHERE c.publication_date IS NOT NULL AND c.publication_date < make_date($1,1,1)
+          GROUP BY ce.entity_id
+       ),
+       agg AS (
+         SELECT entity_id, coalesce(sum(total_value),0) AS v
+           FROM contract_history_agg WHERE role = 'contracted' GROUP BY entity_id
+       )
+       SELECT count(*)::int                                                       AS entities_checked,
+              count(*) FILTER (WHERE coalesce(live.v,-1) <> coalesce(agg.v,-2))::int AS mismatches
+         FROM live FULL JOIN agg ON agg.entity_id = live.entity_id`,
+      [beforeYear]);
+    const r = stats.rows[0], c = check.rows[0];
     return {
       ok: true, before_year: beforeYear, rows_written: ins.rowCount,
       agg_rows: r.agg_rows, agg_bytes: Number(r.agg_bytes),
       contracts_covered: r.contracts_covered,
-      value_covered: Number(r.value_covered),
-      value_in_agg: Number(r.value_in_agg),
+      verification: {
+        entities_checked: c.entities_checked,
+        mismatches: c.mismatches,
+        faithful: c.mismatches === 0,
+      },
       seconds: Math.round((Date.now() - t0) / 1000),
     };
   });
