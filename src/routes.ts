@@ -4,6 +4,7 @@ import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } f
 import { capabilitiesFor, seatLimit, aiCap, requirePlan } from './plans.js';
 import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
+import { getDocument } from './storage.js';
 
 interface Paging {
   page: number;
@@ -399,15 +400,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/documents/:id/content', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
-    const { rows } = await pool.query('SELECT file_name, content_type, content FROM documents WHERE id = $1', [id]);
-    if (rows.length === 0 || !rows[0].content) {
+    const { rows } = await pool.query('SELECT file_name, content_type FROM documents WHERE id = $1', [id]);
+    if (rows.length === 0) {
       return reply.code(404).send({ error: { code: 'not_found', message: 'Documento sem conteúdo disponível' } });
     }
+    // Volume primeiro; cai para a coluna BYTEA enquanto houver documentos por migrar.
+    let buf = await getDocument(id);
+    if (!buf) {
+      const legacy = await pool.query('SELECT content FROM documents WHERE id = $1', [id]);
+      buf = (legacy.rows[0]?.content as Buffer | null) ?? null;
+    }
+    if (!buf) return reply.code(404).send({ error: { code: 'not_found', message: 'Documento sem conteúdo disponível' } });
     const d = rows[0];
     const safeName = String(d.file_name).replace(/["\r\n]/g, '');
     reply
       .header('Content-Type', d.content_type || 'application/octet-stream')
       .header('Content-Disposition', `attachment; filename="${safeName}"`);
-    return reply.send(d.content);
+    return reply.send(buf);
   });
 }
