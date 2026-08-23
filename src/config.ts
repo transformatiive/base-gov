@@ -70,6 +70,10 @@ export const config = {
   },
   // Email transacional (Resend). Convites, recuperação de password,
   // confirmações de pagamento e digest. Chave sempre por variável de ambiente.
+  // Versão em vigor dos Termos e da Política de Privacidade. Muda sempre que o
+  // conteúdo legal for alterado, para que a prova de aceitação seja rastreável.
+  termsVersion: process.env.TERMS_VERSION || '2026-07-18',
+
   mail: {
     apiKey: process.env.RESEND_API_KEY || '',
     from: process.env.MAIL_FROM || '',            // ex.: "BaseRadar <noreply@dominio.pt>"

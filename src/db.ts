@@ -36,6 +36,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name   TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone       TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin    BOOLEAN NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email)) WHERE email IS NOT NULL;
+-- Prova de aceitação dos Termos e da Política de Privacidade: quem aceitou,
+-- que versão e quando. Sem isto não há prova em caso de litígio.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version     TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip          TEXT;
 
 CREATE TABLE IF NOT EXISTS searches (
   id             SERIAL PRIMARY KEY,

@@ -180,10 +180,14 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const hash = await bcrypt.hash(password, 10);
+      // Quem entra por convite aceita igualmente os Termos e a Privacidade.
+      const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
       await client.query(
-        `INSERT INTO users (username, email, password_hash, company_id, first_name, last_name, phone)
-         VALUES ($1, $1, $2, $3, $4, $5, $6)`,
-        [inv.email, hash, inv.company_id, firstName || null, lastName, phone]);
+        `INSERT INTO users (username, email, password_hash, company_id, first_name, last_name, phone,
+                            terms_accepted_at, terms_version, terms_ip)
+         VALUES ($1, $1, $2, $3, $4, $5, $6, now(), $7, $8)`,
+        [inv.email, hash, inv.company_id, firstName || null, lastName, phone,
+         config.termsVersion, (fwd || req.ip || '').slice(0, 60)]);
       await client.query('UPDATE company_invites SET accepted_at = now() WHERE id = $1', [inv.id]);
       await client.query('COMMIT');
 
