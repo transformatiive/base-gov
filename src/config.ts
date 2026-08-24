@@ -16,7 +16,9 @@ export const config = {
   trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
   planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
   planName: process.env.PLAN_NAME || 'BaseRadar',
-  appBaseUrl: process.env.APP_BASE_URL || '',   // ex.: https://basegov-robot-production.up.railway.app
+  // URL público da app (Checkout success/cancel e webhook). APP_URL é o contrato;
+  // APP_BASE_URL mantém-se como fallback para instalações Railway já configuradas.
+  appBaseUrl: (process.env.APP_URL || process.env.APP_BASE_URL || '').replace(/\/$/, ''),
   supportEmail: process.env.SUPPORT_EMAIL || '',  // destino dos pedidos de ajuda (envio a implementar)
 
   // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
@@ -42,16 +44,16 @@ export const config = {
   // Taxa de IVA aplicada aos preços "sem IVA" dos planos (para cobrança e fatura).
   ivaRate: parseFloat(process.env.IVA_RATE || '0.23'),
 
-  // Stripe (pagamentos: cartão em subscrição; MB WAY / Multibanco / transferência
-  // em pagamento pontual). Chaves e price IDs vêm de variáveis de ambiente.
+  // Stripe (SaaS Checkout + Billing). Chaves e price IDs só por ambiente —
+  // nunca em código. Preferir restricted key (rk_test_… / rk_live_…).
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-    // Price IDs de subscrição mensal (cartão) — criados no dashboard Stripe.
+    // Price IDs de subscrição mensal (Pro 29€ / Business 99€, EUR) — criados no
+    // Dashboard (modo teste) e injectados aqui. Nunca IDs live hardcoded.
     pricePro: process.env.STRIPE_PRICE_PRO || '',
     priceBusiness: process.env.STRIPE_PRICE_BUSINESS || '',
-    // Métodos pontuais (payment mode) usam price_data inline; os métodos são os
-    // ativados no dashboard Stripe (cartão, MB WAY, Multibanco, transferência).
   },
 
   // Moloni (faturação certificada PT). Emite fatura a cada pagamento confirmado.

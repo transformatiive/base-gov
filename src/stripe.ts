@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import Stripe from 'stripe';
 import { pool } from './db.js';
 import { config } from './config.js';
 import { normalizePlan, Plan } from './plans.js';
@@ -6,21 +7,67 @@ import { createMoloniInvoice } from './moloni.js';
 import { sendMail, layout, esc } from './mail.js';
 
 /**
- * Pagamentos via Stripe. Modelo híbrido:
+ * Pagamentos via Stripe Checkout + Billing (SaaS, não Connect).
+ *
  *  - cartão → subscrição mensal (mode=subscription), renovação automática;
  *  - MB WAY / Multibanco / transferência → pagamento pontual de 1 mês
  *    (mode=payment), sem renovação automática (o acesso expira em access_until).
  *
  * Os métodos disponíveis em cada checkout são os que estiverem ATIVOS no
- * dashboard Stripe (payment methods dinâmicos) — não os fixamos no código.
- *
- * A cada pagamento confirmado emitimos uma fatura no Moloni (best-effort).
+ * dashboard Stripe (payment methods dinâmicos) — NUNCA passamos
+ * payment_method_types. Stripe Tax (automatic_tax) fica desligado: o projecto
+ * não tem registo de Stripe Tax; o IVA é tratado no preço + Moloni.
  */
 
-const API = 'https://api.stripe.com/v1';
+export const STRIPE_API_VERSION: Stripe.LatestApiVersion = '2026-07-29.dahlia';
+
+const WEBHOOK_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
+  'checkout.session.completed',
+  'checkout.session.async_payment_succeeded',
+  'invoice.paid',
+  'invoice.payment_failed',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+];
+
+export type SqlQuery = (
+  sql: string,
+  params?: unknown[],
+) => Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
+
+const defaultQuery: SqlQuery = (sql, params) => pool.query(sql, params);
+
+let stripeClient: Stripe | null = null;
+let stripeClientKey: string | null = null;
 
 export function stripeConfigured(): boolean {
   return Boolean(config.stripe.secretKey);
+}
+
+/** Instância StripeClient. A chave vai no construtor — nunca Stripe.apiKey global. */
+export function getStripeClient(): Stripe {
+  const key = config.stripe.secretKey;
+  if (!key) throw new Error('Stripe não configurado (STRIPE_SECRET_KEY).');
+  if (stripeClient && stripeClientKey === key) return stripeClient;
+  stripeClient = new Stripe(key, {
+    apiVersion: STRIPE_API_VERSION,
+    typescript: true,
+  });
+  stripeClientKey = key;
+  return stripeClient;
+}
+
+/** Cliente só para HMAC de webhooks (não chama a API). */
+function webhookCryptoClient(): Stripe {
+  if (config.stripe.secretKey) return getStripeClient();
+  return new Stripe('rk_test_webhook_placeholder', {
+    apiVersion: STRIPE_API_VERSION,
+    typescript: true,
+  });
+}
+
+export function isLiveStripeKey(key: string): boolean {
+  return key.startsWith('sk_live') || key.startsWith('rk_live');
 }
 
 /** Preço bruto (com IVA), em cêntimos, a cobrar por um plano. */
@@ -29,153 +76,209 @@ export function grossCents(plan: Plan): number {
   return Math.round(net * (1 + config.ivaRate));
 }
 
-function subscriptionPriceId(plan: Plan): string {
+export function subscriptionPriceId(plan: Plan): string {
   if (plan === 'pro') return config.stripe.pricePro;
   if (plan === 'business') return config.stripe.priceBusiness;
   return '';
 }
 
-/** Serializa um objeto aninhado para o formato form-encoded do Stripe (a[b][c]). */
-function encodeForm(obj: Record<string, unknown>, prefix = ''): string {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(obj)) {
-    if (v == null) continue;
-    const key = prefix ? `${prefix}[${k}]` : k;
-    if (typeof v === 'object') parts.push(encodeForm(v as Record<string, unknown>, key));
-    else parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`);
-  }
-  return parts.filter(Boolean).join('&');
+export function planFromPriceId(priceId: string | null | undefined): Plan | null {
+  if (!priceId) return null;
+  if (priceId === config.stripe.pricePro) return 'pro';
+  if (priceId === config.stripe.priceBusiness) return 'business';
+  return null;
 }
 
-async function stripePost(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const res = await fetch(`${API}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.stripe.secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: encodeForm(body),
-  });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(`Stripe ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
-  return json;
+export type LocalSubStatus = 'active' | 'past_due' | 'canceled';
+
+export function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): LocalSubStatus | null {
+  switch (status) {
+    case 'active':
+    case 'trialing':
+      return 'active';
+    case 'past_due':
+    case 'unpaid':
+      return 'past_due';
+    case 'canceled':
+    case 'incomplete_expired':
+      return 'canceled';
+    case 'incomplete':
+    case 'paused':
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Rótulo custom + 8 letras aleatórias (alfanumeric/dash, máx. 200). */
+export function newIntegrationIdentifier(): string {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const bytes = crypto.randomBytes(8);
+  let suffix = '';
+  for (let i = 0; i < 8; i++) suffix += letters[bytes[i]! % letters.length];
+  return `baseradar-${suffix}`;
+}
+
+function publicAppUrl(): string {
+  return config.appBaseUrl;
+}
+
+function refId(ref: string | { id: string } | null | undefined): string | null {
+  if (!ref) return null;
+  return typeof ref === 'string' ? ref : ref.id;
+}
+
+function paidPlanFromMeta(meta: Stripe.Metadata | null | undefined): Plan {
+  const plan = normalizePlan(meta?.plan);
+  return plan === 'business' ? 'business' : 'pro';
 }
 
 interface CheckoutInput {
   company: { id: number; name: string; nif: string | null; stripeCustomerId?: string | null };
   customer: { email: string; name?: string };
-  plan: Plan;                 // pro | business
+  plan: Plan;
   mode: 'subscription' | 'payment';
 }
 
-/** Cria uma sessão de Checkout do Stripe e devolve o URL para redirecionar. */
-export async function createCheckout(input: CheckoutInput): Promise<{ url: string; id: string }> {
-  if (!stripeConfigured()) throw new Error('Stripe não configurado');
+export function buildCheckoutSessionParams(
+  input: CheckoutInput,
+  integrationId = newIntegrationIdentifier(),
+): Stripe.Checkout.SessionCreateParams {
   const { company, customer, plan, mode } = input;
+  const base = publicAppUrl();
+  if (!base) throw new Error('Falta APP_URL (URL público da aplicação).');
   if (plan !== 'pro' && plan !== 'business') throw new Error('Plano inválido para pagamento');
 
-  const base = config.appBaseUrl || '';
-  const successUrl = `${base}/app#/conta?pago=1`;
-  const cancelUrl = `${base}/app#/planos`;
-  const planLabel = plan === 'business' ? 'Business' : 'Pro';
-
-  const body: Record<string, unknown> = {
+  const params: Stripe.Checkout.SessionCreateParams = {
     mode,
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+    success_url: `${base}/app#/conta?pago=1`,
+    cancel_url: `${base}/app#/planos`,
     client_reference_id: String(company.id),
     metadata: { company_id: String(company.id), plan },
-    // Reutiliza o cliente Stripe se já existir; senão usa o email.
-    ...(company.stripeCustomerId ? { customer: company.stripeCustomerId } : { customer_email: customer.email }),
+    integration_identifier: integrationId,
+    locale: 'pt',
+    // Sem payment_method_types: métodos dinâmicos do Dashboard.
+    // Sem automatic_tax: não há Stripe Tax registado neste projecto.
   };
+
+  if (company.stripeCustomerId) params.customer = company.stripeCustomerId;
+  else if (customer.email) params.customer_email = customer.email;
 
   if (mode === 'subscription') {
     const price = subscriptionPriceId(plan);
-    if (!price) throw new Error(`Falta o price ID de subscrição para o plano ${plan}`);
-    body.line_items = { 0: { price, quantity: 1 } };
-    body.subscription_data = { metadata: { company_id: String(company.id), plan } };
+    if (!price) throw new Error(`Falta o price ID de subscrição para o plano ${plan} (STRIPE_PRICE_${plan.toUpperCase()}).`);
+    params.line_items = [{ price, quantity: 1 }];
+    params.subscription_data = { metadata: { company_id: String(company.id), plan } };
   } else {
-    // Pagamento pontual de 1 mês, com price_data inline (valor bruto).
-    body.line_items = {
-      0: {
-        price_data: {
-          currency: 'eur',
-          unit_amount: grossCents(plan),
-          product_data: { name: `${config.planName} ${planLabel} — 1 mês` },
-        },
-        quantity: 1,
+    const planLabel = plan === 'business' ? 'Business' : 'Pro';
+    params.line_items = [{
+      price_data: {
+        currency: 'eur',
+        unit_amount: grossCents(plan),
+        product_data: { name: `${config.planName} ${planLabel} — 1 mês` },
       },
-    };
-    body.payment_intent_data = { metadata: { company_id: String(company.id), plan } };
+      quantity: 1,
+    }];
+    params.payment_intent_data = { metadata: { company_id: String(company.id), plan } };
   }
 
-  const session = await stripePost('/checkout/sessions', body);
-  return { url: String(session.url), id: String(session.id) };
+  return params;
+}
+
+/** Cria uma sessão de Checkout do Stripe e devolve o URL para redirecionar. */
+export async function createCheckout(input: CheckoutInput): Promise<{ url: string; id: string; integration_identifier: string }> {
+  if (!stripeConfigured()) throw new Error('Stripe não configurado');
+  const integrationId = newIntegrationIdentifier();
+  const session = await getStripeClient().checkout.sessions.create(buildCheckoutSessionParams(input, integrationId));
+  if (!session.url) throw new Error('Stripe Checkout não devolveu URL');
+  return { url: session.url, id: session.id, integration_identifier: integrationId };
+}
+
+export function constructStripeEvent(
+  rawBody: string,
+  sigHeader: string | undefined,
+  secret: string = config.stripe.webhookSecret,
+): Stripe.Event {
+  if (!secret) throw new Error('STRIPE_WEBHOOK_SECRET em falta');
+  if (!sigHeader) throw new Error('Stripe-Signature em falta');
+  return webhookCryptoClient().webhooks.constructEvent(rawBody, sigHeader, secret);
 }
 
 /**
  * Verifica a assinatura de um webhook do Stripe (cabeçalho Stripe-Signature)
  * ANTES de processar o evento. Sem segredo configurado → falha fechada.
  */
-export function verifyStripeSignature(rawBody: string, sigHeader: string | undefined): boolean {
-  const secret = config.stripe.webhookSecret;
-  if (!secret || !sigHeader) return false;
-  const parts = Object.fromEntries(sigHeader.split(',').map((kv) => kv.split('=')));
-  const t = parts.t;
-  const v1 = parts.v1;
-  if (!t || !v1) return false;
-  const signed = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`, 'utf8').digest('hex');
-  const a = Buffer.from(v1);
-  const b = Buffer.from(signed);
-  if (a.length !== b.length) return false;
-  if (!crypto.timingSafeEqual(a, b)) return false;
-  // Tolerância de 5 minutos contra replay.
-  const age = Math.abs(Math.floor(Date.now() / 1000) - Number(t));
-  return Number.isFinite(age) && age < 300;
-}
-
-/** Obtém o company_id de um objeto Stripe (metadata ou client_reference_id). */
-function companyIdOf(o: Record<string, unknown>): number | null {
-  const meta = (o.metadata as Record<string, unknown>) ?? {};
-  const raw = meta.company_id ?? o.client_reference_id;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-async function findCompanyId(o: Record<string, unknown>): Promise<number | null> {
-  const direct = companyIdOf(o);
-  if (direct) return direct;
-  const cust = o.customer;
-  const sub = o.subscription;
-  if (typeof cust === 'string') {
-    const { rows } = await pool.query('SELECT id FROM companies WHERE stripe_customer_id = $1', [cust]);
-    if (rows[0]) return rows[0].id as number;
+export function verifyStripeSignature(
+  rawBody: string,
+  sigHeader: string | undefined,
+  secret: string = config.stripe.webhookSecret,
+): boolean {
+  try {
+    constructStripeEvent(rawBody, sigHeader, secret);
+    return true;
+  } catch {
+    return false;
   }
-  if (typeof sub === 'string') {
-    const { rows } = await pool.query('SELECT id FROM companies WHERE stripe_subscription_id = $1', [sub]);
-    if (rows[0]) return rows[0].id as number;
+}
+
+async function findCompanyId(
+  obj: {
+    metadata?: Stripe.Metadata | null;
+    client_reference_id?: string | null;
+    customer?: string | Stripe.Customer | Stripe.DeletedCustomer | null;
+    subscription?: string | Stripe.Subscription | null;
+    parent?: Stripe.Invoice.Parent | null;
+  },
+  query: SqlQuery,
+): Promise<number | null> {
+  const fromMeta = Number(obj.metadata?.company_id ?? obj.client_reference_id);
+  if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+
+  const cust = refId(obj.customer as string | { id: string } | null | undefined);
+  if (cust) {
+    const { rows } = await query('SELECT id FROM companies WHERE stripe_customer_id = $1', [cust]);
+    if (rows[0]) return Number(rows[0].id);
+  }
+
+  const subFromParent = obj.parent?.type === 'subscription_details'
+    ? refId(obj.parent.subscription_details?.subscription)
+    : null;
+  const sub = subFromParent ?? refId(obj.subscription);
+  if (sub) {
+    const { rows } = await query('SELECT id FROM companies WHERE stripe_subscription_id = $1', [sub]);
+    if (rows[0]) return Number(rows[0].id);
   }
   return null;
+}
+
+async function claimEvent(eventId: string, type: string, query: SqlQuery): Promise<boolean> {
+  const ins = await query(
+    `INSERT INTO stripe_events (id, type) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id`,
+    [eventId, type],
+  );
+  return (ins.rowCount ?? 0) > 0;
+}
+
+async function releaseEvent(eventId: string, query: SqlQuery): Promise<void> {
+  await query('DELETE FROM stripe_events WHERE id = $1', [eventId]);
 }
 
 /** Regista o pagamento (idempotente por event id) e emite fatura no Moloni. */
 async function recordPaymentAndInvoice(opts: {
   eventId: string; companyId: number; kind: 'subscription' | 'one_time'; plan: Plan; amountCents: number;
-}): Promise<void> {
-  // Idempotência: se o evento já foi processado, não repete (Stripe reenvia webhooks).
-  const ins = await pool.query(
+}, query: SqlQuery): Promise<void> {
+  const ins = await query(
     `INSERT INTO payments (company_id, stripe_event_id, kind, plan, amount_cents)
      VALUES ($1,$2,$3,$4,$5) ON CONFLICT (stripe_event_id) DO NOTHING RETURNING id`,
     [opts.companyId, opts.eventId, opts.kind, opts.plan, opts.amountCents]);
-  if (ins.rowCount === 0) return; // já processado
+  if ((ins.rowCount ?? 0) === 0) return;
 
-  const paymentRowId = ins.rows[0].id as number;
-  const { rows } = await pool.query('SELECT id, name, nif FROM companies WHERE id = $1', [opts.companyId]);
+  const paymentRowId = ins.rows[0]!.id as number;
+  const { rows } = await query('SELECT id, name, nif FROM companies WHERE id = $1', [opts.companyId]);
   const company = rows[0];
   if (!company) return;
 
-  // Confirmação ao cliente (best-effort — nunca compromete o pagamento).
-  const { rows: contacts } = await pool.query(
+  const { rows: contacts } = await query(
     `SELECT email, first_name FROM users WHERE company_id = $1 AND email IS NOT NULL ORDER BY id LIMIT 1`,
     [opts.companyId]);
   if (contacts[0]?.email) {
@@ -183,11 +286,11 @@ async function recordPaymentAndInvoice(opts: {
     const valor = (opts.amountCents / 100).toLocaleString('pt-PT', { minimumFractionDigits: 2 });
     const recorrente = opts.kind === 'subscription';
     sendMail({
-      to: contacts[0].email,
+      to: String(contacts[0].email),
       subject: `BaseRadar — pagamento confirmado (plano ${planLabel})`,
       html: layout({
         title: 'Pagamento confirmado',
-        body: `<p>Olá${contacts[0].first_name ? ' ' + esc(contacts[0].first_name) : ''},</p>
+        body: `<p>Olá${contacts[0].first_name ? ' ' + esc(String(contacts[0].first_name)) : ''},</p>
                <p>Recebemos o seu pagamento de <strong>${valor} €</strong> (IVA incluído) referente ao plano <strong>${planLabel}</strong>. O acesso já está ativo.</p>
                <p>${recorrente
                  ? 'A subscrição renova automaticamente todos os meses. Pode cancelar quando quiser na área de conta.'
@@ -200,104 +303,148 @@ async function recordPaymentAndInvoice(opts: {
   }
   try {
     const inv = await createMoloniInvoice({
-      company: { name: company.name, nif: company.nif },
+      company: { name: String(company.name), nif: (company.nif as string | null) ?? null },
       plan: opts.plan,
       netCents: config.plans.priceCents[opts.plan] ?? 0,
     });
-    await pool.query('UPDATE payments SET moloni_document_id = $1, moloni_status = $2 WHERE id = $3',
+    await query('UPDATE payments SET moloni_document_id = $1, moloni_status = $2 WHERE id = $3',
       [inv.documentId ?? null, inv.status, paymentRowId]);
   } catch (err) {
     console.error('[stripe] fatura Moloni falhou:', String(err).slice(0, 200));
-    await pool.query('UPDATE payments SET moloni_status = $1 WHERE id = $2', ['error', paymentRowId]);
+    await query('UPDATE payments SET moloni_status = $1 WHERE id = $2', ['error', paymentRowId]);
   }
+}
+
+async function activateOneTime(companyId: number, plan: Plan, custId: string | null, query: SqlQuery): Promise<void> {
+  await query(
+    `UPDATE companies SET plan = $1, subscription_status = 'active', pending_plan = NULL,
+       trial_ends_at = NULL, access_until = now() + interval '1 month',
+       renewal_at = now() + interval '1 month',
+       stripe_customer_id = COALESCE($2, stripe_customer_id)
+     WHERE id = $3`, [plan, custId, companyId]);
+}
+
+function planFromSubscription(sub: Stripe.Subscription): Plan | null {
+  const fromPrice = planFromPriceId(sub.items?.data?.[0]?.price?.id);
+  if (fromPrice) return fromPrice;
+  const fromMeta = normalizePlan(sub.metadata?.plan);
+  return fromMeta === 'pro' || fromMeta === 'business' ? fromMeta : null;
 }
 
 /**
  * Processa um evento Stripe JÁ verificado. Atualiza plano/estado e, nos eventos
  * de pagamento, regista o pagamento e emite a fatura Moloni.
  */
-export async function handleStripeEvent(event: Record<string, unknown>): Promise<{ ok: boolean; companyId?: number }> {
-  const type = String(event.type ?? '');
-  const obj = ((event.data as Record<string, unknown>)?.object as Record<string, unknown>) ?? {};
-  const eventId = String(event.id ?? '');
+export async function handleStripeEvent(
+  event: Stripe.Event,
+  query: SqlQuery = defaultQuery,
+): Promise<{ ok: boolean; companyId?: number; duplicate?: boolean }> {
+  if (!event.id) return { ok: false };
+  const claimed = await claimEvent(event.id, event.type, query);
+  if (!claimed) return { ok: true, duplicate: true };
 
-  switch (type) {
+  try {
+    return await dispatchStripeEvent(event, query);
+  } catch (err) {
+    await releaseEvent(event.id, query);
+    throw err;
+  }
+}
+
+async function dispatchStripeEvent(
+  event: Stripe.Event,
+  query: SqlQuery,
+): Promise<{ ok: boolean; companyId?: number }> {
+  switch (event.type) {
     case 'checkout.session.completed': {
-      const companyId = await findCompanyId(obj);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
       if (!companyId) return { ok: false };
-      const plan = normalizePlan(((obj.metadata as Record<string, unknown>)?.plan) ?? 'pro') as Plan;
-      const mode = String(obj.mode ?? '');
-      const custId = typeof obj.customer === 'string' ? obj.customer : null;
+      const plan = paidPlanFromMeta(obj.metadata);
+      const custId = refId(obj.customer);
 
-      if (mode === 'subscription') {
-        const subId = typeof obj.subscription === 'string' ? obj.subscription : null;
-        await pool.query(
+      if (obj.mode === 'subscription') {
+        const subId = refId(obj.subscription);
+        await query(
           `UPDATE companies SET plan = $1, subscription_status = 'active', pending_plan = NULL,
              trial_ends_at = NULL, access_until = NULL,
              stripe_customer_id = COALESCE($2, stripe_customer_id),
              stripe_subscription_id = COALESCE($3, stripe_subscription_id),
              renewal_at = now() + interval '1 month'
            WHERE id = $4`, [plan, custId, subId, companyId]);
-        // A fatura é emitida no invoice.paid (evento canónico de pagamento da subscrição).
         return { ok: true, companyId };
       }
-      // Pagamento pontual: só ativa se já estiver pago (métodos síncronos, ex. cartão).
-      if (String(obj.payment_status ?? '') === 'paid') {
-        await activateOneTime(companyId, plan, custId);
-        await recordPaymentAndInvoice({ eventId, companyId, kind: 'one_time', plan, amountCents: Number(obj.amount_total ?? grossCents(plan)) });
+      if (obj.payment_status === 'paid') {
+        await activateOneTime(companyId, plan, custId, query);
+        await recordPaymentAndInvoice({
+          eventId: event.id, companyId, kind: 'one_time', plan,
+          amountCents: obj.amount_total ?? grossCents(plan),
+        }, query);
       }
       return { ok: true, companyId };
     }
 
     case 'checkout.session.async_payment_succeeded': {
-      // MB WAY / Multibanco / transferência confirmam aqui (assíncrono).
-      const companyId = await findCompanyId(obj);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
       if (!companyId) return { ok: false };
-      const plan = normalizePlan(((obj.metadata as Record<string, unknown>)?.plan) ?? 'pro') as Plan;
-      const custId = typeof obj.customer === 'string' ? obj.customer : null;
-      await activateOneTime(companyId, plan, custId);
-      await recordPaymentAndInvoice({ eventId, companyId, kind: 'one_time', plan, amountCents: Number(obj.amount_total ?? grossCents(plan)) });
+      const plan = paidPlanFromMeta(obj.metadata);
+      const custId = refId(obj.customer);
+      await activateOneTime(companyId, plan, custId, query);
+      await recordPaymentAndInvoice({
+        eventId: event.id, companyId, kind: 'one_time', plan,
+        amountCents: obj.amount_total ?? grossCents(plan),
+      }, query);
       return { ok: true, companyId };
     }
 
     case 'invoice.paid': {
-      // Pagamento (inicial e renovações) de uma subscrição por cartão.
-      const companyId = await findCompanyId(obj);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
       if (!companyId) return { ok: false };
-      const { rows } = await pool.query('SELECT plan FROM companies WHERE id = $1', [companyId]);
+      const { rows } = await query('SELECT plan FROM companies WHERE id = $1', [companyId]);
       const plan = normalizePlan(rows[0]?.plan ?? 'pro') as Plan;
-      const periodEnd = Number((obj.lines as Record<string, unknown>)?.data
-        ? ((((obj.lines as Record<string, unknown>).data as unknown[])[0] as Record<string, unknown>)?.period as Record<string, unknown>)?.end
-        : obj.period_end);
-      await pool.query(
+      const periodEnd = obj.period_end;
+      await query(
         `UPDATE companies SET subscription_status = 'active', access_until = NULL,
            renewal_at = COALESCE($2, now() + interval '1 month') WHERE id = $1`,
         [companyId, Number.isFinite(periodEnd) ? new Date(periodEnd * 1000).toISOString() : null]);
-      await recordPaymentAndInvoice({ eventId, companyId, kind: 'subscription', plan, amountCents: Number(obj.amount_paid ?? grossCents(plan)) });
+      await recordPaymentAndInvoice({
+        eventId: event.id, companyId, kind: 'subscription', plan,
+        amountCents: obj.amount_paid ?? grossCents(plan),
+      }, query);
       return { ok: true, companyId };
     }
 
     case 'invoice.payment_failed': {
-      const companyId = await findCompanyId(obj);
-      if (companyId) await pool.query(`UPDATE companies SET subscription_status = 'past_due' WHERE id = $1`, [companyId]);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
+      if (companyId) await query(`UPDATE companies SET subscription_status = 'past_due' WHERE id = $1`, [companyId]);
       return { ok: !!companyId, companyId: companyId ?? undefined };
     }
 
     case 'customer.subscription.updated': {
-      const companyId = await findCompanyId(obj);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
       if (!companyId) return { ok: false };
-      const st = String(obj.status ?? '');
-      const mapped = st === 'active' || st === 'trialing' ? 'active'
-        : st === 'past_due' || st === 'unpaid' ? 'past_due'
-        : st === 'canceled' || st === 'incomplete_expired' ? 'canceled' : null;
-      if (mapped) await pool.query('UPDATE companies SET subscription_status = $1 WHERE id = $2', [mapped, companyId]);
+      const mapped = mapStripeSubscriptionStatus(obj.status);
+      const plan = planFromSubscription(obj);
+      if (mapped && plan) {
+        await query('UPDATE companies SET subscription_status = $1, plan = $2 WHERE id = $3', [mapped, plan, companyId]);
+      } else if (mapped) {
+        await query('UPDATE companies SET subscription_status = $1 WHERE id = $2', [mapped, companyId]);
+      }
       return { ok: true, companyId };
     }
 
     case 'customer.subscription.deleted': {
-      const companyId = await findCompanyId(obj);
-      if (companyId) await pool.query(
-        `UPDATE companies SET subscription_status = 'canceled', stripe_subscription_id = NULL WHERE id = $1`, [companyId]);
+      const obj = event.data.object;
+      const companyId = await findCompanyId(obj, query);
+      if (companyId) {
+        await query(
+          `UPDATE companies SET subscription_status = 'canceled', stripe_subscription_id = NULL WHERE id = $1`,
+          [companyId]);
+      }
       return { ok: !!companyId, companyId: companyId ?? undefined };
     }
 
@@ -306,111 +453,85 @@ export async function handleStripeEvent(event: Record<string, unknown>): Promise
   }
 }
 
-async function activateOneTime(companyId: number, plan: Plan, custId: string | null): Promise<void> {
-  await pool.query(
-    `UPDATE companies SET plan = $1, subscription_status = 'active', pending_plan = NULL,
-       trial_ends_at = NULL, access_until = now() + interval '1 month',
-       renewal_at = now() + interval '1 month',
-       stripe_customer_id = COALESCE($2, stripe_customer_id)
-     WHERE id = $3`, [plan, custId, companyId]);
-}
+/* ---------- Provisionamento assistido (apenas modo teste) ---------- */
 
-/* ---------- Provisionamento assistido (para quem não conhece o Stripe) ---------- */
-
-/**
- * Cria no Stripe os produtos e os preços mensais recorrentes dos planos Pro e
- * Business, e devolve os price IDs para ficarem em variáveis de ambiente.
- *
- * É idempotente por lookup_key: correr duas vezes reaproveita os preços já
- * criados em vez de duplicar. Os preços são criados com o valor COM IVA, para
- * bater certo com o que a página de planos anuncia.
- */
 export async function provisionPrices(): Promise<{
   pro: { price_id: string; amount_cents: number };
   business: { price_id: string; amount_cents: number };
 }> {
   if (!stripeConfigured()) throw new Error('Falta STRIPE_SECRET_KEY.');
+  if (isLiveStripeKey(config.stripe.secretKey)) {
+    throw new Error('Recusado: não criar produtos/preços com chave live. Crie-os no Dashboard de teste e defina STRIPE_PRICE_PRO / STRIPE_PRICE_BUSINESS.');
+  }
 
+  const stripe = getStripeClient();
   const ensure = async (plan: 'pro' | 'business') => {
     const label = plan === 'business' ? 'Business' : 'Pro';
     const lookupKey = `baseradar_${plan}_mensal`;
     const amount = grossCents(plan);
 
-    // Já existe um preço com esta lookup_key e este valor? Reaproveita.
-    const found = await stripeGet(`/prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&limit=10`);
-    const existing = ((found.data as Record<string, unknown>[]) ?? [])
-      .find((p) => Number(p.unit_amount) === amount && String(p.currency) === 'eur');
-    if (existing) return { price_id: String(existing.id), amount_cents: amount };
+    const found = await stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 10 });
+    const existing = found.data.find((p) => p.unit_amount === amount && p.currency === 'eur');
+    if (existing) return { price_id: existing.id, amount_cents: amount };
 
-    // Um preço no Stripe é imutável: se o valor mudou, cria-se um novo e a
-    // lookup_key transfere-se para ele (transfer_lookup_key).
-    const product = await stripePost('/products', {
+    const product = await stripe.products.create({
       name: `${config.planName} ${label}`,
       description: `Subscrição mensal do plano ${label} do ${config.planName}.`,
       metadata: { plan },
     });
-    const price = await stripePost('/prices', {
-      product: String(product.id),
+    const price = await stripe.prices.create({
+      product: product.id,
       currency: 'eur',
       unit_amount: amount,
       recurring: { interval: 'month' },
       lookup_key: lookupKey,
-      transfer_lookup_key: 'true',
+      transfer_lookup_key: true,
       metadata: { plan },
     });
-    return { price_id: String(price.id), amount_cents: amount };
+    return { price_id: price.id, amount_cents: amount };
   };
 
   return { pro: await ensure('pro'), business: await ensure('business') };
 }
 
-/**
- * Regista (ou reaproveita) o endpoint de webhook e devolve o segredo de
- * assinatura. O segredo só é revelado pelo Stripe na criação — se o endpoint
- * já existir, é preciso indicá-lo à mão a partir do dashboard.
- */
 export async function provisionWebhook(): Promise<{ url: string; secret?: string; created: boolean; id: string }> {
   if (!stripeConfigured()) throw new Error('Falta STRIPE_SECRET_KEY.');
-  if (!config.appBaseUrl) throw new Error('Falta APP_BASE_URL.');
+  if (!config.appBaseUrl) throw new Error('Falta APP_URL.');
   const url = `${config.appBaseUrl}/api/billing/webhook`;
+  const stripe = getStripeClient();
 
-  const existingList = await stripeGet('/webhook_endpoints?limit=100');
-  const already = ((existingList.data as Record<string, unknown>[]) ?? []).find((w) => String(w.url) === url);
-  if (already) return { url, created: false, id: String(already.id) };
+  const existingList = await stripe.webhookEndpoints.list({ limit: 100 });
+  const already = existingList.data.find((w) => w.url === url);
+  if (already) return { url, created: false, id: already.id };
 
-  const events = [
-    'checkout.session.completed',
-    'checkout.session.async_payment_succeeded',
-    'invoice.paid',
-    'invoice.payment_failed',
-    'customer.subscription.updated',
-    'customer.subscription.deleted',
-  ];
-  const body: Record<string, unknown> = { url, description: `${config.planName} — webhook de faturação` };
-  events.forEach((e, i) => { body[`enabled_events[${i}]`] = e; });
-  const created = await stripePost('/webhook_endpoints', body);
-  return { url, created: true, id: String(created.id), secret: created.secret ? String(created.secret) : undefined };
+  const created = await stripe.webhookEndpoints.create({
+    url,
+    description: `${config.planName} — webhook de faturação`,
+    enabled_events: WEBHOOK_EVENTS,
+    api_version: STRIPE_API_VERSION,
+  });
+  return { url, created: true, id: created.id, secret: created.secret ?? undefined };
 }
 
-/** Estado da configuração do Stripe, para o ecrã de configuração. */
 export async function stripeStatus(): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {
     secret_key: Boolean(config.stripe.secretKey),
+    publishable_key: Boolean(config.stripe.publishableKey),
     webhook_secret: Boolean(config.stripe.webhookSecret),
     price_pro: config.stripe.pricePro || null,
     price_business: config.stripe.priceBusiness || null,
-    app_base_url: config.appBaseUrl || null,
+    app_url: config.appBaseUrl || null,
+    api_version: STRIPE_API_VERSION,
+    automatic_tax: false,
   };
   if (!stripeConfigured()) return { ...out, ready: false };
   try {
-    // Métodos de pagamento activos na conta — é o que decide se o MB WAY e o
-    // Multibanco aparecem no checkout (activam-se no dashboard, não por API).
-    const cfg = await stripeGet('/payment_method_configurations?limit=1');
-    const first = ((cfg.data as Record<string, unknown>[]) ?? [])[0] ?? {};
+    const cfg = await getStripeClient().paymentMethodConfigurations.list({ limit: 1 });
+    const first = cfg.data[0] ?? {};
     const active = Object.entries(first)
-      .filter(([, v]) => v && typeof v === 'object' && (v as Record<string, unknown>).display_preference)
+      .filter(([, v]) => v && typeof v === 'object' && (v as { display_preference?: unknown }).display_preference)
       .filter(([, v]) => {
-        const d = (v as Record<string, unknown>).display_preference as Record<string, unknown>;
+        const d = (v as { display_preference?: { value?: string; preference?: string } }).display_preference;
         return d && String(d.value ?? d.preference ?? '') !== 'off';
       })
       .map(([k]) => k);
@@ -420,15 +541,14 @@ export async function stripeStatus(): Promise<Record<string, unknown>> {
   } catch (err) {
     out.payment_methods_error = String(err).slice(0, 200);
   }
-  return { ...out, ready: Boolean(config.stripe.secretKey && config.stripe.webhookSecret && config.stripe.pricePro && config.stripe.priceBusiness) };
-}
-
-/** GET à API do Stripe (o resto do ficheiro só precisava de POST). */
-async function stripeGet(path: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${API}${path}`, {
-    headers: { Authorization: `Bearer ${config.stripe.secretKey}` },
-  });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(`Stripe ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
-  return json;
+  return {
+    ...out,
+    ready: Boolean(
+      config.stripe.secretKey
+      && config.stripe.webhookSecret
+      && config.stripe.pricePro
+      && config.stripe.priceBusiness
+      && config.appBaseUrl,
+    ),
+  };
 }

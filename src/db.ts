@@ -323,6 +323,13 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS idx_payments_company ON payments (company_id, created_at DESC);
 
+-- Eventos Stripe já processados (idempotência do webhook; Stripe reenvia).
+CREATE TABLE IF NOT EXISTS stripe_events (
+  id           TEXT PRIMARY KEY,
+  type         TEXT NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Pedidos de recuperação de password. O token é guardado com hash: quem tiver
 -- acesso à base de dados não consegue usá-lo para tomar contas.
 CREATE TABLE IF NOT EXISTS password_resets (

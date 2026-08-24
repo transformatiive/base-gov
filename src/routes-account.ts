@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { stripeConfigured, createCheckout, verifyStripeSignature, handleStripeEvent, grossCents,
+import { stripeConfigured, createCheckout, constructStripeEvent, handleStripeEvent, grossCents,
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
 import { discoverMoloniConfig, moloniStatus } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
@@ -220,16 +220,18 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/billing/webhook', async (req, reply) => {
     const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
     const sig = req.headers['stripe-signature'] as string | undefined;
-    if (!verifyStripeSignature(rawBody, sig)) {
-      return reply.code(401).send({ ok: false, error: 'invalid_signature' });
+    let event;
+    try {
+      event = constructStripeEvent(rawBody, sig);
+    } catch {
+      return reply.code(400).send({ ok: false, error: 'invalid_signature' });
     }
     try {
-      const event = JSON.parse(rawBody) as Record<string, unknown>;
       const result = await handleStripeEvent(event);
       return reply.code(200).send(result);
     } catch (err) {
       console.error('[stripe] webhook erro:', err);
-      return reply.code(200).send({ ok: false });   // 200 para o Stripe não repetir indefinidamente
+      return reply.code(500).send({ ok: false });
     }
   });
 
