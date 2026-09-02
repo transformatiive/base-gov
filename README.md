@@ -8,7 +8,7 @@ Especificação completa: [SPEC.md](./SPEC.md).
 
 ## Funcionalidades v2 — radar comercial
 
-- **Perfis de pesquisa** multi-termo (ex.: "pirotecnia, fogo de artifício") com deduplicação automática, execução manual/diária/semanal e contagem de novidades por run.
+- **Perfis de pesquisa** multi-termo (ex.: "reabilitação, cobertura, fachadas") com deduplicação automática, execução manual/diária/semanal e contagem de novidades por run.
 - **Anúncios DR** (concursos abertos) via `search_anuncios`/`detail_anuncios`, com prazo de propostas.
 - **Radar de renovações**: data prevista de fim de cada contrato (celebração + prazo) e data sugerida de contacto (4 meses antes).
 - **Oportunidades com scoring** (0-100): concursos abertos + renovações, ponderando valor, urgência e recorrência da entidade.

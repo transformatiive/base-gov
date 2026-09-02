@@ -10,13 +10,15 @@ Uma aplicação web que cruza o histórico completo da contratação pública po
 
 ## 2. Para quem é (ICP)
 
-PME e empresas que **vendem ao Estado** (municípios, hospitais, universidades, empresas públicas) e que hoje descobrem os concursos tarde, um a um, sem contexto:
+O comprador-alvo é o **diretor de concursos de uma construtora de classe média** (alvará, pessoa comercial, orçamento de ferramentas) — não a micro de 3 operários, não a Mota-Engil.
 
-- Fornecedores de bens e serviços recorrentes a autarquias e entidades públicas.
-- Empresas com equipa comercial pequena que não consegue vigiar o BASE/DR todos os dias.
-- Setores com forte componente de **renovação** (contratos plurianuais que voltam a concurso).
+| Ordem | Sector | Porquê paga |
+|---|---|---|
+| 1 | **Obras / reabilitação municipal** | Ticket alto; já paga Vortal; as reabilitações da câmara **repetem-se** (o «4 meses antes» encaixa). |
+| 2 | Dispositivos médicos / farmácia hospitalar | Consumo contínuo SNS. |
+| 3 | Energia / ambiente | Contratos gordos, plurianuais. |
 
-Exemplos de atividade: pirotecnia e eventos, construção e manutenção, material médico, limpeza, catering, TI, formação, etc. — qualquer atividade descritível por **palavras-chave** e **códigos CPV**.
+Não é o ICP: limpeza, cantinas, festas — barato de adquirir, caro de converter. O Pro a 29 € é isco; o dinheiro está no **Business a 99 €** (até 10 lugares + API/CRM).
 
 ## 3. O problema que resolve
 
@@ -79,8 +81,10 @@ Por concurso ou renovação, a IA produz uma **ficha de oportunidade**:
 - **Dossier de resposta** gerado por IA (documento com placeholders da empresa).
 - A análise é **fundamentada nos documentos reais** — a IA descarrega as **peças do procedimento** (caderno de encargos/programa) da plataforma e o **texto oficial do anúncio no DR**. O resultado fica guardado (só paga uma vez por análise).
 
-### 5.10 Digest semanal
-Resumo por email (rascunho no Gmail / versão web): novos concursos, renovações a entrar na janela de contacto e o essencial da semana.
+### 5.10 Digest semanal e mesa de concursos
+- **Digest** — segunda-feira às 08:00 (Europa/Lisboa), no email: novos concursos de obras e reabilitações a entrar na janela de contacto. Grátis. Opt-out num clique.
+- **Pipeline de propostas** (grátis) — Nova → Interessa → Em preparação → Submetida → Ganha/Perdida, partilhado pela equipa.
+- **Lembretes de prazo** (Pro) — 7 e 2 dias antes, para o que está marcado Interessa / Em preparação.
 
 ---
 
@@ -119,9 +123,9 @@ Três planos, todos sem compromisso — comece grátis e suba quando precisar. P
 
 | Plano | Preço (sem IVA) | Inclui |
 |---|---|---|
-| **Grátis** | 0 € | Concursos abertos, mapa por distrito, sazonalidade e digest semanal. 1 utilizador. |
-| **Pro** | 29 € / mês | Tudo do Grátis + oportunidades com **score e fit IA**, radar de **renovações**, concursos europeus (**TED**), **análise IA** do caderno de encargos + dossier de resposta, **concorrentes** e **entidades**, exportação Excel. **2 utilizadores**. |
-| **Business** | 99 € / mês | Tudo do Pro + **equipa até 10 utilizadores** (seats), **uso elevado de IA** e **exportação avançada**. |
+| **Grátis** | 0 € | Concursos abertos, mapa, sazonalidade, digest (segunda 08:00), **pipeline de propostas**, perfil da empresa (alvará, distritos, valor). 1 utilizador. |
+| **Pro** | 29 € / mês (isco, 7 dias grátis) | Tudo do Grátis + **score e fit IA**, radar de **renovações**, **TED**, **análise IA** + dossier, **lembretes de prazo** (7 e 2 dias), filtros avançados, feedback sobre a IA, **concorrentes** e **entidades**, Excel. **2 utilizadores**. |
+| **Business** | 99 € / mês (**plano da equipa**) | Tudo do Pro + **até 10 utilizadores**, **API / CRM**, uso elevado de IA, exportação avançada, apoio prioritário. |
 
 - **Experimente o Pro 7 dias grátis, sem cartão** — ao fim do período, a conta volta ao plano Grátis se não subscrever.
 - O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade).
