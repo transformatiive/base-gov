@@ -55,7 +55,10 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `MAX_RESULTS_PER_SEARCH` | `5000` | Limite de segurança por pesquisa |
 | `OPENROUTER_API_KEY` | vazio | Chave OpenRouter (análises de IA) |
 | `IVA_RATE` | `0.23` | Taxa de IVA aplicada aos preços dos planos |
-| `AI_SOFT_CAP_ENABLED` | `false` | Teto de IA em modo aviso (não bloqueia) |
+| `DIGEST_HOUR` | `8` | Hora de Lisboa para o digest (segunda-feira) e lembretes |
+| `REMINDER_DAYS` | `7,2` | Dias de antecedência dos lembretes de prazo (Pro) |
+| `RESEND_API_KEY` | vazio | Chave Resend (digest, lembretes, convites) |
+| `MAIL_FROM` | vazio | Remetente, ex. `BaseRadar <noreply@dominio.pt>` |
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 

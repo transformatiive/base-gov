@@ -82,7 +82,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       const profileTerms = terms.length ? terms : [companyName];
       const { rows: [profile] } = await client.query(
         `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, company_id)
-         VALUES ($1, $2, $3, 'weekly', true, $4) RETURNING id`,
+         VALUES ($1, $2, $3, 'daily', true, $4) RETURNING id`,
         ['A minha atividade', profileTerms, cpvCodes, company.id]
       );
       await client.query('COMMIT');

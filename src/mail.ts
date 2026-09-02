@@ -65,6 +65,26 @@ export async function sendMail(msg: {
 const BRAND = '#173f35';
 
 /** Escapa texto que vem de dados do utilizador antes de entrar no HTML do email. */
+/** Aceita Date | string (incl. o Date do driver pg) e devolve DD/MM/AAAA. */
+export function fmtDatePT(value: unknown): string {
+  if (value == null || value === '') return '—';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const dd = String(value.getUTCDate()).padStart(2, '0');
+    const mm = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = value.getUTCFullYear();
+    // Datas DATE do Postgres vêm à meia-noite UTC; usar UTC evita o salto de fuso.
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  const s = String(value).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+  }
+  return s.slice(0, 10);
+}
+
 export function esc(v: unknown): string {
   return String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
