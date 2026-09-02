@@ -21,6 +21,17 @@ const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', {
 const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
 const fmtDatePt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const daysUntil = (v) => (v ? Math.round((new Date(v) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null);
+
+/** PIP-07: «No pipeline» só com prazos a decorrer (não ultrapassados). Interessa ≤14 d, Em preparação ≤7 d. */
+function hojePipelineDue(it) {
+  const d = daysUntil(it.deadline);
+  if (d == null || d < 0) return false;
+  switch (it.status) {
+    case 'preparacao': return d <= 7;
+    case 'interessa': return d <= 14;
+    default: return false;
+  }
+}
 /* Acordo-quadro: canal de venda distinto (contratação centralizada/ESPAP). */
 const isAcordoQuadro = (o) => /acordo[-\s]?quadro/i.test([o?.contract_designation, o?.announcement_type, o?.model_type, o?.contracting_procedure_type, o?.contract_type].filter(Boolean).join(' '));
 const AQ_BADGE = '<span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6" title="Acordo-quadro — canal de contratação centralizada">AQ</span>';
@@ -2297,13 +2308,7 @@ async function renderHoje() {
   const recolha = active.last_run_at ? `Última recolha: ${fmtRecolha(active.last_run_at)}` : '';
   const meId = window._me?.user_id;
   const pipeItems = pipe.items ?? [];
-  const pipeDue = pipeItems.filter((it) => {
-    const d = daysUntil(it.deadline);
-    if (d == null) return false;
-    if (it.status === 'preparacao') return d <= 7;
-    if (it.status === 'interessa') return d <= 14;
-    return false;
-  });
+  const pipeDue = pipeItems.filter(hojePipelineDue);
   const mine = pipeDue.filter((it) => meId != null && Number(it.assigned_user_id) === Number(meId));
   const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
     <div style="min-width:0"><div class="k"><span class="mini-chip">${esc(PL_LABELS[it.status] || it.status)}</span></div>
