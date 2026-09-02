@@ -113,6 +113,7 @@ const PLAN_LABEL = { free: 'Grátis', pro: 'Pro', business: 'Business' };
 
 // Mapa item de navegação → feature exigida (vazio = livre no plano free).
 const NAV_FEATURE = {
+  '#/pipeline': 'pipeline',
   '#/radar/opportunities': 'score_fit',
   '#/radar/renewals': 'renovacoes',
   '#/radar/competitors': 'concorrentes',
@@ -127,6 +128,282 @@ function applyNavGating() {
     a.classList.toggle('nav-locked', !!locked);
     a.querySelector('.nav-lock')?.remove();
     if (locked) a.insertAdjacentHTML('beforeend', ' <span class="nav-lock" aria-hidden="true" title="Plano superior">🔒</span>');
+  });
+}
+
+const PL_LABELS = {
+  nova: 'Nova', interessa: 'Interessa', preparacao: 'Em preparação',
+  submetida: 'Submetida', ganha: 'Ganha', perdida: 'Perdida', descartada: 'Descartada',
+};
+const PL_NEXT = {
+  nova: ['interessa', 'preparacao', 'submetida', 'descartada'],
+  interessa: ['preparacao', 'submetida', 'descartada'],
+  preparacao: ['interessa', 'submetida', 'descartada'],
+  submetida: ['ganha', 'perdida', 'descartada'],
+  descartada: ['interessa'],
+  ganha: ['interessa', 'preparacao'],
+  perdida: ['interessa', 'preparacao'],
+};
+const DISTRICTS_UI = ['Aveiro','Beja','Braga','Bragança','Castelo Branco','Coimbra','Évora','Faro','Guarda','Leiria','Lisboa','Portalegre','Porto','Santarém','Setúbal','Viana do Castelo','Vila Real','Viseu','Açores','Madeira'];
+const FB_REASONS = [
+  ['fora_atividade', 'Fora da nossa atividade'],
+  ['fora_geografia', 'Fora da geografia'],
+  ['requisito_impossivel', 'Requisito impossível'],
+  ['valor_desadequado', 'Valor desadequado'],
+  ['outro', 'Outro'],
+];
+
+const fmtDateDMY = (v) => {
+  if (!v) return '—';
+  const s = String(v);
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+  }
+  return s.slice(0, 10);
+};
+const fmtRecolha = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('pt-PT', {
+    timeZone: 'Europe/Lisbon', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')}/${get('month')} ${get('hour')}:${get('minute')}`;
+};
+
+function hashQuery() {
+  const i = location.hash.indexOf('?');
+  return new URLSearchParams(i >= 0 ? location.hash.slice(i + 1) : '');
+}
+function setHashQuery(mutator) {
+  const p = hashQuery();
+  mutator(p);
+  const base = location.hash.split('?')[0];
+  const s = p.toString();
+  const next = s ? `${base}?${s}` : base;
+  if (location.hash !== next) location.hash = next;
+  else route();
+}
+
+function pipelineTypeOf(o) {
+  return o.type || (o.announcement_id ? 'anuncio_aberto' : 'renovacao');
+}
+function pipelineIdOf(o) {
+  return o.announcement_id ?? o.contract_id ?? o.item_id ?? o.id;
+}
+
+function pipelineSelect(type, id, status) {
+  const cur = status || 'nova';
+  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
+  return `<select class="pl-status" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}" onclick="event.stopPropagation()">
+    <option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}</select>`;
+}
+
+function rebuildPipelineSelect(sel, status) {
+  const cur = status || 'nova';
+  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
+  sel.dataset.cur = cur;
+  sel.innerHTML = `<option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}`;
+}
+
+function bindPipelineChips(root) {
+  (root || document).querySelectorAll('select.pl-status').forEach((sel) => {
+    sel.onchange = async () => {
+      const prev = sel.dataset.cur;
+      const next = sel.value;
+      if (next === prev) return;
+      try {
+        await api(`/api/pipeline/${sel.dataset.type}/${sel.dataset.id}`, {
+          method: 'PUT', body: JSON.stringify({ status: next }),
+        });
+        rebuildPipelineSelect(sel, next);
+      } catch (err) {
+        rebuildPipelineSelect(sel, prev);
+        alert(err.message);
+      }
+    };
+  });
+}
+
+function fitCell(f, type, id) {
+  if (!f) return '<span class="opp-fit none">—</span>';
+  const ruleRaw = (f.reasons || []).find((r) => String(r).startsWith('Regra:'))
+    || (/excluído por regra|fora da área geográfica|valor fora do intervalo/i.test(f.reason || '') ? f.reason : '');
+  const ruleShow = String(ruleRaw || '').replace(/^Regra:\s*/, '');
+  const title = [...(f.reasons || []), f.reason].filter(Boolean).join(' · ');
+  const stale = f.stale ? ' <span class="stale">desatualizado</span>' : '';
+  const fb = can('feedback_ia')
+    ? `<span class="fit-fb" data-type="${esc(type)}" data-id="${id}">👍 👎</span>`
+    : `<a class="fit-fb locked" href="#/planos" title="Feedback IA no plano Pro" onclick="event.stopPropagation()">🔒</a>`;
+  const regra = ruleShow ? `<small class="regra">${esc(ruleShow)}${can('perfil_empresa') ? ` · <a href="#/conta" onclick="event.stopPropagation()">editar perfil</a>` : ''}</small>` : '';
+  return `<span class="opp-fit" title="${esc(title)}">${f.fit}${stale}${regra}${fb}</span>`;
+}
+
+function bindFitFeedback(root) {
+  root.querySelectorAll('.fit-fb[data-type]').forEach((el) => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      document.querySelector('.fit-pop')?.remove();
+      const pop = document.createElement('div');
+      pop.className = 'fit-pop';
+      pop.innerHTML = `<button data-v="up">👍 Útil</button>${FB_REASONS.map(([c, l]) => `<button data-v="down" data-r="${c}">👎 ${l}</button>`).join('')}`;
+      document.body.appendChild(pop);
+      const r = el.getBoundingClientRect();
+      pop.style.left = `${r.left}px`;
+      pop.style.top = `${r.bottom + 4 + window.scrollY}px`;
+      const close = () => pop.remove();
+      pop.onclick = async (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        try {
+          const body = { target_type: 'fit', item_type: el.dataset.type, item_id: Number(el.dataset.id), verdict: b.dataset.v };
+          if (b.dataset.r) body.reason_code = b.dataset.r;
+          const res = await api('/api/ai/feedback', { method: 'POST', body: JSON.stringify(body) });
+          el.classList.add('voted');
+          el.title = b.dataset.r || b.dataset.v || '';
+          if (res.suggestion?.action === 'add_district' && confirm(res.suggestion.label)) {
+            await api('/api/ai/feedback/apply-suggestion', { method: 'POST', body: JSON.stringify({ district: res.suggestion.district }) });
+          }
+        } catch (err) { alert(err.message); }
+        close();
+      };
+      setTimeout(() => document.addEventListener('click', close, { once: true }), 0);
+    };
+  });
+}
+
+function platformName(url) {
+  if (!url) return 'ver anúncio';
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch { host = String(url).toLowerCase(); }
+  if (host.includes('vortal')) return 'Vortal';
+  if (host.includes('acingov')) return 'AcinGov';
+  if (host.includes('saphety')) return 'Saphety';
+  if (host.includes('anogov')) return 'AnoGov';
+  if (host.includes('compraspublicas')) return 'Compras Públicas';
+  return 'plataforma eletrónica';
+}
+
+function formalidadesHtml(url) {
+  const name = platformName(url);
+  const link = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(name)} ↗</a>` : esc(name);
+  return `<div class="d-card"><div class="t">Formalidades</div>
+    <p style="font-size:12.5px;line-height:1.6;margin:0">Submissão na ${link}. Prepare o DEUCP (Documento Europeu Único de Contratação Pública) e a assinatura digital qualificada. Este texto é informativo — não constitui aconselhamento jurídico.</p>
+  </div>`;
+}
+
+function filterBarHtml(kind, facets) {
+  const p = hashQuery();
+  const pro = can('filtros_avancados');
+  const distCount = new Map((facets?.districts || []).map((d) => [d.value, d.n]));
+  const hasFacets = !!(facets && Array.isArray(facets.districts));
+  const distOpts = [`<option value="">Todos</option>`].concat(DISTRICTS_UI.map((d) => {
+    const n = distCount.get(d);
+    const label = n != null ? `${d} (${n})` : d;
+    const dis = hasFacets && (n == null || n === 0) ? ' disabled' : '';
+    return `<option value="${esc(d)}" ${p.get('district') === d ? 'selected' : ''}${dis}>${esc(label)}</option>`;
+  }));
+  const unkN = facets?.unknown?.n;
+  distOpts.push(`<option value="__unknown__" ${p.get('district') === '__unknown__' ? 'selected' : ''}>${unkN ? `Sem localização (${unkN})` : 'Sem localização'}</option>`);
+  const dl = p.get('deadline') || p.get('deadline_within') || '';
+  const deadOpts = [['', 'Qualquer'], ['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['60', '60 dias']]
+    .map(([v, l]) => `<option value="${v}" ${dl === v ? 'selected' : ''}>${l}</option>`).join('');
+  const procOpts = [`<option value="">Todos</option>`].concat((facets?.procedures || []).map((pr) =>
+    `<option value="${esc(pr.value)}" ${p.get('procedure') === pr.value ? 'selected' : ''}>${esc(pr.value)} (${pr.n})</option>`)).join('');
+  const adv = (inner) => (pro ? inner : `<span class="filt-lock">${inner} 🔒</span>`);
+  const procSel = kind === 'announcements'
+    ? `<label>Procedimento<select data-f="procedure" ${pro ? '' : 'disabled'}>${procOpts}</select></label>`
+    : '';
+  return `<div class="filter-bar" data-kind="${kind}">
+    <label>Texto<input type="search" data-f="q" value="${esc(p.get('q') || '')}" placeholder="Objeto ou entidade"></label>
+    <label>Distrito<select data-f="district">${distOpts.join('')}</select></label>
+    <label>Prazo<select data-f="deadline">${deadOpts}</select></label>
+    ${adv(`<label>Valor mín.<input type="number" data-f="value_min" ${pro ? '' : 'disabled'} value="${esc(p.get('value_min') || '')}" placeholder="€"></label>
+      <label>Valor máx.<input type="number" data-f="value_max" ${pro ? '' : 'disabled'} value="${esc(p.get('value_max') || '')}" placeholder="€"></label>
+      <label>Entidade<input type="text" data-f="entity" ${pro ? '' : 'disabled'} value="${esc(p.get('entity') || '')}"></label>
+      <label>CPV<input type="text" data-f="cpv" ${pro ? '' : 'disabled'} value="${esc(p.get('cpv') || '')}" placeholder="prefixo"></label>
+      ${procSel}
+      <label>Ordenar<select data-f="sort" ${pro ? '' : 'disabled'}>
+        <option value="">Prazo</option>
+        <option value="value" ${p.get('sort') === 'value' ? 'selected' : ''}>Valor</option>
+        <option value="published" ${p.get('sort') === 'published' ? 'selected' : ''}>Publicação</option>
+        <option value="fit" ${p.get('sort') === 'fit' ? 'selected' : ''}>Fit</option>
+      </select></label>
+      <label>Ordem<select data-f="order" ${pro ? '' : 'disabled'}>
+        <option value="asc" ${p.get('order') !== 'desc' ? 'selected' : ''}>Asc</option>
+        <option value="desc" ${p.get('order') === 'desc' ? 'selected' : ''}>Desc</option>
+      </select></label>`)}
+    <label class="muted" style="flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0">
+      <input type="checkbox" data-f="only_new" ${p.get('only_new') === '1' ? 'checked' : ''}> Só novas</label>
+    <button type="button" class="btn-secondary" data-clear>Limpar filtros</button>
+  </div>`;
+}
+
+function bindFilterBar(root) {
+  const bar = root.querySelector('.filter-bar');
+  if (!bar) return;
+  const applyFromBar = () => {
+    setHashQuery((p) => {
+      p.delete('page');
+      bar.querySelectorAll('[data-f]').forEach((el) => {
+        const k = el.dataset.f;
+        if (el.type === 'checkbox') {
+          if (el.checked) p.set(k, '1'); else p.delete(k);
+        } else if (!el.value) p.delete(k);
+        else p.set(k, el.value);
+      });
+    });
+  };
+  bar.querySelectorAll('select, input[type="checkbox"]').forEach((el) => {
+    if (el.disabled) {
+      el.onclick = (e) => { e.preventDefault(); location.hash = '#/planos'; };
+      return;
+    }
+    el.onchange = applyFromBar;
+  });
+  bar.querySelectorAll('input[type="search"], input[type="number"], input[type="text"]').forEach((el) => {
+    if (el.disabled) {
+      el.onclick = () => { location.hash = '#/planos'; };
+      return;
+    }
+    el.onchange = applyFromBar;
+  });
+  bar.querySelector('[data-clear]').onclick = () => {
+    const base = location.hash.split('?')[0];
+    location.hash = base;
+  };
+  bar.querySelectorAll('.filt-lock').forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); location.hash = '#/planos'; };
+  });
+}
+
+function filterQueryString() {
+  const p = hashQuery();
+  const out = new URLSearchParams();
+  ['q', 'district', 'deadline', 'deadline_within', 'value_min', 'value_max', 'entity', 'procedure', 'cpv', 'sort', 'order', 'only_new', 'page'].forEach((k) => {
+    if (p.get(k)) out.set(k, p.get(k));
+  });
+  return out.toString();
+}
+
+function pagerHtml(total, page, size) {
+  const last = Math.max(0, Math.ceil((Number(total) || 0) / (size || 50)) - 1);
+  if (last <= 0) return '';
+  return `<div class="pager">
+    <button ${page <= 0 ? 'disabled' : ''} data-pg="${page - 1}">${ico('back')} Anterior</button>
+    <span>Página ${page + 1} de ${last + 1}</span>
+    <button ${page >= last ? 'disabled' : ''} data-pg="${page + 1}">Seguinte ${ico('next')}</button>
+  </div>`;
+}
+
+function bindPager(root) {
+  root.querySelectorAll('.pager button[data-pg]').forEach((b) => {
+    if (b.disabled) return;
+    b.onclick = () => setHashQuery((p) => p.set('page', b.dataset.pg));
   });
 }
 
@@ -364,6 +641,7 @@ async function renderRegister() {
         company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes,
       }) });
       window._me = null;
+      try { sessionStorage.setItem('br_onboard', '1'); } catch { /* ignore */ }
       location.hash = '#/';
     } catch (err) {
       errBox.textContent = err.message; btn.disabled = false; btn.textContent = 'Criar conta e começar';
@@ -412,12 +690,14 @@ async function updateSidebar() {
     const active = profiles.find((p) => String(p.id) === ctx) ?? profiles[0];
     const nT = active.terms?.length ?? 0;
     const nC = (active.cpv_codes ?? []).length;
-    const sched = { diaria: 'diária', semanal: 'semanal', mensal: 'mensal' }[active.schedule] ?? (active.schedule || '—');
+    const sched = { daily: 'diária', weekly: 'semanal', manual: 'manual' }[active.schedule] ?? (active.schedule || '—');
+    const recolha = active.last_run_at ? `Última recolha: ${fmtRecolha(active.last_run_at)}` : '';
     el.innerHTML = `<div class="side-section">
       <div class="lbl">ATIVIDADE</div>
       <a class="side-activity" href="#/config/profiles">
         <div class="top"><span class="nm">${esc(active.name)}</span>${ico('chevron', 13)}</div>
         <div class="mt">${nT} termo${nT === 1 ? '' : 's'} · ${nC} CPV · recolha ${esc(sched)}</div>
+        ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
       </a>
     </div>`;
   } catch { /* silencioso — não bloqueia a navegação */ }
@@ -426,7 +706,7 @@ async function updateSidebar() {
 /* ---------- Planos (grátis / pro / business): trial, upgrade e pagamento ---------- */
 const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
 const PLAN_FEATURES = {
-  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal'],
+  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal', 'Pipeline'],
   pro: ['Tudo do Grátis', 'Oportunidades com score + fit IA', 'Radar de renovações', 'Concursos europeus (TED)', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação Excel', '2 utilizadores'],
   business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Integração API (CRM / ERP)', 'Uso elevado de IA', 'Exportação avançada'],
 };
@@ -554,9 +834,13 @@ async function renderAccount() {
       </div>
 
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
+      <div id="company-profile-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
     </div>`;
 
   wireSeats();
+  fillCompanyProfileBlock();
+  fillNotifyBlock();
 }
 
 function renderSeatsBlock(seats, used, max, plan) {
@@ -605,6 +889,102 @@ function wireSeats() {
   document.querySelectorAll('.seat-inv-rm').forEach((b) => b.onclick = async () => {
     try { await api('/api/seats/invites/' + b.dataset.id, { method: 'DELETE' }); renderAccount(); } catch (err) { alert(err.message); }
   });
+}
+
+function chipPicker(values, suggestions, name) {
+  const set = new Set(values || []);
+  const all = [...new Set([...(suggestions || []), ...set])];
+  return `<div class="chip-pick" data-name="${esc(name)}">${all.map((v) =>
+    `<button type="button" class="${set.has(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}
+    <input type="text" placeholder="outro…" style="min-width:120px;font-size:0.8rem"></div>`;
+}
+
+async function fillCompanyProfileBlock() {
+  const host = document.getElementById('company-profile-block');
+  if (!host) return;
+  let p;
+  try { p = await api('/api/company/profile'); } catch (e) { host.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+  const sug = p.suggestions || {};
+  host.innerHTML = `
+    <h3 style="margin:0 0 .6rem">Perfil da empresa</h3>
+    <p class="muted" style="margin:0 0 .8rem">Alvarás, distritos e exclusões — usados nas regras de fit, antes da IA.</p>
+    <label>Descrição</label>
+    <textarea id="cp-desc" rows="2" style="width:100%">${esc(p.description || '')}</textarea>
+    <label style="margin-top:.7rem">Certificações / alvarás</label>
+    ${chipPicker(p.certifications, sug.certifications, 'certs')}
+    <label style="margin-top:.7rem">Distritos onde executa</label>
+    ${chipPicker(p.districts, sug.districts || DISTRICTS_UI, 'districts')}
+    <div class="reg-grid" style="margin-top:.7rem">
+      <div><label>Valor mínimo (€)</label><input type="number" id="cp-vmin" value="${p.value_min ?? ''}"></div>
+      <div><label>Valor máximo (€)</label><input type="number" id="cp-vmax" value="${p.value_max ?? ''}"></div>
+    </div>
+    <label style="margin-top:.7rem">Nunca faz (termos)</label>
+    <input type="text" id="cp-excl-t" value="${esc((p.excluded_terms || []).join(', '))}" placeholder="ex.: manutenção, espaços verdes">
+    <label style="margin-top:.7rem">Entidades excluídas</label>
+    <input type="text" id="cp-excl-e" value="${esc((p.excluded_entities || []).join(', '))}">
+    <p id="cp-err" class="error"></p>
+    <p style="margin-top:.8rem"><button id="cp-save">Guardar perfil</button></p>`;
+  host.querySelectorAll('.chip-pick').forEach((box) => {
+    box.onclick = (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      b.classList.toggle('on');
+    };
+    const inp = box.querySelector('input');
+    if (inp) inp.onchange = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      box.insertAdjacentHTML('afterbegin', `<button type="button" class="on" data-v="${esc(v)}">${esc(v)}</button>`);
+      inp.value = '';
+    };
+  });
+  document.getElementById('cp-save').onclick = async () => {
+    const picked = (name) => [...host.querySelectorAll(`.chip-pick[data-name="${name}"] button.on`)].map((b) => b.dataset.v);
+    const err = document.getElementById('cp-err');
+    err.textContent = '';
+    try {
+      await api('/api/company/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          description: document.getElementById('cp-desc').value,
+          certifications: picked('certs'),
+          districts: picked('districts'),
+          value_min: document.getElementById('cp-vmin').value || null,
+          value_max: document.getElementById('cp-vmax').value || null,
+          excluded_terms: document.getElementById('cp-excl-t').value.split(',').map((s) => s.trim()).filter(Boolean),
+          excluded_entities: document.getElementById('cp-excl-e').value.split(',').map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      err.textContent = '';
+      const ok = document.createElement('p'); ok.className = 'hint'; ok.textContent = 'Perfil guardado.';
+      document.getElementById('cp-save').after(ok);
+    } catch (e) { err.textContent = e.message; }
+  };
+}
+
+async function fillNotifyBlock() {
+  const host = document.getElementById('notify-block');
+  if (!host) return;
+  let n;
+  try { n = await api('/api/me/notifications'); } catch { return; }
+  host.innerHTML = `
+    <h3 style="margin:0 0 .6rem">Notificações</h3>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="nt-digest" ${n.notify_digest !== false ? 'checked' : ''}> Digest semanal (segunda-feira 08:00 Lisboa)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:.4rem"><input type="checkbox" id="nt-rem" ${n.notify_reminders !== false ? 'checked' : ''}> Lembretes de prazo (7 e 2 dias)${can('lembretes') ? '' : ' <span class="muted">· Pro</span>'}</label>
+    <p class="muted" style="font-size:.8rem;margin:.5rem 0 0">O digest está incluído em todos os planos, incluindo o trial Pro.</p>`;
+  const save = async () => {
+    try {
+      await api('/api/me/notifications', {
+        method: 'PUT',
+        body: JSON.stringify({
+          notify_digest: document.getElementById('nt-digest').checked,
+          notify_reminders: document.getElementById('nt-rem').checked,
+        }),
+      });
+    } catch (e) { alert(e.message); }
+  };
+  document.getElementById('nt-digest').onchange = save;
+  document.getElementById('nt-rem').onchange = save;
 }
 
 /* ---------- Aceitar convite de equipa ---------- */
@@ -893,6 +1273,18 @@ async function renderContract(id) {
           </div>
         </div>
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
+        ${formalidadesHtml(c.contracting_procedure_url)}
+        <div class="d-card" id="pl-ficha">
+          <div class="t">Pipeline</div>
+          <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
+          <div>${pipelineSelect('renovacao', c.id, c.pipeline_status)}</div>
+          <label style="display:block;margin-top:.6rem">Nota</label>
+          <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
+          <label style="display:block;margin-top:.5rem">Responsável</label>
+          <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
+          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+          <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
+        </div>
         ${adj ? `<div class="d-card">
           <div class="t">A entidade compra</div>
           <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
@@ -900,6 +1292,9 @@ async function renderContract(id) {
         </div>` : ''}
       </div>
     </div>`;
+
+  bindPipelineChips(app);
+  wireFichaPipeline('renovacao', c.id);
 
   document.getElementById('ai-contract-btn').onclick = async () => {
     const btn = document.getElementById('ai-contract-btn');
@@ -915,8 +1310,9 @@ async function renderContract(id) {
     try {
       const pid = Number(getCtx() || 0);
       const r = await api(`/api/contracts/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${
+      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model, 'renovacao', id)}${
         r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : ''}</div>`;
+      hydrateChecklist(out);
       out.scrollIntoView({ block: 'nearest' });
     } catch (err) {
       out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
@@ -1054,8 +1450,9 @@ const PROFILE_TABS = [
 async function renderInsightTab(el, q, tab, p) {
 
   if (tab === 'opportunities') {
-    const kw = window._oppFilter ?? '';
-    const d = await api(`/api/insights/opportunities${q}${kw ? `&q=${encodeURIComponent(kw)}` : ''}`);
+    const kw = window._oppFilter ?? hashQuery().get('q') ?? '';
+    const extra = filterQueryString();
+    const d = await api(`/api/insights/opportunities${q}${extra ? `&${extra}` : ''}${kw && !hashQuery().get('q') ? `&q=${encodeURIComponent(kw)}` : ''}`);
     window._oppReload = () => renderInsightTab(el, q, tab, p);
     const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
     const fits = window._fitCache?.[q] ?? {};
@@ -1070,13 +1467,16 @@ async function renderInsightTab(el, q, tab, p) {
     const oppRow = (o) => {
       const f = fits[fitKey(o)];
       const urgent = o.type === 'anuncio_aberto' || (o.days_left != null && o.days_left <= 30);
+      const plType = pipelineTypeOf(o);
+      const plId = pipelineIdOf(o);
       return `<div class="opp-tr body" onclick="location.hash='${esc(o.internal_url ?? o.basegov_url)}'">
         <div class="opp-score"><b>${o.score}</b><div class="track"><div class="fill" style="width:${Math.min(100, o.score)}%;background:${scoreBarColor(o)}"></div></div></div>
-        <span class="opp-fit ${f ? '' : 'none'}"${f && f.reason ? ` title="${esc(f.reason)}"` : ''}>${f ? f.fit : '—'}</span>
+        ${fitCell(f, plType, plId)}
         <div><div class="ti">${esc(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
         <span class="ent">${esc(o.entity ?? '—')}</span>
         <span class="val">${fmtEuro0(o.value)}</span>
         <span class="dat ${urgent ? 'urgent' : ''}">${o.key_date ? `${dPtShort(o.key_date)} · ${o.days_left}d` : '—'}</span>
+        <span onclick="event.stopPropagation()">${pipelineSelect(plType, plId, o.pipeline_status)}</span>
       </div>`;
     };
     el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Oportunidades</h1>
@@ -1084,13 +1484,18 @@ async function renderInsightTab(el, q, tab, p) {
       <form class="opp-search" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
         ${ico('search', 14)}<input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por objeto ou entidade">
       </form></div>
+      ${filterBarHtml('opportunities')}
+      ${d.excluded_no_value && d.items?.length >= 0 ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : ''}
       ${matrix}
       ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.2rem 0 0.6rem" id="fit-status"></p>` : ''}
       <div class="opp-t">
-        <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span></div>
-        ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem oportunidades ativas — executa o perfil ou alarga os termos.</div>'}
+        <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span><span>ESTADO</span></div>
+        ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split(\'?\')[0]">Limpar filtros</button></div>'}
       </div>`;
     bindMatrixTooltip(el);
+    bindPipelineChips(el);
+    bindFitFeedback(el);
+    bindFilterBar(el);
     const pid = new URLSearchParams(q.slice(1)).get('profile_id');
     const toFitItem = (o) => ({
       type: o.type,
@@ -1123,28 +1528,43 @@ async function renderInsightTab(el, q, tab, p) {
       }
     }
   } else if (tab === 'renewals') {
-    const d = await api(`/api/insights/renewals${q}&months=12`);
+    const extraR = filterQueryString();
+    const d = await api(`/api/insights/renewals${q}&months=12${extraR ? `&${extraR}` : ''}`);
     el.innerHTML = `<h2>Radar de renovações (próximos 12 meses)</h2>
       <p class="muted">Contratos em curso cuja execução termina em breve — a entidade irá provavelmente lançar novo procedimento; contactar na data sugerida.</p>
+      ${filterBarHtml('renewals')}
       <div class="hint">"Termina" é o fim previsto, estimado a partir dos dados do BASE: data de celebração + prazo de execução (o BASE não publica a data de fim explícita). A mesma regra é usada na matriz, no mapa e no digest; a data exata pode desviar-se se o contrato tiver sido suspenso ou prorrogado.</div>
-      <table><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th></tr></thead><tbody>
+      <table><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((r) => `<tr>
-        <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
-        <td><strong>${fmtDate(r.suggested_contact_date)}</strong></td>
+        <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+        <td><strong>${fmtDateDMY(r.suggested_contact_date)}</strong></td>
         <td><a href="#/contracts/${r.id}">${esc(r.object_brief_description ?? '')}</a></td>
         <td>${esc(r.contracting ?? '—')}</td>
         <td>${esc(r.incumbent ?? '—')}</td>
-        <td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sem renovações no horizonte.</td></tr>'}
+        <td>${fmtPrice(r.initial_contractual_price)}</td>
+        <td>${pipelineSelect('renovacao', r.id, r.pipeline_status)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split(\'?\')[0]">Limpar filtros</button></td></tr>'}
       </tbody></table>`;
+    bindPipelineChips(el);
+    bindFilterBar(el);
   } else if (tab === 'announcements') {
     const showAll = window._annShowAll === true;
-    const d = await api(`/api/announcements${q}&size=100${showAll ? '' : '&open=1'}`);
+    const extraA = filterQueryString();
+    const page = Math.max(0, Number(hashQuery().get('page') || 0) || 0);
+    const size = 50;
+    const d = await api(`/api/announcements${q}&size=${size}&page=${page}${showAll ? '' : '&open=1'}${extraA ? `&${extraA}` : ''}`);
+    const facets = await api(`/api/announcements/facets${q}${showAll ? '' : '&open=1'}${extraA ? `&${extraA}` : ''}`).catch(() => ({ districts: [], unknown: null, procedures: [] }));
     window._annReload = () => renderInsightTab(el, q, tab, p);
+    const facetNote = (facets.unknown && facets.unknown.n)
+      ? `<p class="filter-note">${esc(facets.unknown.label)}</p>` : '';
+    const exclNote = d.excluded_no_value
+      ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : '';
     el.innerHTML = `<div class="toolbar"><h2>Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
       <label class="muted"><input type="checkbox" ${showAll ? 'checked' : ''}
         onchange="window._annShowAll=this.checked; window._annReload()"> mostrar expirados</label></div>
       <p class="muted">Por omissão só se mostram concursos com prazo de propostas ainda a decorrer — os expirados já não são acionáveis.</p>
-      <table><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th></tr></thead><tbody>
+      ${filterBarHtml('announcements', facets)}
+      ${facetNote}${exclNote}
+      <table><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((a) => {
         const open = a.proposal_deadline_date && a.proposal_deadline_date >= new Date().toISOString().slice(0, 10);
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
@@ -1153,13 +1573,18 @@ async function renderInsightTab(el, q, tab, p) {
         <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
-        <td>${fmtPrice(a.base_price)}</td></tr>`;
-      }).join('') || `<tr><td colspan="6" class="muted">${showAll ? 'Sem anúncios recolhidos.' : 'Sem concursos abertos neste momento — ativa "mostrar expirados" para ver o histórico.'}</td></tr>`}
+        <td>${fmtPrice(a.base_price)}</td>
+        <td onclick="event.stopPropagation()">${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</td></tr>`;
+      }).join('') || `<tr><td colspan="7" class="muted">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split('?')[0]">Limpar filtros</button></td></tr>`}
       </tbody></table>
+      ${pagerHtml(d.total, d.page ?? page, d.size ?? size)}
       <div style="margin-top:1.4rem">
         <div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">Concursos europeus (TED)</span><span class="sh">acima dos limiares UE · fonte Tenders Electronic Daily</span></div>
         <div id="ted-panel" class="card" style="margin:0"><p class="muted" style="margin:0">A procurar no TED…</p></div>
       </div>`;
+    bindPipelineChips(el);
+    bindFilterBar(el);
+    bindPager(el);
     // TED carrega em separado — não bloqueia a lista do BASE nem quebra se falhar.
     api(`/api/insights/ted${q}`).then((t) => {
       const host = document.getElementById('ted-panel');
@@ -1736,6 +2161,94 @@ function updateLeafletMarkers(items, radiusRef) {
 function getCtx() { return localStorage.getItem('ctxProfile') || ''; }
 function setCtx(v) { localStorage.setItem('ctxProfile', v || ''); }
 
+async function maybeOnboarding() {
+  try {
+    if (sessionStorage.getItem('br_onboard') !== '1') return;
+    if (localStorage.getItem('br_onboard_done')) return;
+  } catch { return; }
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `<div class="modal-box onboard-box">
+    <button class="modal-x" aria-label="Fechar">×</button>
+    <div class="eyebrow">Perfil da empresa</div>
+    <h2 style="margin:.2rem 0 .4rem">4 perguntas rápidas</h2>
+    <p class="muted" id="ob-step-lbl">Passo 1 de 4 — onde executa</p>
+    <div id="ob-body"></div>
+    <div class="inline" style="justify-content:space-between;margin-top:1rem">
+      <button class="btn-secondary" id="ob-skip">Saltar</button>
+      <button id="ob-next">Continuar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  let step = 0;
+  const state = { districts: [], certifications: [], value_min: '', value_max: '', excluded_terms: '' };
+  let sug = { certifications: [], districts: DISTRICTS_UI };
+  try {
+    const p = await api('/api/company/profile');
+    sug = p.suggestions || sug;
+    Object.assign(state, {
+      districts: p.districts || [], certifications: p.certifications || [],
+      value_min: p.value_min ?? '', value_max: p.value_max ?? '',
+      excluded_terms: (p.excluded_terms || []).join(', '),
+    });
+  } catch { /* continua */ }
+  const labels = ['Onde executa?', 'Que alvarás e certificações tem?', 'Em que intervalo de valor concorre?', 'O que nunca faz?'];
+  const draw = () => {
+    wrap.querySelector('#ob-step-lbl').textContent = `Passo ${step + 1} de 4 — ${labels[step]}`;
+    const body = wrap.querySelector('#ob-body');
+    if (step === 0) {
+      body.innerHTML = chipPicker(state.districts, sug.districts || DISTRICTS_UI, 'districts');
+    } else if (step === 1) {
+      body.innerHTML = chipPicker(state.certifications, sug.certifications, 'certs');
+    } else if (step === 2) {
+      body.innerHTML = `<div class="reg-grid"><div><label>Mínimo €</label><input type="number" id="ob-min" value="${esc(state.value_min)}"></div>
+        <div><label>Máximo €</label><input type="number" id="ob-max" value="${esc(state.value_max)}"></div></div>`;
+    } else {
+      body.innerHTML = `<input type="text" id="ob-excl" value="${esc(state.excluded_terms)}" placeholder="ex.: manutenção">`;
+    }
+    body.querySelectorAll('.chip-pick').forEach((box) => {
+      box.onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) b.classList.toggle('on'); };
+    });
+  };
+  const picked = (name) => [...wrap.querySelectorAll(`.chip-pick[data-name="${name}"] button.on`)].map((b) => b.dataset.v);
+  const finish = async (save) => {
+    wrap.remove();
+    try { sessionStorage.removeItem('br_onboard'); localStorage.setItem('br_onboard_done', '1'); } catch { /* ignore */ }
+    if (!save) return;
+    try {
+      await api('/api/company/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          districts: state.districts,
+          certifications: state.certifications,
+          value_min: state.value_min || null,
+          value_max: state.value_max || null,
+          excluded_terms: String(state.excluded_terms || '').split(',').map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+    } catch (e) { alert(e.message); }
+  };
+  wrap.querySelector('.modal-x').onclick = () => finish(false);
+  wrap.querySelector('#ob-skip').onclick = () => finish(false);
+  wrap.querySelector('#ob-next').onclick = () => {
+    if (step === 0) state.districts = picked('districts');
+    if (step === 1) state.certifications = picked('certs');
+    if (step === 2) {
+      state.value_min = wrap.querySelector('#ob-min').value;
+      state.value_max = wrap.querySelector('#ob-max').value;
+    }
+    if (step === 3) {
+      state.excluded_terms = wrap.querySelector('#ob-excl').value;
+      finish(true);
+      return;
+    }
+    step += 1;
+    wrap.querySelector('#ob-next').textContent = step === 3 ? 'Guardar' : 'Continuar';
+    draw();
+  };
+  draw();
+}
+
 /* ---------- Hoje: painel diário de ação (agrega os insights existentes) ---------- */
 async function renderHoje() {
   const profilesData = await api('/api/profiles');
@@ -1749,11 +2262,12 @@ async function renderHoje() {
 
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
   const q = `?profile_id=${pid}`;
-  const [opp, prof, mapData, compData] = await Promise.all([
+  const [opp, prof, mapData, compData, pipe] = await Promise.all([
     api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
     api(`/api/profiles/${pid}`).catch(() => null),
     api(`/api/insights/map${q}`).catch(() => ({ items: [] })),
     api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
+    api('/api/pipeline').catch(() => ({ items: [] })),
   ]);
   const items = opp.items ?? [];
   const withDays = items.filter((o) => o.days_left != null);
@@ -1780,6 +2294,27 @@ async function renderHoje() {
     const d = new Date(Math.max(Date.now(), new Date(keyDate).getTime() - 120 * 86400000));
     return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
   };
+  const recolha = active.last_run_at ? `Última recolha: ${fmtRecolha(active.last_run_at)}` : '';
+  const meId = window._me?.user_id;
+  const pipeItems = pipe.items ?? [];
+  const pipeDue = pipeItems.filter((it) => {
+    const d = daysUntil(it.deadline);
+    if (d == null) return false;
+    if (it.status === 'preparacao') return d <= 7;
+    if (it.status === 'interessa') return d <= 14;
+    return false;
+  });
+  const mine = pipeDue.filter((it) => meId != null && Number(it.assigned_user_id) === Number(meId));
+  const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
+    <div style="min-width:0"><div class="k"><span class="mini-chip">${esc(PL_LABELS[it.status] || it.status)}</span></div>
+      <div class="ti">${esc(it.title ?? '')}</div>
+      <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
+  const pipeHtml = pipeDue.length ? `<div class="hoje-pipe">
+      ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
+        <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
+      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span><span class="sh">prazos próximos</span></div>
+      <div class="opp-cards">${pipeDue.map(pipeCard).join('')}</div>
+    </div>` : '';
   const chipText = (o) => (o.type === 'anuncio_aberto' ? `CONCURSO · ${o.days_left}d` : 'RENOVAÇÃO');
   const chipCls = (o) => (o.type === 'anuncio_aberto' ? 'concurso' : 'renovacao');
 
@@ -1827,6 +2362,7 @@ async function renderHoje() {
       <div>
         <div class="day">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
         <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : 'Sem prazos urgentes esta semana.'}</h1>
+        ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex:none">
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
@@ -1837,6 +2373,7 @@ async function renderHoje() {
     </div>
     <div class="hoje-grid">
       <div class="hoje-col">
+        ${pipeHtml}
         <div>
           <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
           <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem oportunidades com prazo nos próximos 30 dias.</p></div>'}</div>
@@ -1871,6 +2408,54 @@ async function renderHoje() {
 
   const sel = document.getElementById('ctx-select');
   if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
+  maybeOnboarding();
+}
+
+async function renderPipeline() {
+  app.innerHTML = '<div class="card"><p class="muted">A carregar o pipeline…</p></div>';
+  const { items } = await api('/api/pipeline');
+  const openIds = new Set(['interessa', 'preparacao', 'submetida']);
+  const closed = (items || []).filter((i) => !openIds.has(i.status));
+  const open = (items || []).filter((i) => openIds.has(i.status));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cols = [
+    { id: 'interessa', label: 'Interessa' },
+    { id: 'preparacao', label: 'Em preparação' },
+    { id: 'submetida', label: 'Submetida' },
+  ];
+
+  function card(it) {
+    const dl = it.deadline ? new Date(it.deadline) : null;
+    const overdue = !!(dl && dl < today && it.status === 'preparacao');
+    const href = it.internal_url || (it.item_type === 'anuncio_aberto' ? `#/announcements/${it.item_id}` : `#/contracts/${it.item_id}`);
+    const tot = it.checklist?.total || 0;
+    const done = it.checklist?.checked || 0;
+    const pct = tot ? Math.round((done / tot) * 100) : 0;
+    return `<div class="pl-card${overdue ? ' overdue' : ''}" onclick="location.hash='${esc(href)}'">
+      <div class="ti">${esc(it.title || '—')}</div>
+      <div class="su">${esc(it.entity || '—')} · ${fmtEuro0(it.value)} · prazo ${fmtDateDMY(it.deadline)}</div>
+      ${it.assignee?.name ? `<div class="su">Resp.: ${esc(it.assignee.name)}</div>` : ''}
+      ${tot ? `<div class="su">Checklist ${done}/${tot} · ${pct} %</div>` : ''}
+      ${overdue ? '<div class="pl-overdue">Prazo ultrapassado — marcar como Submetida ou Descartada</div>' : ''}
+    </div>`;
+  }
+
+  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Pipeline</h1>
+    <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — estados partilhados.</div></div></div>`;
+  if (!(items || []).length) {
+    html += `<p class="empty-copy">Nada no pipeline. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
+  } else {
+    html += `<div class="pl-board">`;
+    for (const col of cols) {
+      const colItems = open.filter((i) => i.status === col.id);
+      html += `<div class="pl-col"><h3>${esc(col.label)} <span class="muted">(${colItems.length})</span></h3>
+        ${colItems.map(card).join('') || '<p class="muted">—</p>'}</div>`;
+    }
+    html += `</div>`;
+    html += `<details class="pl-closed"><summary>Fechadas (${closed.length})</summary>
+      ${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</details>`;
+  }
+  app.innerHTML = html;
 }
 
 async function renderRadar(tab = 'opportunities') {
@@ -2012,12 +2597,27 @@ async function renderAnnouncement(id) {
           </div>
         </div>
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
+        ${formalidadesHtml(a.contracting_procedure_url)}
+        <div class="d-card" id="pl-ficha">
+          <div class="t">Pipeline</div>
+          <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
+          <div>${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</div>
+          <label style="display:block;margin-top:.6rem">Nota</label>
+          <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
+          <label style="display:block;margin-top:.5rem">Responsável</label>
+          <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
+          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+          <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
+        </div>
         <div class="d-card">
           <div class="t">Ficha de oportunidade (IA)</div>
           <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado.</p>
         </div>
       </div>
     </div>`;
+
+  bindPipelineChips(app);
+  wireFichaPipeline('anuncio_aberto', a.id);
 
   document.getElementById('ai-analyze-btn').onclick = async () => {
     const btn = document.getElementById('ai-analyze-btn');
@@ -2040,9 +2640,10 @@ async function renderAnnouncement(id) {
         : r.docs_used === 0
           ? '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga direta ou com registo) — análise com o anúncio do DR e dados estruturados.</p>'
           : '';
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${docNote}
+      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model, 'anuncio_aberto', id)}${docNote}
         <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
         <div id="ai-template-out"></div></div>`;
+      hydrateChecklist(out);
       out.scrollIntoView({ block: 'nearest' });
       document.getElementById('ai-template-btn').onclick = async () => {
         const tbtn = document.getElementById('ai-template-btn');
@@ -2076,11 +2677,20 @@ async function renderAnnouncement(id) {
   };
 }
 
-function renderAiFicha(an, cached, model) {
-  // recomendação → [rótulo, cor da etiqueta, classe do destaque]
+function renderAiFicha(an, cached, model, itemType, itemId) {
   const rec = an.go_no_go?.recomendacao;
   const badgeGo = { go: ['GO', '#2c6353', 'go'], condicional: ['CONDICIONAL', '#b26a00', 'condicional'], 'no-go': ['NO-GO', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
+  const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
+  const habHtml = hab
+    ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${hab.map((i) => `<li>${esc(i.text)} — <strong>${esc(i.label || i.status)}</strong></li>`).join('')}</ul>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
+    : (an.requisitos_habilitacao?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
+  const checks = Array.isArray(an.checklist) ? an.checklist : [];
+  const checkHtml = itemType && itemId
+    ? (checks.length
+      ? `<div class="check-list" data-type="${esc(itemType)}" data-id="${itemId}">${checks.map((t) => `<label><input type="checkbox" data-text="${esc(t)}"> ${esc(t)}</label>`).join('')}<p class="muted" id="ck-prog"></p></div>`
+      : '<p class="muted">Gere a análise de IA para obter a checklist de preparação</p>')
+    : list(an.checklist);
   return `
     <div class="ai-verdict">
       <span class="ai-badge" style="background:${badgeGo[1]}">${badgeGo[0]}</span>
@@ -2095,10 +2705,81 @@ function renderAiFicha(an, cached, model) {
       <dt>Preço base</dt><dd>${esc(an.preco_base ?? '—')}</dd>
       <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
     </dl>
-    <h3>Requisitos de habilitação</h3>${list(an.requisitos_habilitacao)}
+    <h3>Requisitos de habilitação</h3>${habHtml}
     <h3>Red flags</h3>${list(an.red_flags)}
-    <h3>Checklist para a proposta</h3>${list(an.checklist)}
-    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}</p>`;
+    <h3>Checklist para a proposta</h3>${checkHtml}
+    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}${model ? ` · ${esc(model)}` : ''}</p>`;
+}
+
+async function hydrateChecklist(root) {
+  const box = root.querySelector?.('.check-list') || document.querySelector('.check-list');
+  if (!box) return;
+  const type = box.dataset.type;
+  const id = box.dataset.id;
+  try {
+    const d = await api(`/api/pipeline/${type}/${id}/checklist`);
+    const byText = new Map((d.items || []).map((i) => [i.text, i]));
+    box.querySelectorAll('input[type=checkbox]').forEach((cb, idx) => {
+      const it = byText.get(cb.dataset.text) || (d.items || [])[idx];
+      cb.checked = !!(it && it.checked);
+      const text = it?.text || cb.dataset.text;
+      cb.onchange = async () => {
+        try {
+          await api(`/api/pipeline/${type}/${id}/checklist`, {
+            method: 'PUT', body: JSON.stringify({ item_text: text, checked: cb.checked }),
+          });
+          const n = box.querySelectorAll('input:checked').length;
+          const tot = box.querySelectorAll('input[type=checkbox]').length;
+          const prog = box.querySelector('#ck-prog');
+          if (prog) prog.textContent = tot ? `${n}/${tot} · ${Math.round((n / tot) * 100)} %` : '';
+        } catch (e) { cb.checked = !cb.checked; alert(e.message); }
+      };
+    });
+    const n = box.querySelectorAll('input:checked').length;
+    const tot = box.querySelectorAll('input[type=checkbox]').length;
+    const prog = box.querySelector('#ck-prog');
+    if (prog) prog.textContent = tot ? `${n}/${tot} · ${Math.round((n / tot) * 100)} %` : '';
+  } catch { /* sem checklist ainda */ }
+}
+
+async function wireFichaPipeline(type, id) {
+  bindPipelineChips(document.getElementById('pl-ficha') || app);
+  try {
+    const [cur, hist, seats] = await Promise.all([
+      api(`/api/pipeline/${type}/${id}`),
+      api(`/api/pipeline/${type}/${id}/history`).catch(() => ({ items: [] })),
+      api('/api/seats').catch(() => ({ members: [] })),
+    ]);
+    const note = document.getElementById('pl-note');
+    if (note) note.value = cur.note || '';
+    const ass = document.getElementById('pl-assignee');
+    if (ass) {
+      ass.innerHTML = `<option value="">—</option>${(seats.members || []).map((m) =>
+        `<option value="${m.id}" ${cur.assigned_user_id === m.id ? 'selected' : ''}>${esc([m.first_name, m.last_name].filter(Boolean).join(' ') || m.email || m.username)}</option>`).join('')}`;
+    }
+    const histEl = document.getElementById('pl-hist');
+    if (histEl) {
+      histEl.innerHTML = (hist.items || []).map((h) =>
+        `${esc(PL_LABELS[h.from_status] || h.from_status || 'Nova')} → ${esc(PL_LABELS[h.to_status] || h.to_status)} · ${esc(h.name || '')} · ${new Date(h.changed_at).toLocaleString('pt-PT')}`
+      ).join('<br>') || 'Sem histórico.';
+    }
+    const save = document.getElementById('pl-save');
+    if (save) save.onclick = async () => {
+      const sel = document.querySelector('#pl-ficha select.pl-status');
+      try {
+        await api(`/api/pipeline/${type}/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: sel?.value || cur.status || 'interessa',
+            note: note?.value || '',
+            assigned_user_id: ass?.value ? Number(ass.value) : null,
+          }),
+        });
+        wireFichaPipeline(type, id);
+      } catch (e) { alert(e.message); }
+    };
+    hydrateChecklist(app);
+  } catch { /* nova oportunidade sem linha */ }
 }
 
 /* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
@@ -2119,6 +2800,7 @@ async function renderDigest() {
       </div>
     </div>
     ${d.intro ? `<div class="hint">${esc(d.intro)}</div>` : ''}
+    ${d.empty ? '<p class="empty-copy">Semana sem novidades na sua atividade</p>' : ''}
     <div class="cards">
       <div class="stat"><div class="n">${d.stats.open}</div><div class="l">Concursos abertos</div></div>
       <div class="stat"><div class="n">${d.stats.new_7d}</div><div class="l">Novos (7 dias)</div></div>
@@ -2128,7 +2810,7 @@ async function renderDigest() {
       <h2>Concursos com prazo a decorrer</h2>
       ${d.open_announcements.length ? `<table><thead><tr><th>Prazo</th><th>Designação</th><th>Entidade</th><th>Preço base</th></tr></thead><tbody>
         ${d.open_announcements.map((a) => `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
-          <td>${fmtDate(a.deadline)}</td>
+          <td>${fmtDateDMY(a.deadline)}</td>
           <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc((a.designation ?? '').slice(0, 100))}</a></td>
           <td>${esc(a.entity ?? '—')}</td><td>${fmtPrice(a.base_price)}</td></tr>`).join('')}</tbody></table>`
         : '<p class="muted">Sem concursos abertos neste momento.</p>'}
@@ -2137,7 +2819,7 @@ async function renderDigest() {
       <h2>Renovações a preparar (próximos 90 dias)</h2>
       ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Entidade</th><th>Objeto</th><th>Valor</th></tr></thead><tbody>
         ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
-          <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+          <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
           <td>${esc(r.entity ?? '—')}</td>
           <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object ?? '').slice(0, 90))}</a></td>
           <td>${fmtPrice(r.value)}</td></tr>`).join('')}</tbody></table>`
@@ -2334,10 +3016,14 @@ async function renderAdmin() {
   topbar.hidden = false;
   if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let stats, companies, feedback;
+  let stats, companies, feedback, notif, aiFb;
   try {
-    [stats, companies, feedback] = await Promise.all([
-      api('/api/admin/stats'), api('/api/admin/companies'), api('/api/admin/feedback').catch(() => ({ items: [] })),
+    [stats, companies, feedback, notif, aiFb] = await Promise.all([
+      api('/api/admin/stats'),
+      api('/api/admin/companies'),
+      api('/api/admin/feedback').catch(() => ({ items: [] })),
+      api('/api/admin/notifications').catch(() => ({ items: [] })),
+      api('/api/admin/ai-feedback').catch(() => ({ by_reason: [], by_cpv: [], items: [] })),
     ]);
   } catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
 
@@ -2451,6 +3137,27 @@ async function renderAdmin() {
           <tbody id="admin-feedback">${fbRows}</tbody>
         </table></div>
       </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Notificações (últimas 200)</h3>
+        <p><button class="btn-secondary" id="force-tick">Forçar tick</button></p>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Quando</th><th>User</th><th>Tipo</th><th>Ref</th><th>Estado</th></tr></thead>
+          <tbody>${(notif?.items || []).map((n) => `<tr>
+            <td>${fmtDateDMY(n.created_at)}</td><td>${esc(n.email || n.username || n.user_id)}</td>
+            <td>${esc(n.kind)}</td><td class="muted">${esc(n.ref)}</td><td>${esc(n.status)}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="muted">Sem envios.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Feedback IA por motivo/CPV</h3>
+        <p class="muted">${(aiFb?.items || []).length} votos recentes · ${(aiFb?.by_reason || []).reduce((s, r) => s + (r.n || 0), 0)} 👎 com motivo</p>
+        <p class="muted">Por motivo</p>
+        <ul>${(aiFb?.by_reason || []).map((r) => `<li>${esc(r.reason_code || '—')}: ${r.n}</li>`).join('') || '<li>—</li>'}</ul>
+        <p class="muted">Por CPV (top 👎)</p>
+        <ul>${(aiFb?.by_cpv || []).filter((r) => r.cpv).map((r) => `<li>${esc(r.cpv)}: ${r.n}</li>`).join('') || '<li>—</li>'}</ul>
+      </div>
     </div>`;
 
   app.querySelectorAll('.rp-user').forEach((btn) => btn.onclick = async () => {
@@ -2537,6 +3244,14 @@ async function renderAdmin() {
     try { await api(`/api/admin/feedback/${btn.dataset.id}/handled`, { method: 'POST', body: JSON.stringify({ handled }) }); renderAdmin(); }
     catch (e) { alert(e.message); }
   });
+  const tickBtn = document.getElementById('force-tick');
+  if (tickBtn) tickBtn.onclick = async () => {
+    try {
+      const r = await api('/api/admin/notifications/run', { method: 'POST', body: '{}' });
+      alert(`Tick: ${r.digests ?? 0} digest(s), ${r.reminders ?? 0} lembrete(s), hora ${r.hour}`);
+      renderAdmin();
+    } catch (e) { alert(e.message); }
+  };
 }
 function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
 
@@ -2610,22 +3325,23 @@ async function route() {
   stopPolling();
   hideMatrixTip();
   const hash = location.hash || '#/';
-  document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo' || hash.startsWith('#/recuperar') || hash.startsWith('#/repor-password'));
-  // Estado ativo da navegação lateral. A raiz mapeia para Oportunidades.
-  const navHash = (hash === '#/' || hash === '') ? '#/hoje' : hash;
+  const hashBase = hash.split('?')[0];
+  document.body.classList.toggle('login-bg', hashBase === '#/login' || hashBase === '#/registo' || hashBase === '#/recuperar' || hashBase === '#/repor-password');
+  const navHash = (hashBase === '#/' || hashBase === '') ? '#/hoje' : hashBase;
   document.querySelectorAll('#topbar nav a').forEach((a) => {
     const href = a.getAttribute('href');
     let on = false;
     if (href === '#/hoje') on = navHash === '#/hoje';
-    else if (href.startsWith('#/radar/')) on = navHash === href;
+    else if (href === '#/pipeline') on = navHash === '#/pipeline';
+    else if (href.startsWith('#/radar/')) on = navHash === href || navHash.startsWith(href + '/');
     else if (href === '#/entities') on = navHash.startsWith('#/entities');
     else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
     a.classList.toggle('active', on);
   });
-  if (hash === '#/login') { window._me = null; return renderLogin(); }
-  if (hash.split('?')[0] === '#/recuperar') { window._me = null; return renderForgot(); }
-  if (hash.split('?')[0] === '#/repor-password') { window._me = null; return renderReset(); }
-  if (hash === '#/registo') { window._me = null; return renderRegister(); }
+  if (hashBase === '#/login') { window._me = null; return renderLogin(); }
+  if (hashBase === '#/recuperar') { window._me = null; return renderForgot(); }
+  if (hashBase === '#/repor-password') { window._me = null; return renderReset(); }
+  if (hashBase === '#/registo') { window._me = null; return renderRegister(); }
   const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
   if (invite) { window._me = null; return renderAcceptInvite(decodeURIComponent(invite[1])); }
 
@@ -2647,23 +3363,22 @@ async function route() {
   updateSidebar();
   ensureHelpButton();
   ensureAdminNav();
-  const hashBase = hash.split('?')[0];
   if (hashBase === '#/subscrever' || hashBase === '#/planos') return renderPlans();
   if (hashBase === '#/conta') return renderAccount();
   if (hashBase === '#/admin') return renderAdmin();
-  // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
   const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
-  const contract = hash.match(/^#\/contracts\/(\d+)$/);
-  const profile = hash.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
-  const entity = hash.match(/^#\/entities\/(\d+)$/);
-  const radar = hash.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
-  const config = hash.match(/^#\/config(?:\/(\w+))?$/);
-  const announcement = hash.match(/^#\/announcements\/(\d+)$/);
+  const contract = hashBase.match(/^#\/contracts\/(\d+)$/);
+  const profile = hashBase.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
+  const entity = hashBase.match(/^#\/entities\/(\d+)$/);
+  const radar = hashBase.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+  const config = hashBase.match(/^#\/config(?:\/(\w+))?$/);
+  const announcement = hashBase.match(/^#\/announcements\/(\d+)$/);
   document.querySelector('main')?.classList.remove('wide');
   try {
-    if (hash === '#/hoje') return await renderHoje();
+    if (hashBase === '#/hoje' || hashBase === '#/') return await renderHoje();
+    if (hashBase === '#/pipeline') return await renderPipeline();
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
     if (profile) return await renderProfile(Number(profile[1]), profile[2] || 'opportunities');
@@ -2674,12 +3389,11 @@ async function route() {
       if (section === 'opendata') return await renderOpendata();
       return await renderProfiles();
     }
-    // rotas antigas → novos destinos
-    if (hash === '#/profiles') return await renderProfiles();
-    if (hash === '#/opendata') return await renderOpendata();
-    if (hash === '#/digest') return await renderDigest();
+    if (hashBase === '#/profiles') return await renderProfiles();
+    if (hashBase === '#/opendata') return await renderOpendata();
+    if (hashBase === '#/digest') return await renderDigest();
     if (entity) return await renderEntity(Number(entity[1]));
-    if (hash === '#/entities') return await renderEntities();
+    if (hashBase === '#/entities') return await renderEntities();
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
     return await renderHoje();
   } catch (err) {

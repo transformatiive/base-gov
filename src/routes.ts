@@ -7,6 +7,8 @@ import { buildSearchWorkbook } from './excel.js';
 import { getDocument } from './storage.js';
 import { config } from './config.js';
 import { sendMail, layout, esc } from './mail.js';
+import { listFilters, PlanRequiredError } from './filters.js';
+import { statusesForCompany } from './pipeline.js';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
@@ -245,7 +247,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
-    const { username, companyId, isAdmin, plan } = auth(req);
+    const { username, companyId, isAdmin, plan, userId } = auth(req);
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
@@ -258,7 +260,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       company = rows[0] ?? null;
     }
     // plan aqui é o plano EFETIVO (resolvido no backend) — não o valor bruto da coluna.
-    return { username, is_admin: isAdmin, plan, company };
+    return { username, is_admin: isAdmin, plan, company, user_id: userId };
   });
 
   // Capabilities: fonte única para o frontend espelhar o gating (o backend é
@@ -408,9 +410,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- Contracts ----
-  app.get('/api/contracts', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/contracts', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { page, size } = paging(q);
+    const { companyId, plan } = auth(req);
     const conditions: string[] = [];
     const params: unknown[] = [];
     if (q.term) {
@@ -422,6 +425,24 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       conditions.push(`EXISTS (SELECT 1 FROM search_results sr WHERE sr.contract_id = c.id AND sr.search_id = $${params.length})`);
     }
     conditions.push(...dateFilters(q, params));
+    try {
+      const lf = listFilters(q, plan, 'contracts', 'c', params.length);
+      conditions.push(...lf.where);
+      params.push(...lf.params);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) {
+        return reply.code(403).send({
+          error: {
+            code: 'plan_required',
+            message: err.message,
+            feature: 'filtros_avancados',
+            required_plan: 'pro',
+            current_plan: plan,
+          },
+        });
+      }
+      throw err;
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(size, page * size);
     const { rows } = await pool.query(
@@ -429,23 +450,37 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
        ORDER BY c.publication_date DESC NULLS LAST LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    const items = rows.map((c) => contractToJson(c));
+    if (companyId != null && items.length) {
+      const map = await statusesForCompany(companyId);
+      for (const it of items) {
+        (it as { pipeline_status?: string | null }).pipeline_status = map.get(`renovacao:${it.id}`) ?? null;
+      }
+    }
     return {
       total: rows.length ? Number(rows[0].full_count) : 0,
       page,
       size,
-      items: rows.map((c) => contractToJson(c)),
+      items,
     };
   });
 
   app.get('/api/contracts/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const raw = (req.query as Record<string, unknown>).raw === '1';
+    const { companyId } = auth(req);
     const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [id]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Contrato não encontrado' } });
     const c = rows[0];
+    let pipeline_status: string | null = null;
+    if (companyId != null) {
+      const map = await statusesForCompany(companyId);
+      pipeline_status = map.get(`renovacao:${id}`) ?? null;
+    }
     return contractToJson(c, {
       entities: await contractEntities(id),
       documents: await contractDocuments(id),
+      pipeline_status,
       ...(raw ? { raw_detail: c.raw_detail_json, raw_list: c.raw_list_json } : {}),
     });
   });

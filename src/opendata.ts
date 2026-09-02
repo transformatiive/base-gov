@@ -405,6 +405,6 @@ async function tick(): Promise<void> {
 }
 
 export function startOpendataWorker(): void {
-  setInterval(() => void tick().catch((e) => console.error('[opendata] tick error:', e)), 5000);
+  setInterval(() => void tick().catch((e) => console.error('[opendata] tick error:', e)), 60_000);
   console.log('[opendata] worker iniciado');
 }

@@ -366,10 +366,118 @@ CREATE INDEX IF NOT EXISTS idx_contracts_end_date ON contracts ((signing_date + 
   WHERE signing_date IS NOT NULL AND execution_deadline ~ '\\d+';
 CREATE INDEX IF NOT EXISTS idx_search_announcements_search ON search_announcements(search_id);
 CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
+
+-- A. Pipeline
+CREATE TABLE IF NOT EXISTS opportunity_status (
+  id            SERIAL PRIMARY KEY,
+  company_id    INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  item_type     TEXT NOT NULL CHECK (item_type IN ('anuncio_aberto','renovacao')),
+  item_id       INT  NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('interessa','preparacao','submetida','ganha','perdida','descartada')),
+  note          TEXT,
+  assigned_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_by    INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitted_at  TIMESTAMPTZ,
+  decided_at    TIMESTAMPTZ,
+  UNIQUE (company_id, item_type, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_opp_status_company ON opportunity_status (company_id, status);
+
+CREATE TABLE IF NOT EXISTS opportunity_status_history (
+  id          SERIAL PRIMARY KEY,
+  status_id   INT NOT NULL REFERENCES opportunity_status(id) ON DELETE CASCADE,
+  from_status TEXT, to_status TEXT NOT NULL,
+  changed_by  INT REFERENCES users(id) ON DELETE SET NULL,
+  changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS opportunity_checklist (
+  company_id     INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  item_type      TEXT NOT NULL, item_id INT NOT NULL,
+  item_text_hash TEXT NOT NULL,
+  checked        BOOLEAN NOT NULL DEFAULT true,
+  checked_by     INT REFERENCES users(id) ON DELETE SET NULL,
+  checked_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, item_type, item_id, item_text_hash)
+);
+
+-- B. Perfil da empresa
+CREATE TABLE IF NOT EXISTS company_profiles (
+  company_id        INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  description       TEXT,
+  certifications    TEXT[] NOT NULL DEFAULT '{}',
+  districts         TEXT[] NOT NULL DEFAULT '{}',
+  value_min         NUMERIC(15,2), value_max NUMERIC(15,2),
+  excluded_terms    TEXT[] NOT NULL DEFAULT '{}',
+  excluded_entities TEXT[] NOT NULL DEFAULT '{}',
+  version           INT NOT NULL DEFAULT 1,
+  updated_by        INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (value_min IS NULL OR value_max IS NULL OR value_max > value_min)
+);
+ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS profile_version INT NOT NULL DEFAULT 0;
+ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS rule_hits JSONB NOT NULL DEFAULT '[]';
+
+-- D. Notificações
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_digest    BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_reminders BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_version   INT NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS notification_log (
+  id          SERIAL PRIMARY KEY,
+  kind        TEXT NOT NULL,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ref         TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'pending',
+  attempts    INT NOT NULL DEFAULT 0,
+  provider_id TEXT, error TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(), sent_at TIMESTAMPTZ,
+  UNIQUE (kind, user_id, ref)
+);
+
+CREATE TABLE IF NOT EXISTS reminder_log (
+  company_id INT NOT NULL, item_type TEXT NOT NULL, item_id INT NOT NULL,
+  kind TEXT NOT NULL, deadline DATE NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, item_type, item_id, kind, deadline)
+);
+
+-- E. Feedback IA
+CREATE TABLE IF NOT EXISTS ai_feedback (
+  id          SERIAL PRIMARY KEY,
+  company_id  INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('fit','analysis')),
+  item_type   TEXT NOT NULL, item_id INT NOT NULL,
+  verdict     TEXT NOT NULL CHECK (verdict IN ('up','down')),
+  reason_code TEXT CHECK (reason_code IN ('fora_atividade','fora_geografia','requisito_impossivel','valor_desadequado','outro')),
+  comment     TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, user_id, target_type, item_type, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_company ON ai_feedback (company_id, verdict, created_at DESC);
+
+-- C. Índices de filtros (pg_trgm fica no migrateAndSeed com fallback)
+CREATE INDEX IF NOT EXISTS idx_ann_procedure ON announcements (contracting_procedure_type);
+CREATE INDEX IF NOT EXISTS idx_ann_base_price ON announcements (base_price);
+CREATE INDEX IF NOT EXISTS idx_contracts_procedure ON contracts (contracting_procedure_type);
+CREATE INDEX IF NOT EXISTS idx_contracts_price ON contracts (initial_contractual_price);
+CREATE INDEX IF NOT EXISTS idx_contracts_district ON contracts (
+  (NULLIF(btrim(split_part(split_part(execution_place,'|',1),',',2)),''))
+);
 `;
 
 export async function migrateAndSeed(): Promise<void> {
   await pool.query(SCHEMA);
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_ann_entity_trgm ON announcements USING gin (lower(contracting_entity) gin_trgm_ops)`
+    );
+  } catch (err) {
+    console.warn('[migrate] pg_trgm indisponível — filtros usam ILIKE:', String(err).slice(0, 180));
+  }
 
   // Recuperação pós-restart (single replica): trabalho que ficou 'running'
   // quando o processo morreu é órfão — volta à fila (processamento idempotente).

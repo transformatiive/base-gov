@@ -27,9 +27,11 @@ export const config = {
     features: {
       // free
       concursos: 'free', digest: 'free', mapa: 'free', sazonalidade: 'free',
+      pipeline: 'free', perfil_empresa: 'free',
       // pro
       score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
       analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
+      filtros_avancados: 'pro', lembretes: 'pro', feedback_ia: 'pro',
       // business
       seats: 'business', export_avancada: 'business', ia_elevada: 'business', api_integration: 'business',
     } as Record<string, 'free' | 'pro' | 'business'>,
@@ -81,4 +83,14 @@ export const config = {
     from: process.env.MAIL_FROM || '',            // ex.: "BaseRadar <noreply@dominio.pt>"
     supportEmail: process.env.SUPPORT_EMAIL || '',
   },
+
+  // Digest segunda-feira a esta hora (Europa/Lisboa). Lembretes 7/2 dias no mesmo tick.
+  digestHour: Math.min(23, Math.max(0, parseInt(process.env.DIGEST_HOUR || '8', 10) || 8)),
+  reminderDays: (() => {
+    const parsed = (process.env.REMINDER_DAYS || '7,2')
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return parsed.length ? parsed : [7, 2];
+  })(),
 };

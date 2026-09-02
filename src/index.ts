@@ -9,8 +9,13 @@ import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { registerAccountRoutes } from './routes-account.js';
 import { registerSeatRoutes } from './seats.js';
+import { registerPipelineRoutes } from './pipeline.js';
+import { registerCompanyProfileRoutes } from './company-profile.js';
+import { registerNotificationRoutes } from './notifications.js';
+import { registerAiFeedbackRoutes } from './ai-feedback.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
+import { startScheduler } from './scheduler.js';
 import { ensureCpvCatalog } from './cpv.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,12 +62,17 @@ async function main(): Promise<void> {
   await registerRoutesV2(app);
   await registerAccountRoutes(app);
   await registerSeatRoutes(app);
+  await registerPipelineRoutes(app);
+  await registerCompanyProfileRoutes(app);
+  await registerNotificationRoutes(app);
+  await registerAiFeedbackRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
   startWorker();
   startOpendataWorker();
+  startScheduler();
   ensureCpvCatalog();
 }
 
