@@ -2416,7 +2416,7 @@ async function renderAdmin() {
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Estado das integrações. Os segredos nunca são mostrados — apenas se estão definidos.</p>
         <div id="setup-state"><span class="muted">A carregar…</span></div>
         <div class="inline" style="gap:.5rem;flex-wrap:wrap;margin-top:.8rem">
-          <button id="sp-prices" class="btn-secondary">Criar produtos e preços no Stripe</button>
+          <button id="sp-prices" class="btn-secondary">Criar produtos e preços de TESTE no Stripe</button>
           <button id="sp-webhook" class="btn-secondary">Registar webhook do Stripe</button>
           <button id="sp-moloni" class="btn-secondary">Ler configuração do Moloni</button>
         </div>
@@ -2473,8 +2473,10 @@ async function renderAdmin() {
       const mb = st.stripe.mbway_active, mbc = st.stripe.multibanco_active;
       box.innerHTML = `
         <div class="admin-row"><span>Stripe — chave secreta</span><strong>${okMark(st.stripe.secret_key)}</strong></div>
+        <div class="admin-row"><span>Stripe — chave publicável</span><strong>${okMark(st.stripe.publishable_key)}</strong></div>
         <div class="admin-row"><span>Stripe — segredo do webhook</span><strong>${okMark(st.stripe.webhook_secret)}</strong></div>
         <div class="admin-row"><span>Stripe — preços dos planos</span><strong>${okMark(st.stripe.price_pro && st.stripe.price_business)}</strong></div>
+        <div class="admin-row"><span>APP_URL</span><strong>${okMark(st.stripe.app_url)}</strong></div>
         ${st.stripe.secret_key ? `<div class="admin-row"><span>Stripe — MB WAY / Multibanco activos</span><strong>${okMark(mb)} / ${okMark(mbc)}</strong></div>` : ''}
         <div class="admin-row"><span>Moloni — pronto a faturar</span><strong>${okMark(st.moloni.ready)}${st.moloni.ready ? (st.moloni.finalize ? ' (finaliza)' : ' (rascunho)') : ''}</strong></div>
         <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}</strong></div>`;

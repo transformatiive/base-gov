@@ -59,15 +59,17 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 
-Todas as chaves vivem em variáveis de ambiente — nunca em código.
+Todas as chaves vivem em variáveis de ambiente — nunca em código. Na Railway: **Variables** do serviço da app (não no repositório).
 
 | Variável | Descrição |
 |---|---|
-| `STRIPE_SECRET_KEY` | Chave secreta Stripe (`sk_live_…`) |
+| `STRIPE_SECRET_KEY` | Restricted key Stripe (`rk_test_…` / `rk_live_…`). Fallback `sk_test_…` / `sk_live_…`. Nunca commitar. |
+| `STRIPE_PUBLISHABLE_KEY` | Chave publicável (`pk_test_…` / `pk_live_…`) |
 | `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook (`whsec_…`) |
-| `STRIPE_PRICE_PRO` | Price ID da subscrição mensal Pro (recorrente) |
-| `STRIPE_PRICE_BUSINESS` | Price ID da subscrição mensal Business (recorrente) |
-| `APP_BASE_URL` | URL público (success/cancel do Checkout e webhook) |
+| `STRIPE_PRICE_PRO` | Price ID da subscrição mensal Pro (recorrente, EUR) — `price_…` de teste ou live, nunca hardcoded |
+| `STRIPE_PRICE_BUSINESS` | Price ID da subscrição mensal Business (recorrente, EUR) |
+| `APP_URL` | URL público da app (success/cancel do Checkout e endpoint do webhook). Sem barra final. |
+| `APP_BASE_URL` | Fallback legado de `APP_URL` (instalações já configuradas) |
 | `MOLONI_CLIENT_ID` / `MOLONI_CLIENT_SECRET` | Credenciais da API Moloni |
 | `MOLONI_USERNAME` / `MOLONI_PASSWORD` | Utilizador Moloni |
 | `MOLONI_COMPANY_ID` | ID da empresa no Moloni |
@@ -75,10 +77,16 @@ Todas as chaves vivem em variáveis de ambiente — nunca em código.
 | `MOLONI_TAX_ID` | ID do IVA a aplicar na linha |
 | `MOLONI_FINALIZE` | `true` finaliza a fatura (comunica à AT); `false` (default) cria rascunho |
 
+Restricted key (recomendado) — permissões mínimas: Checkout Sessions (write), Customers (write), Subscriptions (read), Invoices (read), Prices (read), Products (read). Webhook Endpoints (write) só se usar o botão admin de provisionamento em modo teste.
+
 Notas:
-- **Modelo de cobrança**: cartão → subscrição automática mensal; MB WAY / Multibanco / transferência → pagamento pontual de 1 mês (o acesso expira e é renovado com novo pagamento). Os métodos disponíveis no Checkout são os que ativar no dashboard Stripe.
-- Configure o webhook Stripe para `APP_BASE_URL/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`.
-- Defina os preços Stripe (`STRIPE_PRICE_*`) com o valor **com IVA** (ou ative o Stripe Tax); a fatura Moloni é emitida com o preço sem IVA + IVA.
+- **API**: Stripe `2026-07-29.dahlia` via SDK oficial `stripe` (Node). Cliente instanciado com `new Stripe(key)` — sem chave global.
+- **Planos**: Grátis 0€ (sem Checkout) / Pro 29€ / Business 99€, mensal, EUR, Portugal. Price IDs só por env.
+- **Modelo de cobrança**: cartão → Checkout `mode=subscription`; MB WAY / Multibanco / transferência → `mode=payment` pontual de 1 mês. Métodos dinâmicos do Dashboard — o código **não** envia `payment_method_types`.
+- **Stripe Tax**: `automatic_tax` está **desligado** (não há registo de Stripe Tax no projecto). Preços Stripe com IVA incluído; a fatura Moloni usa o valor sem IVA + IVA.
+- **Não é Connect**: produto SaaS de subscrição, não marketplace.
+- Configure o webhook para `APP_URL/api/billing/webhook` (API version `2026-07-29.dahlia`) com: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`.
+- **Teste (Stripe test mode)**: use `rk_test_…` / `pk_test_…`, crie produtos/preços mensais no Dashboard de teste (Pro 29€+IVA, Business 99€+IVA, EUR), copie os `price_…` para `STRIPE_PRICE_*`, rode `stripe listen --forward-to localhost:3000/api/billing/webhook` e pague com o cartão de teste `4242 4242 4242 4242`. O helper admin "Criar produtos e preços de TESTE" recusa chaves live.
 
 ## API (resumo)
 
