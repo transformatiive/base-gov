@@ -314,8 +314,9 @@ function filterBarHtml(kind, facets) {
   const hasFacets = !!(facets && Array.isArray(facets.districts));
   const distOpts = [`<option value="">Todos</option>`].concat(DISTRICTS_UI.map((d) => {
     const n = distCount.get(d);
-    const label = n != null ? `${d} (${n})` : d;
-    const dis = hasFacets && (n == null || n === 0) ? ' disabled' : '';
+    const nShow = hasFacets ? (n ?? 0) : null;
+    const label = nShow != null ? `${d} (${nShow})` : d;
+    const dis = hasFacets && nShow === 0 ? ' disabled' : '';
     return `<option value="${esc(d)}" ${p.get('district') === d ? 'selected' : ''}${dis}>${esc(label)}</option>`;
   }));
   const unkN = facets?.unknown?.n;
@@ -2269,6 +2270,7 @@ async function renderHoje() {
   let ctx = getCtx();
   if (ctx && !profiles.some((p) => String(p.id) === ctx)) ctx = '';
   const pid = ctx || String(profiles[0].id);
+  if (!ctx && pid) setCtx(pid);
   const active = profiles.find((p) => String(p.id) === pid) ?? profiles[0];
 
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
@@ -2789,7 +2791,14 @@ async function wireFichaPipeline(type, id) {
 
 /* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
 async function renderDigest() {
-  const ctx = getCtx();
+  let ctx = getCtx();
+  if (!ctx) {
+    try {
+      const profilesData = await api('/api/profiles');
+      const first = profilesData.items?.[0];
+      if (first) { ctx = String(first.id); setCtx(ctx); }
+    } catch { /* sem perfis */ }
+  }
   if (!ctx) { location.hash = '#/'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A gerar o digest da semana…</p></div>';
   const d = await api(`/api/profiles/${ctx}/digest.json`);
