@@ -302,7 +302,7 @@ async function renderRegister() {
         </div>
 
         <label style="margin-top:0.8rem">A sua atividade</label>
-        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: pirotecnia, fogo de artifício) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
+        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, alvará, cobertura, fachadas) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
         <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
         <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
         <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
@@ -947,14 +947,14 @@ async function renderProfiles() {
     ${configTabs('profiles')}
     <div class="card">
       <h2>Novo perfil de atividade</h2>
-      <p class="muted">Vários termos em conjunto (ex.: pirotecnia, fogo de artifício, espetáculo pirotécnico) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
+      <p class="muted">Vários termos em conjunto (ex.: reabilitação, cobertura, fachadas, conservação de edifícios) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
       <form id="new-profile-form">
-        <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Pirotecnia" required></p>
-        <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: pirotecnia, fogo de artifício" required></p>
+        <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Obras e reabilitação" required></p>
+        <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: reabilitação, cobertura, fachadas" required></p>
         <div style="margin:0.6rem 0">
           <div id="cpv-chips" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: pirotecnia, limpeza, construção…" style="flex:1;min-width:220px">
+            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: reabilitação, construção, conservação…" style="flex:1;min-width:220px">
             <button type="button" class="btn-secondary" id="cpv-search-btn">${ico('search')} Procurar CPV</button>
           </div>
           <div id="cpv-results" class="muted" style="margin-top:0.4rem"></div>
