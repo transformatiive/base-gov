@@ -326,14 +326,14 @@ body.login-bg { background: radial-gradient(700px 340px at 50% -120px, rgba(23, 
 .sec-head a.sh:hover { color: var(--brand); text-decoration: none; }
 .opp-cards { display: flex; flex-direction: column; gap: 10px; }
 .opp-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 20px;
-  display: flex; gap: 16px; align-items: center;
+  display: flex; gap: 16px; align-items: center; width: 100%; box-sizing: border-box;
   box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
 .opp-card:hover { border-color: var(--accent-line); box-shadow: var(--shadow-hover); }
 .opp-card > svg { flex: none; }
-.opp-card > div { min-width: 0; flex: 1 1 auto; }
+.opp-card > div:not(.opp-actions) { min-width: 0; flex: 1 1 0; }
 .opp-card .k { display: flex; gap: 7px; align-items: center; margin-bottom: 3px; flex-wrap: wrap; }
 .opp-card .ti { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: break-word;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; }
 .opp-card .su { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opp-card .fit { font-size: 11px; color: var(--muted); font-weight: 500; }
 .opp-actions { display: flex; flex-direction: column; gap: 6px; flex: none; }
@@ -377,7 +377,7 @@ body.login-bg { background: radial-gradient(700px 340px at 50% -120px, rgba(23, 
 .money-row .fill { height: 7px; border-radius: 4px; }
 .money-row .vl { font-weight: 600; min-width: 52px; text-align: right; }
 .compet-card p { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.55; }
-#ctx-select { width: auto; min-width: 13.5rem; max-width: min(22rem, 46vw); }
+#ctx-select { width: auto; min-width: 16rem; max-width: min(26rem, 52vw); }
 @media (max-width: 900px) {
   .hoje-grid { grid-template-columns: 1fr; }
   .opp-card { flex-wrap: wrap; }
