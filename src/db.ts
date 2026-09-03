@@ -322,6 +322,7 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_payments_company ON payments (company_id, created_at DESC);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS moloni_number TEXT;  -- série + número Moloni (ex.: IVCX 12)
 
 -- Eventos Stripe já processados (idempotência do webhook; Stripe reenvia).
 CREATE TABLE IF NOT EXISTS stripe_events (

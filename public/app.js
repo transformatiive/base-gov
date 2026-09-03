@@ -807,30 +807,137 @@ async function renderPlans() {
   });
 }
 
-/* ---------- Conta: plano, uso de IA e equipa (seats) ---------- */
+/* ---------- Conta: plano, faturas Moloni e equipa (seats) ---------- */
+function billingPeriodLine(summary) {
+  const b = summary.billing || {};
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('pt-PT') : '');
+  switch (b.mode) {
+    case 'trial':
+      return `Em teste${b.trial_days_left != null ? ` · ${b.trial_days_left} dia(s) restantes` : ''}${b.trial_ends_at ? ` · termina a ${fmt(b.trial_ends_at)}` : ''}`;
+    case 'subscription':
+      return `Subscrição automática${b.renews_at ? ` · próxima renovação a ${fmt(b.renews_at)}` : ''}`;
+    case 'one_time':
+      return `Pagamento pontual (sem renovação automática)${b.access_until ? ` · acesso até ${fmt(b.access_until)}` : ''}`;
+    case 'past_due':
+      return `Pagamento pendente${b.renews_at ? ` · próxima tentativa a ${fmt(b.renews_at)}` : ''}`;
+    case 'canceled':
+      return `Subscrição cancelada${b.access_until ? ` · acesso até ${fmt(b.access_until)}` : ''}`;
+    case 'free':
+      return 'Plano Grátis';
+    default:
+      return '';
+  }
+}
+
+function renderInvoicesBlock(invoices) {
+  const items = invoices?.items || [];
+  const money = (cents, cur) => (Number(cents) / 100).toLocaleString('pt-PT', {
+    style: 'currency', currency: String(cur || 'eur').toUpperCase(),
+  });
+  const pdfLabel = (inv) => {
+    switch (inv.moloni_status) {
+      case 'ok': return '';
+      case 'draft': return 'A emitir';
+      case 'error': return 'Emissão falhou';
+      case 'skipped': return 'Indisponível';
+      default: return 'A processar';
+    }
+  };
+  const rows = items.map((inv) => {
+    const date = new Date(inv.created_at).toLocaleDateString('pt-PT');
+    const dl = inv.downloadable
+      ? `<a class="inv-dl" href="/api/billing/invoices/${inv.id}/pdf">${ico('download')} Descarregar</a>`
+      : `<span class="muted">${esc(pdfLabel(inv))}</span>`;
+    return `<tr><td>${esc(date)}</td><td>${money(inv.amount_cents, inv.currency)}</td><td>${dl}</td></tr>`;
+  }).join('');
+  return `
+    <div class="acct-section">
+      <h3 style="margin:0">Faturas</h3>
+      <p class="muted" style="margin:.3rem 0 .6rem">Cada pagamento Stripe origina uma fatura Moloni. Descarregue o PDF nesta lista.</p>
+      ${items.length
+        ? `<table class="inv-table"><thead><tr><th>Data</th><th>Valor</th><th>PDF</th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<p class="muted" style="margin:.4rem 0 0">Ainda não há faturas nesta conta.</p>'}
+      <div id="inv-result"></div>
+    </div>`;
+}
+
+function wireInvoices() {
+  document.querySelectorAll('a.inv-dl').forEach((a) => {
+    a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('inv-result');
+      if (out) out.innerHTML = '<p class="muted">A descarregar…</p>';
+      try {
+        const res = await fetch(a.getAttribute('href'));
+        if (res.status === 401) { location.hash = '#/login'; return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const dispo = res.headers.get('Content-Disposition') || '';
+        const m = /filename="?([^"]+)"?/i.exec(dispo);
+        const name = m ? m[1] : 'fatura.pdf';
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        if (out) out.innerHTML = '';
+      } catch (err) {
+        if (out) out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+        else alert(err.message);
+      }
+    });
+  });
+}
+
+function wireBillingPortal() {
+  const btn = document.getElementById('bill-portal');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const out = document.getElementById('bill-result');
+    if (out) out.innerHTML = '<p class="muted">A abrir a gestão de pagamentos…</p>';
+    try {
+      const r = await api('/api/billing/portal', { method: 'POST' });
+      if (r.url) { location.href = r.url; return; }
+      throw new Error('Não foi possível abrir a gestão de pagamentos.');
+    } catch (err) {
+      if (out) out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      else alert(err.message);
+    }
+  };
+}
+
 async function renderAccount() {
   topbar.hidden = false;
   const paid = /[?&]pago=1/.test(location.hash);
   if (paid) { window._me = null; window._caps = null; }   // força releitura do plano após pagamento
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let caps, summary, seats;
+  let caps, summary, seats, invoices = { items: [] };
   try {
     [caps, summary] = await Promise.all([api('/api/me/capabilities'), api('/api/billing/summary')]);
   } catch { return; }
   window._caps = caps;
   try { seats = await api('/api/seats'); } catch { seats = null; }
+  try { invoices = await api('/api/billing/invoices'); } catch { invoices = { items: [] }; }
   const c = summary.company || {};
+  const b = summary.billing || {};
   const plan = caps.plan || 'free';
-  const statusLabel = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' }[c.subscription_status] || c.subscription_status || '—';
+  const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
   const seatMax = caps.seats?.max ?? 1;
   const seatUsed = caps.seats?.used ?? 1;
+  const upgradeLabel = plan === 'business' ? 'Ver planos' : plan === 'free' ? 'Fazer upgrade' : 'Mudar de plano';
 
   app.innerHTML = `
     <div class="card" style="max-width:820px;margin:1.5rem auto">
-      <div class="eyebrow" style="color:var(--brand)">Conta</div>
-      ${paid ? '<div class="hint" style="margin:.4rem 0">Pagamento recebido. Assim que for confirmado pelo banco, o plano é ativado automaticamente — pode demorar alguns instantes nos métodos MB WAY / Multibanco / transferência.</div>' : ''}
+      <div class="eyebrow" style="color:var(--brand)">Conta e subscrição</div>
+      ${paid ? '<div class="hint" style="margin:.4rem 0">Pagamento recebido. Assim que for confirmado pelo banco, o plano é ativado automaticamente — pode demorar alguns instantes nos métodos MB WAY / Multibanco / transferência. A fatura Moloni aparece abaixo quando for emitida.</div>' : ''}
       <h2 style="margin:.3rem 0 .2rem">${esc(c.name ?? window._me?.username ?? '')}</h2>
       <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
 
@@ -838,10 +945,12 @@ async function renderAccount() {
         <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
           <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Plano</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${PLAN_LABEL[plan]}</div>
-          <div class="muted" style="font-size:.85rem">Estado: ${esc(statusLabel)}${
-            c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · ${c.trial_days_left} dia(s) restantes` : ''}${
-            c.renewal_at ? ` · renova a ${new Date(c.renewal_at).toLocaleDateString('pt-PT')}` : ''}</div>
-          <p style="margin:.8rem 0 0"><a class="btn" href="#/planos" style="display:inline-block;padding:.45rem .9rem;background:var(--brand);color:#fff;border-radius:8px;text-decoration:none;font-size:.85rem">${plan === 'business' ? 'Ver planos' : 'Fazer upgrade'}</a></p>
+          <div class="muted" style="font-size:.85rem">${esc(period)}</div>
+          <div class="bill-actions">
+            <a class="btn" href="#/planos">${esc(upgradeLabel)}</a>
+            ${b.can_manage_payment ? '<button type="button" class="btn-secondary" id="bill-portal">Gerir subscrição</button>' : ''}
+          </div>
+          <div id="bill-result"></div>
         </div>
 
         <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
@@ -852,12 +961,15 @@ async function renderAccount() {
         </div>
       </div>
 
+      ${renderInvoicesBlock(invoices)}
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
       <div id="company-profile-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
       <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
     </div>`;
 
   wireSeats();
+  wireInvoices();
+  wireBillingPortal();
   fillCompanyProfileBlock();
   fillNotifyBlock();
 }

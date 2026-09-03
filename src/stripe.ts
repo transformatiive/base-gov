@@ -185,6 +185,41 @@ export function buildCheckoutSessionParams(
   return params;
 }
 
+export function buildPortalSessionParams(
+  customerId: string,
+  returnUrl: string,
+): Stripe.BillingPortal.SessionCreateParams {
+  return { customer: customerId, return_url: returnUrl };
+}
+
+export function classifyPortalError(err: unknown): { code: string; message: string; http: number } {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/no configuration provided|default configuration|billing portal is not|customer portal/i.test(msg)) {
+    return {
+      code: 'portal_unconfigured',
+      http: 503,
+      message: 'A gestão de pagamentos ainda não está ativa. Contacte o suporte.',
+    };
+  }
+  return {
+    code: 'portal_failed',
+    http: 502,
+    message: 'Não foi possível abrir a gestão de pagamentos. Tente de novo ou contacte o suporte.',
+  };
+}
+
+/** Abre o Customer Portal do Stripe (cartão, cancelar, método de pagamento). */
+export async function createBillingPortal(customerId: string): Promise<{ url: string }> {
+  if (!stripeConfigured()) throw new Error('Stripe não configurado');
+  const base = publicAppUrl();
+  if (!base) throw new Error('Falta APP_URL (URL público da aplicação).');
+  const session = await getStripeClient().billingPortal.sessions.create(
+    buildPortalSessionParams(customerId, `${base}/app#/conta`),
+  );
+  if (!session.url) throw new Error('Stripe Portal não devolveu URL');
+  return { url: session.url };
+}
+
 /** Cria uma sessão de Checkout do Stripe e devolve o URL para redirecionar. */
 export async function createCheckout(input: CheckoutInput): Promise<{ url: string; id: string; integration_identifier: string }> {
   if (!stripeConfigured()) throw new Error('Stripe não configurado');
@@ -263,10 +298,11 @@ async function releaseEvent(eventId: string, query: SqlQuery): Promise<void> {
   await query('DELETE FROM stripe_events WHERE id = $1', [eventId]);
 }
 
-/** Regista o pagamento (idempotente por event id) e emite fatura no Moloni. */
+/** Regista o pagamento (idempotente por event id) e emite fatura no Moloni da Transformatiive. */
 async function recordPaymentAndInvoice(opts: {
   eventId: string; companyId: number; kind: 'subscription' | 'one_time'; plan: Plan; amountCents: number;
 }, query: SqlQuery): Promise<void> {
+  if (!Number.isFinite(opts.amountCents) || opts.amountCents <= 0) return;
   const ins = await query(
     `INSERT INTO payments (company_id, stripe_event_id, kind, plan, amount_cents)
      VALUES ($1,$2,$3,$4,$5) ON CONFLICT (stripe_event_id) DO NOTHING RETURNING id`,
@@ -293,9 +329,9 @@ async function recordPaymentAndInvoice(opts: {
         body: `<p>Olá${contacts[0].first_name ? ' ' + esc(String(contacts[0].first_name)) : ''},</p>
                <p>Recebemos o seu pagamento de <strong>${valor} €</strong> (IVA incluído) referente ao plano <strong>${planLabel}</strong>. O acesso já está ativo.</p>
                <p>${recorrente
-                 ? 'A subscrição renova automaticamente todos os meses. Pode cancelar quando quiser na área de conta.'
+                 ? 'A subscrição renova automaticamente todos os meses. Pode cancelar ou alterar o cartão em Conta → Gerir subscrição.'
                  : 'Este pagamento dá acesso durante 1 mês. Não há renovação automática — receberá o aviso antes de terminar.'}</p>
-               <p>A fatura será emitida e enviada pela nossa contabilidade.</p>`,
+               <p>A fatura fica disponível para descarregar na área de conta, assim que for emitida.</p>`,
         cta: config.appBaseUrl ? { label: 'Abrir o BaseRadar', url: `${config.appBaseUrl}/app#/conta` } : undefined,
       }),
       text: `Pagamento de ${valor} EUR confirmado — plano ${planLabel}. O acesso está ativo.`,
@@ -307,8 +343,12 @@ async function recordPaymentAndInvoice(opts: {
       plan: opts.plan,
       netCents: config.plans.priceCents[opts.plan] ?? 0,
     });
-    await query('UPDATE payments SET moloni_document_id = $1, moloni_status = $2 WHERE id = $3',
-      [inv.documentId ?? null, inv.status, paymentRowId]);
+    if (inv.status === 'skipped') {
+      console.error(`[stripe] pagamento ${paymentRowId} sem fatura Moloni (configuração em falta)`);
+    }
+    await query(
+      'UPDATE payments SET moloni_document_id = $1, moloni_status = $2, moloni_number = $3 WHERE id = $4',
+      [inv.documentId ?? null, inv.status, inv.number ?? null, paymentRowId]);
   } catch (err) {
     console.error('[stripe] fatura Moloni falhou:', String(err).slice(0, 200));
     await query('UPDATE payments SET moloni_status = $1 WHERE id = $2', ['error', paymentRowId]);
@@ -411,7 +451,7 @@ async function dispatchStripeEvent(
         [companyId, Number.isFinite(periodEnd) ? new Date(periodEnd * 1000).toISOString() : null]);
       await recordPaymentAndInvoice({
         eventId: event.id, companyId, kind: 'subscription', plan,
-        amountCents: obj.amount_paid ?? grossCents(plan),
+        amountCents: obj.amount_paid ?? 0,
       }, query);
       return { ok: true, companyId };
     }
