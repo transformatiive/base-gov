@@ -1,6 +1,6 @@
 # QA por persona, plano e sector — 3 Set 2026
 
-> **Reteste (noite, 3 Set):** QA-01/QA-02 **passam** em produção com um perfil novo «reabilitação» — run `completed` em ~3 s, 547 anúncios / 55 abertos, Hoje Grátis com 4 cartões após refresh. Relatório: [`qa-radar-prod-2026-09-03.md`](./qa-radar-prod-2026-09-03.md). Este ficheiro fica como o run da **manhã** (ainda descreve a falha).
+> **Reteste (noite, 3 Set):** QA-01/QA-02 **passam** em produção com um perfil novo «reabilitação» — run `completed` em ~3 s, 547 anúncios / 55 abertos, Hoje Grátis com 4 cartões após refresh. **As 5 personas restantes** (Rui/Marta Grátis, João/Sofia Pro trial, Pedro+Carla Business) estão na secção 6 do mesmo relatório: gating 200 vs 403 alinhado com a copy, salvo features Business vapor e o match «dispositivos médicos». Relatório: [`qa-radar-prod-2026-09-03.md`](./qa-radar-prod-2026-09-03.md). Este ficheiro fica como o run da **manhã** (ainda descreve a falha do worker).
 
 Ambiente: `https://basegov-robot-production.up.railway.app/`
 Corpus: ~2,18 M contratos BASE (2012–2026) e 2 948 anúncios (130 abertos). O dado existe; o problema **neste run da manhã** era a **recolha do perfil** não arrancar.
