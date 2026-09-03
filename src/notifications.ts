@@ -92,7 +92,7 @@ export async function renderDigestEmail(
   optOutUrl: string
 ): Promise<{ subject: string; html: string; text: string }> {
   const today = fmtDatePT(new Date());
-  const subject = `BaseRadar — Digest semanal · ${profileName} · ${today}`;
+  const subject = `BaseRadar — Resumo semanal · ${profileName} · ${today}`;
   const empty = digestIsEmpty(d);
   const fmtEur = (v: unknown) =>
     v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -119,7 +119,7 @@ export async function renderDigestEmail(
          <table width="100%" cellpadding="0" cellspacing="0">${renRows}</table>` : ''}`;
 
   const html = layout({
-    title: `Digest semanal · ${esc(profileName)}`,
+    title: `Resumo semanal · ${esc(profileName)}`,
     body,
     cta: { label: 'Abrir a mesa de concursos', url: `${config.appBaseUrl || ''}/app#/hoje` },
     footnote: `<a href="${optOutUrl}">Deixar de receber o digest</a>`,

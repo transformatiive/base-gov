@@ -364,7 +364,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
 <tr><td style="padding:22px 28px;border-bottom:1px solid #e2e8f0">
   <span style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.5px">Base<span style="color:#2563eb">Radar</span></span>
-  <span style="font-size:11px;color:#64748b;letter-spacing:0.08em;text-transform:uppercase">&nbsp;&nbsp;Digest semanal — ${esc(profile.name)}</span>
+  <span style="font-size:11px;color:#64748b;letter-spacing:0.08em;text-transform:uppercase">&nbsp;&nbsp;Resumo semanal — ${esc(profile.name)}</span>
 </td></tr>
 <tr><td style="padding:24px 28px">
   ${intro ? `<p style="font-size:14px;line-height:1.55;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin:0 0 8px">${esc(intro)}</p>` : ''}

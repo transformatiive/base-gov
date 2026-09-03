@@ -19,4 +19,4 @@
 | 3 | Energia / ambiente | Contratos gordos, plurianuais | Poucos nomes |
 | — | Limpeza, cantinas, festas | 29 € cabe; dono sem orçamento de software | Barato de adquirir, caro de converter |
 
-**Comprador:** diretor de concursos da construtora. Pro 29 € é isco. O dinheiro está no Business 99 €.
+**Comprador:** responsável por concursos da construtora. Pro 29 € é isco. O dinheiro está no Business 99 €.

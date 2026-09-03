@@ -131,7 +131,7 @@ Legenda: **Coberto** · **Parcial** · **Em falta**. «Depois» = estado prometi
 
 ## 2. Domínio G — GTM (não estava no `proposal.md`)
 
-**Comprador:** diretor de concursos de uma construtora de classe média (alvará, pessoa comercial, orçamento de ferramentas). Não a micro de 3 operários; não a Mota-Engil.
+**Comprador:** responsável por concursos de uma construtora de classe média (alvará, pessoa comercial, orçamento de ferramentas). Não a micro de 3 operários; não a Mota-Engil.
 
 | Ordem | Sector | Porquê paga | Risco |
 |---|---|---|---|
@@ -166,7 +166,7 @@ Receber o digest sem pedir; marcar em dois cliques; ser avisado 7 e 2 dias antes
 
 | # | Domínio | Plano | Resumo |
 |---|---|---|---|
-| **G** | **GTM / landing** | — | Homepage + registo + OFERTA + README para o diretor de concursos (construtor) |
+| **G** | **GTM / landing** | — | Homepage + registo + OFERTA + README para o responsável por concursos (construtor) |
 | A | Pipeline | **Grátis** | Nova → Interessa → Em preparação → Submetida → Ganha / Perdida (+ Descartada); nota; responsável; histórico; checklist; vista; Hoje |
 | B | Perfil da empresa | **Grátis** (fit continua Pro) | Certificações/alvarás, distritos, valor, exclusões; regras **antes** da IA |
 | C | Filtros | Básicos **grátis**; avançados **Pro** | Distrito, prazo, texto; valor, procedimento, entidade, CPV; facetas; URL |
@@ -413,7 +413,7 @@ Nota: `note` do pipeline ≤ 2 000 caracteres; comentário 👎 ≤ 500. Validar
 **Tick do agendador** (60 s):
 
 1. `now` em Europa/Lisboa. Se hora ≠ 08 → sai.
-2. Se segunda: para cada `(profile, user)` elegível (digest on, inclui **trial**), `INSERT notification_log (digest, user, 'profile:<id>:<AAAA-WW>')` — só quem inseriu envia. Assunto: `BaseRadar — Digest semanal · {nome do perfil} · DD/MM/AAAA`. Semana a zeros: enviar na mesma *«Semana sem novidades na sua atividade»*.
+2. Se segunda: para cada `(profile, user)` elegível (digest on, inclui **trial**), `INSERT notification_log (digest, user, 'profile:<id>:<AAAA-WW>')` — só quem inseriu envia. Assunto: `BaseRadar — Resumo semanal · {nome do perfil} · DD/MM/AAAA`. Semana a zeros: enviar na mesma *«Semana sem novidades na sua atividade»*.
 3. Todos os dias: itens `interessa|preparacao` com prazo em 7 ou 2 dias, empresa **Pro+**, sem `reminder_log` para `(item, kind, deadline)`; agrupa por utilizador; um email; grava `reminder_log` por item.
 4. Retenta `failed` com `attempts < 3`.
 
@@ -492,9 +492,9 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 ### G — GTM
 
-#### GTM-01 — Hero fala ao diretor de concursos
+#### GTM-01 — Hero fala ao responsável por concursos
 - **URL:** `/`
-- **Passa se:** eyebrow com «diretor de concursos» ou obras/reabilitação; H1 sobre obras municipais / concursos **antes de irem a concurso** (ou equivalente); lead com alvará ou construtora.
+- **Passa se:** eyebrow com «responsável por concursos» ou obras/reabilitação; H1 sobre obras municipais / concursos **antes de irem a concurso** (ou equivalente); lead com alvará ou construtora.
 - **Falha se:** «a sua atividade» genérica sem sector, ou «festas».
 
 #### GTM-02 — Cartão do hero é obra municipal
@@ -504,12 +504,12 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-03 — Business destacado; Pro é isco
 - **URL:** `/#preco`
-- **Passa se:** 0 / 29 / 99 €; **Business** com ribbon/borda e copy de **equipa de concursos** / 10 utilizadores / CRM; Pro com 7 dias grátis, **sem** ribbon «MAIS POPULAR».
+- **Passa se:** 0 / 29 / 99 €; **Business** com ribbon/borda e copy de **equipa de concursos** / 10 utilizadores / gestão comercial; Pro com 7 dias grátis, **sem** ribbon «MAIS POPULAR».
 - **Falha se:** ribbon «MAIS POPULAR» no Pro e Business irrelevante.
 
 #### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
-- **Passa se:** mocks de obras/câmaras/construtoras; digest = email semanal (segunda 08:00); pipeline ou mesa de trabalho mencionado.
+- **Passa se:** mocks de obras/municípios/construtoras; resumo = email semanal (segunda 08:00); carteira de propostas ou mesa de trabalho mencionado.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas».
 
 #### GTM-05 — Title, meta, CTAs
