@@ -139,7 +139,7 @@ form.inline {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.8rem;
+  gap: 1rem;
 }
 .inline > input,
 .inline > select,
