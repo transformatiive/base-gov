@@ -120,6 +120,13 @@ function can(feature) {
   if (window._me?.is_admin) return true;
   return Array.isArray(c.capabilities) && c.capabilities.includes(feature);
 }
+/** Cumprimento do Hoje — manter alinhado com src/display-name.ts */
+function greetingName(me) {
+  const first = (me?.first_name ?? '').trim().split(/\s+/)[0];
+  if (first) return first;
+  const local = (me?.username ?? '').split(/[\s@]/)[0];
+  return local || 'Olá';
+}
 const PLAN_LABEL = { free: 'Grátis', pro: 'Pro', business: 'Business' };
 
 // Mapa item de navegação → feature exigida (vazio = livre no plano free).
@@ -1597,6 +1604,14 @@ async function renderInsightTab(el, q, tab, p) {
     bindPipelineChips(el);
     bindFilterBar(el);
     bindPager(el);
+    const tedHost = document.getElementById('ted-panel');
+    if (tedHost && !can('ted')) {
+      tedHost.innerHTML = upgradePanel({
+        required_plan: 'pro',
+        feature: 'ted',
+        message: 'Os concursos europeus (TED) estão incluídos no plano Pro.',
+      });
+    } else {
     // TED carrega em separado — não bloqueia a lista do BASE nem quebra se falhar.
     api(`/api/insights/ted${q}`).then((t) => {
       const host = document.getElementById('ted-panel');
@@ -1616,10 +1631,16 @@ async function renderInsightTab(el, q, tab, p) {
           <span class="dat">${n.publication_date ? dPtShort(n.publication_date) : '—'}</span>
         </div>`).join('')}
       </div>`;
-    }).catch(() => {
+    }).catch((err) => {
       const host = document.getElementById('ted-panel');
-      if (host) host.innerHTML = '<p class="muted" style="margin:0">TED indisponível de momento.</p>';
+      if (!host) return;
+      if (err.planRequired) {
+        host.innerHTML = upgradePanel(err.planRequired);
+        return;
+      }
+      host.innerHTML = '<p class="muted" style="margin:0">TED indisponível de momento.</p>';
     });
+    }
   } else if (tab === 'seasonality') {
     const d = await api(`/api/insights/seasonality${q}`);
     const chart = (data, metric, label) => {
@@ -2275,16 +2296,39 @@ async function renderHoje() {
 
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
   const q = `?profile_id=${pid}`;
-  const [opp, prof, mapData, compData, pipe] = await Promise.all([
-    api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
+  const freeHoje = !can('score_fit');
+  const [opp, prof, mapData, compData, pipe, openAnns] = await Promise.all([
+    freeHoje ? Promise.resolve({ items: [] }) : api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
     api(`/api/profiles/${pid}`).catch(() => null),
     api(`/api/insights/map${q}`).catch(() => ({ items: [] })),
-    api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
+    freeHoje ? Promise.resolve({ items: [] }) : api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
     api('/api/pipeline').catch(() => ({ items: [] })),
+    freeHoje ? api(`/api/announcements${q}&open=1&size=50`).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
   ]);
-  const items = opp.items ?? [];
+  const daysUntil = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
+    return Math.round((d.getTime() - Date.now()) / 86400000);
+  };
+  let items = opp.items ?? [];
+  if (freeHoje) {
+    items = (openAnns.items ?? []).map((a) => ({
+      type: 'anuncio_aberto',
+      days_left: daysUntil(a.proposal_deadline_date),
+      title: a.contract_designation,
+      entity: a.contracting_entity,
+      value: a.base_price != null ? Number(a.base_price) : null,
+      announcement_id: a.id,
+      internal_url: `#/announcements/${a.id}`,
+      basegov_url: a.basegov_url,
+      score: null,
+      key_date: a.proposal_deadline_date,
+    }));
+  }
   const withDays = items.filter((o) => o.days_left != null);
-  const agir = withDays.filter((o) => o.days_left <= 30).sort((a, b) => b.score - a.score).slice(0, 4);
+  const agir = withDays.filter((o) => o.days_left <= 30)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (a.days_left ?? 99) - (b.days_left ?? 99))
+    .slice(0, 4);
   const preparar = withDays.filter((o) => o.type === 'renovacao' && o.days_left > 30 && o.days_left <= 183)
     .sort((a, b) => a.days_left - b.days_left).slice(0, 5);
   const monitorizar = withDays.filter((o) => o.days_left > 183).sort((a, b) => b.score - a.score);
@@ -2300,7 +2344,7 @@ async function renderHoje() {
 
   const h = new Date().getHours();
   const greet = h < 12 ? 'Bom dia' : h < 20 ? 'Boa tarde' : 'Boa noite';
-  const firstName = esc((window._me?.username || '').split(/[\s@]/)[0] || 'Olá');
+  const firstName = esc(greetingName(window._me || {}));
   const today = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const contactar = (keyDate) => {
     if (!keyDate) return '—';
@@ -2327,15 +2371,19 @@ async function renderHoje() {
 
   const agirCard = (o) => {
     const fit = fitCache[fitKey(o)];
+    const showScore = can('score_fit') && o.score != null;
+    const showIa = can('analise_ia');
     return `<div class="opp-card" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
-      ${scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c')}
+      ${showScore ? scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c') : ''}
       <div style="min-width:0">
         <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">adequação IA ${fit.fit}/100</span>` : ''}</div>
         <div class="ti">${esc(o.title ?? '')}</div>
         <div class="su">${esc(o.entity ?? '—')}${o.value != null ? ' · ' + fmtCompact(o.value) : ''}</div>
       </div>
       <div class="opp-actions">
-        <a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>
+        ${showIa
+          ? `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>`
+          : `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Ver concurso</a>`}
         <a class="btn ghost" href="${esc(o.basegov_url ?? '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ver peças</a>
       </div></div>`;
   };
@@ -2383,7 +2431,7 @@ async function renderHoje() {
         ${pipeHtml}
         <div>
           <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
-          <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem oportunidades com prazo nos próximos 30 dias.</p></div>'}</div>
+          <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem prazos nos próximos 30 dias.</p></div>'}</div>
         </div>
         <div>
           <div class="sec-head"><span class="sd" style="background:#c99a3c"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
@@ -2908,7 +2956,13 @@ async function renderOpendata() {
 
 /* ---------- Entidades (lista) ---------- */
 async function renderEntities(role = 'contracting', q = '') {
-  const d = await api(`/api/entities?role=${role}&q=${encodeURIComponent(q)}&size=50`);
+  let pid = getCtx();
+  if (!pid) {
+    const profilesData = await api('/api/profiles').catch(() => ({ items: [] }));
+    pid = profilesData.items[0] ? String(profilesData.items[0].id) : '';
+    if (pid) setCtx(pid);
+  }
+  const d = await api(`/api/entities?role=${role}&q=${encodeURIComponent(q)}&size=50${pid ? `&profile_id=${pid}` : ''}`);
   app.innerHTML = `
     <div class="toolbar">
       <div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Entidades</h1>
@@ -2940,7 +2994,8 @@ window.renderEntities = renderEntities;
 
 /* ---------- Entidade (ficha) ---------- */
 async function renderEntity(id) {
-  const e = await api(`/api/entities/${id}`);
+  const pid = getCtx();
+  const e = await api(`/api/entities/${id}${pid ? `?profile_id=${pid}` : ''}`);
   const isBuyer = (e.as_contracting?.n_contracts ?? 0) >= (e.as_contracted?.n_contracts ?? 0);
   const r = isBuyer ? e.as_contracting : e.as_contracted;
   const roleLabel = isBuyer ? 'comprador público' : 'fornecedor';
@@ -3368,7 +3423,8 @@ async function route() {
       return; /* api() já redirecionou para login */
     }
   }
-  loadCaps().then(applyNavGating);   // capabilities em 2.º plano (não bloqueia a navegação)
+  await loadCaps();
+  applyNavGating();
   topbar.hidden = false;
   const planPill = window._me.plan && window._me.plan !== 'free'
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';

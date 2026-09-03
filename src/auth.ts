@@ -13,6 +13,8 @@ export interface AuthUser {
   isAdmin: boolean;
   accessOk: boolean;          // subscrição ativa ou trial a decorrer
   plan: Plan;                 // plano efetivo (free|pro|business) — fonte de gating
+  firstName: string | null;
+  lastName: string | null;
 }
 
 type AuthedRequest = FastifyRequest & { auth?: AuthUser };
@@ -21,7 +23,7 @@ type AuthedRequest = FastifyRequest & { auth?: AuthUser };
 const ACCESS_OK_SQL = `(c.subscription_status = 'active'
   OR (c.subscription_status = 'trialing' AND (c.trial_ends_at IS NULL OR c.trial_ends_at > now())))`;
 
-const USER_COLS = `u.id, u.username, u.company_id, u.is_admin,
+const USER_COLS = `u.id, u.username, u.company_id, u.is_admin, u.first_name, u.last_name,
   c.plan, c.subscription_status, c.trial_ends_at, c.access_until,
   COALESCE(${ACCESS_OK_SQL}, true) AS access_ok`;
 const USER_FROM = `FROM users u LEFT JOIN companies c ON c.id = u.company_id`;
@@ -33,6 +35,8 @@ function toUser(row: Record<string, unknown>): AuthUser {
     companyId: (row.company_id as number) ?? null,
     isAdmin: row.is_admin === true,
     accessOk: row.access_ok !== false,
+    firstName: (row.first_name as string) ?? null,
+    lastName: (row.last_name as string) ?? null,
     // Plano efetivo resolvido no backend — fonte única de verdade do gating.
     plan: effectivePlan({
       plan: row.plan,
@@ -84,7 +88,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
     const apiKey = req.headers['x-api-key'];
     if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
       // Integrações têm acesso global (sem empresa) — para uso interno/administrativo.
-      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true, plan: 'business' };
+      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true, plan: 'business', firstName: null, lastName: null };
     }
   }
 
