@@ -208,6 +208,23 @@ export function classifyPortalError(err: unknown): { code: string; message: stri
   };
 }
 
+/** Recurso Stripe já inexistente (subscrição cancelada / id inválido). */
+export function isStripeMissingResource(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const rec = err as { code?: unknown; statusCode?: unknown };
+  return rec.code === 'resource_missing' || rec.statusCode === 404;
+}
+
+/** Cancela já a subscrição. Id desaparecido conta como sucesso. */
+export async function cancelStripeSubscription(subscriptionId: string): Promise<void> {
+  try {
+    await getStripeClient().subscriptions.cancel(subscriptionId);
+  } catch (err) {
+    if (isStripeMissingResource(err)) return;
+    throw err;
+  }
+}
+
 /** Abre o Customer Portal do Stripe (cartão, cancelar, método de pagamento). */
 export async function createBillingPortal(customerId: string): Promise<{ url: string }> {
   if (!stripeConfigured()) throw new Error('Stripe não configurado');
@@ -482,7 +499,13 @@ async function dispatchStripeEvent(
       const companyId = await findCompanyId(obj, query);
       if (companyId) {
         await query(
-          `UPDATE companies SET subscription_status = 'canceled', stripe_subscription_id = NULL WHERE id = $1`,
+          `UPDATE companies
+              SET plan = 'free',
+                  subscription_status = 'canceled',
+                  stripe_subscription_id = NULL,
+                  access_until = NULL,
+                  renewal_at = NULL
+            WHERE id = $1`,
           [companyId]);
       }
       return { ok: !!companyId, companyId: companyId ?? undefined };
