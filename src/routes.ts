@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { sendMail, layout, esc } from './mail.js';
 import { listFilters, PlanRequiredError } from './filters.js';
 import { statusesForCompany } from './pipeline.js';
+import { PROFILE_CONTRACTS } from './digest.js';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
@@ -247,7 +248,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
-    const { username, companyId, isAdmin, plan, userId } = auth(req);
+    const { username, companyId, isAdmin, plan, userId, firstName, lastName } = auth(req);
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
@@ -260,7 +261,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       company = rows[0] ?? null;
     }
     // plan aqui é o plano EFETIVO (resolvido no backend) — não o valor bruto da coluna.
-    return { username, is_admin: isAdmin, plan, company, user_id: userId };
+    return { username, is_admin: isAdmin, plan, company, user_id: userId, first_name: firstName, last_name: lastName };
   });
 
   // Capabilities: fonte única para o frontend espelhar o gating (o backend é
@@ -413,9 +414,26 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/contracts', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { page, size } = paging(q);
-    const { companyId, plan } = auth(req);
+    const { companyId, plan, isAdmin } = auth(req);
     const conditions: string[] = [];
     const params: unknown[] = [];
+    let scopeJoin = '';
+    const profileIdRaw = q.profile_id;
+    const profileId = profileIdRaw == null || profileIdRaw === '' ? null : Number(profileIdRaw);
+    if (profileId != null && Number.isFinite(profileId) && profileId > 0) {
+      if (companyId != null) {
+        const owned = await pool.query('SELECT 1 FROM profiles WHERE id = $1 AND company_id = $2', [profileId, companyId]);
+        if (owned.rows.length === 0) {
+          return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+        }
+      }
+      params.push(profileId);
+      scopeJoin = `JOIN (${PROFILE_CONTRACTS.replace('$1', `$${params.length}`)}) scope ON scope.id = c.id`;
+    } else if (!q.search_id && companyId != null && !isAdmin) {
+      return reply.code(400).send({
+        error: { code: 'invalid_profile', message: 'profile_id é obrigatório' },
+      });
+    }
     if (q.term) {
       params.push(`%${q.term}%`);
       conditions.push(`(c.object_brief_description ILIKE $${params.length} OR c.description ILIKE $${params.length})`);
@@ -446,7 +464,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(size, page * size);
     const { rows } = await pool.query(
-      `SELECT c.*, count(*) OVER() AS full_count FROM contracts c ${where}
+      `SELECT c.*, count(*) OVER() AS full_count FROM contracts c ${scopeJoin} ${where}
        ORDER BY c.publication_date DESC NULLS LAST LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );

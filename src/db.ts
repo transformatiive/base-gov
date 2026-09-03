@@ -358,6 +358,7 @@ CREATE TABLE IF NOT EXISTS contract_history_agg (
 CREATE INDEX IF NOT EXISTS idx_history_agg_entity ON contract_history_agg (entity_id, role);
 
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
+CREATE INDEX IF NOT EXISTS idx_announcements_text ON announcements USING gin (to_tsvector('portuguese', coalesce(contract_designation,'') || ' ' || coalesce(contracting_entity,'')));
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);
 CREATE INDEX IF NOT EXISTS idx_ce_role_contract ON contract_entities(role, contract_id);
@@ -515,4 +516,16 @@ export async function migrateAndSeed(): Promise<void> {
   // Todos os perfis/pesquisas sem dono passam para a empresa interna (dados legados).
   await pool.query('UPDATE profiles SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
   await pool.query('UPDATE searches SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
+
+  // GTM: o perfil interno de pirotecnia contradiz a oferta (obras / saúde / energia).
+  const dropped = await pool.query(
+    `DELETE FROM profiles
+      WHERE company_id = $1
+        AND (name ILIKE '%pirotecnia%' OR name ILIKE '%fogo de artifício%' OR name ILIKE '%fogo de artificio%')
+      RETURNING id, name`,
+    [defaultCompanyId]
+  );
+  if (dropped.rowCount) {
+    console.log(`[seed] perfil GTM removido: ${dropped.rows.map((r: { name: string }) => r.name).join(', ')}`);
+  }
 }

@@ -12,6 +12,7 @@ import {
 } from './client.js';
 import { parseBaseDate, parseBasePrice } from './parse.js';
 import { reconcileProfileRuns, scheduleDueProfiles } from '../profiles.js';
+import { LOCAL_MATCH_LIMIT, pendingSearchOrderSql, searchOrigin, shouldLiveScrape } from '../profile-run-policy.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -193,7 +194,33 @@ async function saveAnnouncementDetail(announcementId: number, detail: Announceme
   );
 }
 
-async function processAnnouncementSearch(client: BaseGovClient, searchId: number, term: string): Promise<void> {
+async function finishSearch(searchId: number, scraped: number, truncated: boolean): Promise<void> {
+  await pool.query(
+    `UPDATE searches SET status = $2, total_scraped = $3, total_reported = COALESCE(total_reported, $3),
+       error_message = NULL, finished_at = now(), heartbeat_at = now() WHERE id = $1`,
+    [searchId, truncated ? 'completed_truncated' : 'completed', scraped]
+  );
+}
+
+async function processAnnouncementSearch(
+  client: BaseGovClient,
+  searchId: number,
+  term: string,
+  profileRunId: number | null,
+): Promise<void> {
+  const { rows: cpvRows } = await pool.query(
+    `SELECT p.cpv_codes FROM searches s
+     JOIN profile_runs pr ON pr.id = s.profile_run_id
+     JOIN profiles p ON p.id = pr.profile_id WHERE s.id = $1`,
+    [searchId]
+  );
+  const localMatches = await matchLocalAnnouncements(searchId, term, cpvRows[0]?.cpv_codes ?? []);
+  if (localMatches > 0) console.log(`[worker] pesquisa #${searchId}: ${localMatches} anúncios do corpus local`);
+  if (!shouldLiveScrape(searchOrigin(profileRunId))) {
+    await finishSearch(searchId, localMatches, localMatches >= LOCAL_MATCH_LIMIT);
+    return;
+  }
+
   let page = 0;
   let scraped = 0;
   let total = Infinity;
@@ -238,46 +265,111 @@ async function processAnnouncementSearch(client: BaseGovClient, searchId: number
     await sleep(config.scrapeDelayMs);
   }
 
-  await pool.query(
-    `UPDATE searches SET status = $2, total_scraped = $3, error_message = NULL, finished_at = now() WHERE id = $1`,
-    [searchId, truncated ? 'completed_truncated' : 'completed', scraped]
-  );
+  await finishSearch(searchId, scraped, truncated);
 }
 
 /**
  * Liga o corpus local (histórico dos dados abertos + contratos já conhecidos)
  * aos resultados da pesquisa — instantâneo e sem tocar no site.
- * Combina texto (ILIKE + full-text português, que apanha variações/plurais)
- * e, quando o perfil os define, códigos CPV oficiais de atividade.
+ * Full-text português (GIN) com tecto; CPV do perfil à parte.
  */
 export async function matchLocalCorpus(searchId: number, term: string, cpvCodes: string[] = []): Promise<number> {
-  const { rowCount } = await pool.query(
-    `INSERT INTO search_results (search_id, contract_id, position)
-     SELECT $1, c.id, 500000 + row_number() OVER (ORDER BY c.publication_date DESC NULLS LAST)
-     FROM contracts c
-     WHERE (c.object_brief_description ILIKE $2 OR c.description ILIKE $2)
-        OR to_tsvector('portuguese', coalesce(c.object_brief_description,'') || ' ' || coalesce(c.description,''))
-           @@ websearch_to_tsquery('portuguese', $3)
-     ON CONFLICT DO NOTHING`,
-    [searchId, `%${term}%`, term]
-  );
+  const q = term.trim() || 'x';
+  let textMatches = 0;
+  try {
+    const { rowCount } = await pool.query(
+      `INSERT INTO search_results (search_id, contract_id, position)
+       SELECT $1, x.id, 500000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
+       FROM (
+         SELECT c.id, c.publication_date
+         FROM contracts c
+         WHERE to_tsvector('portuguese', coalesce(c.object_brief_description,'') || ' ' || coalesce(c.description,''))
+               @@ plainto_tsquery('portuguese', $2)
+         ORDER BY c.publication_date DESC NULLS LAST
+         LIMIT $3
+       ) x
+       ON CONFLICT DO NOTHING`,
+      [searchId, q, LOCAL_MATCH_LIMIT]
+    );
+    textMatches = rowCount ?? 0;
+  } catch (err) {
+    console.warn(`[worker] FTS contratos falhou para "${term}": ${String(err).slice(0, 180)}`);
+  }
   let cpvMatches = 0;
   for (const code of cpvCodes) {
     const clean = code.trim().split('-')[0];
     if (!/^\d{4,8}$/.test(clean)) continue;
     const { rowCount: n } = await pool.query(
       `INSERT INTO search_results (search_id, contract_id, position)
-       SELECT $1, c.id, 700000 + row_number() OVER (ORDER BY c.publication_date DESC NULLS LAST)
-       FROM contracts c WHERE c.cpvs LIKE $2 OR c.cpvs LIKE $3
+       SELECT $1, x.id, 700000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
+       FROM (
+         SELECT c.id, c.publication_date
+         FROM contracts c WHERE c.cpvs LIKE $2 OR c.cpvs LIKE $3
+         ORDER BY c.publication_date DESC NULLS LAST
+         LIMIT $4
+       ) x
+       ON CONFLICT DO NOTHING`,
+      [searchId, `${clean}%`, `%; ${clean}%`, LOCAL_MATCH_LIMIT]
+    );
+    cpvMatches += n ?? 0;
+  }
+  return textMatches + cpvMatches;
+}
+
+/** Match de anúncios já importados (tabela pequena) — o radar Grátis depende disto, não do scrape. */
+export async function matchLocalAnnouncements(searchId: number, term: string, cpvCodes: string[] = []): Promise<number> {
+  const like = `%${term}%`;
+  const q = term.trim() || 'x';
+  let textMatches = 0;
+  try {
+    const { rowCount } = await pool.query(
+      `INSERT INTO search_announcements (search_id, announcement_id, position)
+       SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+       FROM announcements a
+       WHERE a.contract_designation ILIKE $2
+          OR a.contracting_entity ILIKE $2
+          OR coalesce(a.cpvs,'') ILIKE $2
+          OR to_tsvector('portuguese', coalesce(a.contract_designation,'') || ' ' || coalesce(a.contracting_entity,''))
+             @@ plainto_tsquery('portuguese', $3)
+       ON CONFLICT DO NOTHING`,
+      [searchId, like, q]
+    );
+    textMatches = rowCount ?? 0;
+  } catch (err) {
+    console.warn(`[worker] match anúncios falhou para "${term}": ${String(err).slice(0, 180)}`);
+    const { rowCount } = await pool.query(
+      `INSERT INTO search_announcements (search_id, announcement_id, position)
+       SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+       FROM announcements a
+       WHERE a.contract_designation ILIKE $2 OR a.contracting_entity ILIKE $2 OR coalesce(a.cpvs,'') ILIKE $2
+       ON CONFLICT DO NOTHING`,
+      [searchId, like]
+    );
+    textMatches = rowCount ?? 0;
+  }
+  let cpvMatches = 0;
+  for (const code of cpvCodes) {
+    const clean = code.trim().split('-')[0];
+    if (!/^\d{4,8}$/.test(clean)) continue;
+    const { rowCount: n } = await pool.query(
+      `INSERT INTO search_announcements (search_id, announcement_id, position)
+       SELECT $1, a.id, 700000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+       FROM announcements a WHERE a.cpvs LIKE $2 OR a.cpvs LIKE $3
        ON CONFLICT DO NOTHING`,
       [searchId, `${clean}%`, `%; ${clean}%`]
     );
     cpvMatches += n ?? 0;
   }
-  return (rowCount ?? 0) + cpvMatches;
+  return textMatches + cpvMatches;
 }
 
-async function processSearch(client: BaseGovClient, searchId: number, term: string, fetchDocuments: boolean): Promise<void> {
+async function processSearch(
+  client: BaseGovClient,
+  searchId: number,
+  term: string,
+  fetchDocuments: boolean,
+  profileRunId: number | null,
+): Promise<void> {
   // Se a pesquisa pertence a um perfil, os códigos CPV do perfil entram no match local.
   const { rows: cpvRows } = await pool.query(
     `SELECT p.cpv_codes FROM searches s
@@ -287,6 +379,10 @@ async function processSearch(client: BaseGovClient, searchId: number, term: stri
   );
   const localMatches = await matchLocalCorpus(searchId, term, cpvRows[0]?.cpv_codes ?? []);
   if (localMatches > 0) console.log(`[worker] pesquisa #${searchId}: ${localMatches} contratos do corpus local`);
+  if (!shouldLiveScrape(searchOrigin(profileRunId))) {
+    await finishSearch(searchId, localMatches, localMatches >= LOCAL_MATCH_LIMIT);
+    return;
+  }
 
   let page = 0;
   let scraped = 0;
@@ -339,10 +435,7 @@ async function processSearch(client: BaseGovClient, searchId: number, term: stri
     await sleep(config.scrapeDelayMs);
   }
 
-  await pool.query(
-    `UPDATE searches SET status = $2, total_scraped = $3, error_message = NULL, finished_at = now() WHERE id = $1`,
-    [searchId, truncated ? 'completed_truncated' : 'completed', scraped]
-  );
+  await finishSearch(searchId, scraped, truncated);
 }
 
 let running = false;
@@ -384,7 +477,7 @@ async function tick(client: BaseGovClient): Promise<void> {
       `UPDATE searches SET status = 'running', heartbeat_at = now(), started_at = COALESCE(started_at, now())
        WHERE id = (SELECT id FROM searches
                    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-                   ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+                   ORDER BY ${pendingSearchOrderSql()} LIMIT 1 FOR UPDATE SKIP LOCKED)
        RETURNING id, term, kind, profile_run_id, retries, fetch_documents`
     );
     if (rows.length > 0) {
@@ -397,10 +490,11 @@ async function tick(client: BaseGovClient): Promise<void> {
       }
       console.log(`[worker] a processar pesquisa #${id} "${term}" (${kind})`);
       try {
+        const runId = profile_run_id == null ? null : Number(profile_run_id);
         if (kind === 'anuncios') {
-          await processAnnouncementSearch(client, id, term);
+          await processAnnouncementSearch(client, id, term, runId);
         } else {
-          await processSearch(client, id, term, fetch_documents === true);
+          await processSearch(client, id, term, fetch_documents === true, runId);
         }
         console.log(`[worker] pesquisa #${id} concluída`);
       } catch (err) {

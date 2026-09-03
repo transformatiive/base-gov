@@ -754,10 +754,21 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Entidades ----------
-  app.get('/api/entities', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req) => {
+  app.get('/api/entities', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
+    const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
+    const { companyId, isAdmin } = auth(req);
+    if (profileId == null && companyId != null && !isAdmin) {
+      return reply.code(400).send({ error: { code: 'invalid_profile', message: 'profile_id é obrigatório' } });
+    }
     const role = q.role === 'contracted' ? 'contracted' : 'contracting';
     const params: unknown[] = [role];
+    let scopeJoin = '';
+    if (profileId != null) {
+      params.push(profileId);
+      scopeJoin = `JOIN (${PROFILE_CONTRACTS.replace('$1', '$2')}) scope ON scope.id = c.id`;
+    }
     let filter = '';
     if (q.q) {
       params.push(`%${q.q}%`);
@@ -775,6 +786,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
        FROM entities e
        JOIN contract_entities ce ON ce.entity_id = e.id AND ce.role = $1
        JOIN contracts c ON c.id = ce.contract_id
+       ${scopeJoin}
        WHERE true ${filter}
        GROUP BY e.id
        ORDER BY total_value DESC
@@ -792,41 +804,54 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.get('/api/entities/:id', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const { rows: ent } = await pool.query('SELECT * FROM entities WHERE id = $1', [id]);
     if (ent.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Entidade não encontrada' } });
 
     const asRole = async (role: string) => {
+      const profileJoin = profileId != null
+        ? `JOIN (${PROFILE_CONTRACTS.replace('$1', '$3')}) scope ON scope.id = c.id`
+        : '';
+      const scoped = profileId != null ? [id, role, profileId] : [id, role];
       const { rows: [agg] } = await pool.query(
         `SELECT count(DISTINCT c.id) AS n, coalesce(sum(c.initial_contractual_price),0) AS total,
                 coalesce(avg(c.initial_contractual_price),0) AS avg
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         WHERE ce.entity_id = $1 AND ce.role = $2`, [id, role]);
+         ${profileJoin}
+         WHERE ce.entity_id = $1 AND ce.role = $2`, scoped);
       const { rows: byYear } = await pool.query(
         `SELECT extract(year FROM c.publication_date)::int AS year, count(*) AS n,
                 coalesce(sum(c.initial_contractual_price),0) AS total
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
+         ${profileJoin}
          WHERE ce.entity_id = $1 AND ce.role = $2 AND c.publication_date IS NOT NULL
-         GROUP BY 1 ORDER BY 1 DESC LIMIT 8`, [id, role]);
+         GROUP BY 1 ORDER BY 1 DESC LIMIT 8`, scoped);
       const { rows: procedures } = await pool.query(
         `SELECT c.contracting_procedure_type AS type, count(*) AS n
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         WHERE ce.entity_id = $1 AND ce.role = $2 GROUP BY 1 ORDER BY n DESC`, [id, role]);
+         ${profileJoin}
+         WHERE ce.entity_id = $1 AND ce.role = $2 GROUP BY 1 ORDER BY n DESC`, scoped);
       const counterRole = role === 'contracting' ? 'contracted' : 'contracting';
+      const counterParams = profileId != null ? [id, role, profileId, counterRole] : [id, role, counterRole];
+      const counterPh = profileId != null ? '$4' : '$3';
       const { rows: counterparts } = await pool.query(
         `SELECT e2.id, e2.name, e2.nif, count(DISTINCT c.id) AS n,
                 coalesce(sum(c.initial_contractual_price),0) AS total
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         JOIN contract_entities ce2 ON ce2.contract_id = c.id AND ce2.role = $3
+         ${profileJoin}
+         JOIN contract_entities ce2 ON ce2.contract_id = c.id AND ce2.role = ${counterPh}
          JOIN entities e2 ON e2.id = ce2.entity_id
          WHERE ce.entity_id = $1 AND ce.role = $2
-         GROUP BY e2.id ORDER BY total DESC LIMIT 10`, [id, role, counterRole]);
+         GROUP BY e2.id ORDER BY total DESC LIMIT 10`, counterParams);
       const { rows: contracts } = await pool.query(
         `SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
                 c.publication_date, c.signing_date, c.execution_deadline, c.contracting_procedure_type,
                 CASE WHEN ${HAS_END} THEN ${END_DATE} ELSE NULL END AS end_date
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
+         ${profileJoin}
          WHERE ce.entity_id = $1 AND ce.role = $2
-         ORDER BY c.publication_date DESC NULLS LAST LIMIT 25`, [id, role]);
+         ORDER BY c.publication_date DESC NULLS LAST LIMIT 25`, scoped);
       return {
         n_contracts: Number(agg.n),
         total_value: Number(agg.total),
