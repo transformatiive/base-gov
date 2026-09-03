@@ -601,8 +601,8 @@ async function renderRegister() {
         <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, iluminação pública, dispositivos médicos) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
         <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
         <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
-        <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
-          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, energia, saúde)" style="flex:1">
+        <div class="inline" style="margin-top:0.4rem">
+          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, energia, saúde)">
           <button type="button" class="btn-secondary" id="reg-cpv-btn">${ico('search')} Procurar</button>
         </div>
         <div id="reg-cpv-results" style="margin-top:0.4rem"></div>
@@ -750,7 +750,7 @@ function openAccountConfirm({ title, bodyHtml, confirmLabel, keepLabel = 'Manter
     <button class="modal-x" type="button" aria-label="Fechar">×</button>
     <h3 id="acct-confirm-title" style="margin:0 0 .5rem">${esc(title)}</h3>
     <div class="muted" style="margin:0 0 1.1rem;line-height:1.55">${bodyHtml}</div>
-    <div class="inline" style="gap:.5rem;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+    <div class="inline" style="justify-content:flex-end">${actions}</div>
     <div class="acct-confirm-out"></div>
   </div>`;
   document.body.appendChild(wrap);
@@ -909,7 +909,7 @@ async function renderPlans() {
       const plan = b.dataset.plan;
       const methods = document.getElementById('plan-method');
       methods.innerHTML = `<p style="margin:0 0 .5rem">Como quer pagar o plano <strong>${PLAN_LABEL[plan]}</strong>?</p>
-        <div class="inline" style="gap:.5rem;flex-wrap:wrap">
+        <div class="inline">
           <button class="pay-mode" data-mode="subscription" data-plan="${plan}">Cartão — subscrição automática</button>
           <button class="pay-mode btn-secondary" data-mode="payment" data-plan="${plan}">MB WAY / Multibanco / transferência — 1 mês</button>
         </div>
@@ -1118,8 +1118,8 @@ function renderSeatsBlock(seats, used, max, plan) {
       ${max <= 1
         ? '<div class="hint" style="margin-top:.8rem">O plano atual permite apenas 1 utilizador. Faça upgrade para convidar a sua equipa.</div>'
         : canInvite
-          ? `<div class="inline" style="gap:.5rem;margin-top:.8rem">
-               <input type="email" id="seat-email" placeholder="email@empresa.pt" style="flex:1">
+          ? `<div class="inline" style="margin-top:.8rem">
+               <input type="email" id="seat-email" placeholder="email@empresa.pt">
                <button id="seat-invite">Convidar</button>
              </div><div id="seat-result" style="margin-top:.5rem"></div>`
           : '<div class="hint" style="margin-top:.8rem">Limite de lugares atingido para o plano atual.</div>'}
@@ -1538,7 +1538,7 @@ async function renderContract(id) {
           <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
           <label style="display:block;margin-top:.5rem">Responsável</label>
           <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
-          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+          <p style="margin-top:.9rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
           <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
         </div>
         ${adj ? `<div class="d-card">
@@ -1605,8 +1605,8 @@ async function renderProfiles() {
         <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: reabilitação, cobertura, fachadas" required></p>
         <div style="margin:0.6rem 0">
           <div id="cpv-chips" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: reabilitação, construção, conservação…" style="flex:1;min-width:220px">
+          <div class="inline">
+            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: reabilitação, construção, conservação…">
             <button type="button" class="btn-secondary" id="cpv-search-btn">${ico('search')} Procurar CPV</button>
           </div>
           <div id="cpv-results" class="muted" style="margin-top:0.4rem"></div>
@@ -2782,7 +2782,7 @@ async function renderRadar(tab = 'opportunities') {
           ? `Atividade: ${esc(active.name)} — ${active.terms.map(esc).join(', ')}${(active.cpv_codes ?? []).length ? ' · CPV ' + active.cpv_codes.map(esc).join(', ') : ''}`
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
       </div>
-      <div style="display:flex;gap:0.5rem;align-items:center">
+      <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap">
         ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>` : ''}
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
@@ -2898,7 +2898,7 @@ async function renderAnnouncement(id) {
           <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
           <label style="display:block;margin-top:.5rem">Responsável</label>
           <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
-          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+          <p style="margin-top:.9rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
           <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
         </div>
         <div class="d-card">
@@ -3407,7 +3407,7 @@ async function renderAdmin() {
         <h3 style="margin:0 0 .3rem">Configuração de pagamentos e faturação</h3>
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Estado das integrações. Os segredos nunca são mostrados — apenas se estão definidos.</p>
         <div id="setup-state"><span class="muted">A carregar…</span></div>
-        <div class="inline" style="gap:.5rem;flex-wrap:wrap;margin-top:.8rem">
+        <div class="inline" style="margin-top:.8rem">
           <button id="sp-prices" class="btn-secondary">Criar produtos e preços de TESTE no Stripe</button>
           <button id="sp-webhook" class="btn-secondary">Registar webhook do Stripe</button>
           <button id="sp-moloni" class="btn-secondary">Ler configuração do Moloni</button>
@@ -3418,8 +3418,8 @@ async function renderAdmin() {
       <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .3rem">Email transacional</h3>
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Envia um email de teste para confirmar que a chave e o remetente estão bem configurados.</p>
-        <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
-          <input type="email" id="te-to" placeholder="destinatário do teste" style="flex:1;min-width:240px">
+        <div class="inline">
+          <input type="email" id="te-to" placeholder="destinatário do teste">
           <button id="te-btn">Enviar email de teste</button>
         </div>
         <div id="te-result" style="margin-top:.5rem"></div>
@@ -3428,9 +3428,9 @@ async function renderAdmin() {
       <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .3rem">Repor password de utilizador</h3>
         <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">Define uma nova password para um utilizador (por email). Recuperação de acesso.</p>
-        <div class="inline" style="gap:.5rem;flex-wrap:wrap;align-items:center">
-          <input type="email" id="rp-email" placeholder="email@empresa.pt" style="flex:1;min-width:220px">
-          <input type="text" id="rp-pass" placeholder="nova password (mín. 8)" style="flex:1;min-width:200px">
+        <div class="inline">
+          <input type="email" id="rp-email" placeholder="email@empresa.pt">
+          <input type="text" id="rp-pass" placeholder="nova password (mín. 8)">
           <button id="rp-btn">Repor password</button>
         </div>
         <div id="rp-result" style="margin-top:.5rem"></div>
@@ -3598,7 +3598,7 @@ function openFeedbackModal() {
       <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem"></textarea>
       <div class="error" id="fb-error" style="margin-top:.4rem"></div>
       <div id="fb-ok" class="hint" style="margin-top:.4rem;display:none">Obrigado! A sua mensagem foi registada.</div>
-      <div class="inline" style="justify-content:flex-end;gap:.5rem;margin-top:.8rem">
+      <div class="inline" style="justify-content:flex-end;margin-top:.8rem">
         <button class="btn-secondary" id="fb-cancel">Cancelar</button>
         <button id="fb-send">Enviar</button>
       </div>
