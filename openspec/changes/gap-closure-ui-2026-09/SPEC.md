@@ -494,7 +494,7 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-01 — Hero fala ao diretor de concursos
 - **URL:** `/`
-- **Passa se:** eyebrow com «diretor de concursos» ou obras/reabilitação; H1 sobre reabilitações da câmara **antes de abrir**; lead com alvará ou construtora.
+- **Passa se:** eyebrow com «diretor de concursos» ou obras/reabilitação; H1 sobre obras municipais / concursos **antes de irem a concurso** (ou equivalente); lead com alvará ou construtora.
 - **Falha se:** «a sua atividade» genérica sem sector, ou «festas».
 
 #### GTM-02 — Cartão do hero é obra municipal
