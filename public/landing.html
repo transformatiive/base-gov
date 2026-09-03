@@ -41,7 +41,7 @@
     .nav-in{display:flex;align-items:center;justify-content:space-between;padding-top:16px;padding-bottom:16px;gap:12px;min-width:0}
     .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
     .brand .name{font-weight:700;font-size:15px;letter-spacing:-0.01em;color:var(--ink)}
-    .brand .tag{font-size:10px;color:var(--muted);letter-spacing:0.06em}
+    .brand .tag{display:block;font-size:10px;color:var(--muted);letter-spacing:0.06em}
     .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:var(--ink2)}
     .nav-links a{color:var(--ink2)}
     .nav-links a:hover{color:var(--brand)}
@@ -233,6 +233,7 @@
       .hero{grid-template-columns:minmax(0,1fr);gap:36px;padding-top:44px;padding-bottom:44px}
       h1.hero-h{font-size:34px;max-width:none}
       .nav-toggle{display:inline-flex}
+      .brand .tag{display:none}
       .nav.nav-open .nav-toggle .ico-menu{display:none}
       .nav.nav-open .nav-toggle .ico-close{display:block}
       .nav-links{
@@ -253,11 +254,11 @@
       .quotes{grid-template-columns:1fr;gap:12px}
     }
     @media (max-width:640px){
-      :root{ --pad-x: 16px; }
+      :root{ --pad-x: 20px; }
       .nav-in{padding-top:10px;padding-bottom:10px;gap:8px}
       .nav-cta{gap:6px}
       .nav-cta .enter{display:inline-flex;padding:8px 12px;border:1px solid var(--line);background:#fff;white-space:nowrap}
-      .nav-cta .start{padding:8px 12px;font-size:12.5px;white-space:nowrap}
+      .nav-cta .start{display:none}
       .brand .tag{display:none}
       .eyebrow{font-size:11px;padding:6px 12px;white-space:normal;line-height:1.35;max-width:100%}
       h1.hero-h{font-size:28px;line-height:1.18;margin-bottom:14px}
@@ -302,7 +303,7 @@
     <div class="wrap nav-in">
       <a class="brand" href="/">
         <span class="logo-mark"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>
-        <span><span class="name">BaseRadar</span><span class="tag" style="display:block">CONTRATOS PÚBLICOS</span></span>
+        <span><span class="name">BaseRadar</span><span class="tag">CONTRATOS PÚBLICOS</span></span>
       </a>
       <div class="nav-links" id="land-nav-links">
         <a href="#como">Como funciona</a>
