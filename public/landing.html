@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>BaseRadar — Obras municipais, a tempo de concorrer</title>
-  <meta name="description" content="Radar de concursos para o responsável por concursos da construtora: obras municipais, avançar ou não com o alvará, caderno de encargos. Pro 29 € · Business 99 €. 7 dias grátis.">
+  <title>BaseRadar — Concursos públicos, a tempo de concorrer</title>
+  <meta name="description" content="Radar de concursos para o responsável por concursos: obras, energia e saúde. Contratos que se repetem, caderno de encargos, habilitação. Pro 29 € · Business 99 €. 7 dias grátis.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23173f35%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M4.5 12a7.5 7.5 0 0 1 15 0%22/%3E%3Cpath d=%22M8 12a4 4 0 0 1 8 0%22/%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%221.2%22 fill=%22%23173f35%22/%3E%3Cpath d=%22M12 12l6.5 6.5%22/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -72,8 +72,8 @@
     .hc-head .t{font-size:13px;font-weight:700}
     .hc-head .s{font-size:11.5px;color:var(--muted)}
     .opp{border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:46px minmax(0,1fr);gap:14px;align-items:center;margin-bottom:10px}
-    .opp .k{font-size:10px;font-weight:700;letter-spacing:0.08em;margin-bottom:2px}
-    .opp .ti{font-size:13.5px;font-weight:700}
+    .opp .k{font-size:10px;font-weight:700;letter-spacing:0.08em;margin-bottom:2px;overflow-wrap:anywhere}
+    .opp .ti{font-size:13.5px;font-weight:700;overflow-wrap:anywhere}
     .opp .su{font-size:11.5px;color:var(--ink2)}
     .injogo{background:var(--brand);border-radius:12px;padding:14px 16px;color:var(--on);display:flex;justify-content:space-between;align-items:center}
     .injogo .lab{font-size:10.5px;font-weight:700;letter-spacing:0.1em;color:var(--on-muted)}
@@ -237,9 +237,9 @@
       .stats .n{font-size:17px}
       .stats .l{font-size:11px;line-height:1.35}
       .herocard-glow{display:none}
-      .herocard{padding:16px}
-      .opp{grid-template-columns:40px minmax(0,1fr);gap:10px;padding:12px}
-      .opp .ti{font-size:13px}
+      .herocard{padding:14px}
+      .opp{grid-template-columns:40px minmax(0,1fr);gap:10px;padding:10px 12px}
+      .opp .ti{font-size:12.5px}
       .injogo{align-items:flex-start;gap:10px}
       .band{padding:48px 0}
       .feat-sect{padding-top:48px;padding-bottom:48px}
@@ -266,7 +266,7 @@
     <div class="wrap nav-in">
       <a class="brand" href="/">
         <span class="logo-mark"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>
-        <span><span class="name">BaseRadar</span><span class="tag" style="display:block">OBRAS E REABILITAÇÃO</span></span>
+        <span><span class="name">BaseRadar</span><span class="tag" style="display:block">CONTRATOS PÚBLICOS</span></span>
       </a>
       <div class="nav-links">
         <a href="#como">Como funciona</a>
@@ -282,9 +282,9 @@
 
   <div class="wrap hero">
     <div>
-      <div class="eyebrow">Responsável por concursos · obras e reabilitação</div>
-      <h1 class="hero-h">Obras municipais, <span class="u">antes de irem a concurso</span>.</h1>
-      <p class="lead">O BaseRadar cruza o histórico do Portal BASE com o alvará, os distritos e o valor em que a sua construtora concorre. Mostra as obras que se repetem, se o caderno vale a pena, e o que o alvará cobre — a tempo de montar a proposta.</p>
+      <div class="eyebrow">Responsável por concursos · obras, energia e saúde</div>
+      <h1 class="hero-h">Contratos públicos, <span class="u">antes de irem a concurso</span>.</h1>
+      <p class="lead">O BaseRadar cruza o histórico do Portal BASE com o perfil da sua empresa — CPV, distritos e o valor em que concorre. Mostra os contratos que se repetem, se o caderno vale a pena, e se está habilitado — a tempo de montar a proposta.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/app#/registo">Começar grátis — 7 dias</a>
         <span class="fine">Sem cartão. Pro a 29 € para começar. A mesa da equipa está no Business a 99 €.</span>
@@ -303,13 +303,17 @@
           <svg width="46" height="46" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="#c2543a" stroke-width="5" stroke-dasharray="116 138" stroke-linecap="round" transform="rotate(-90 26 26)"></circle><text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">84</text></svg>
           <div><div class="k" style="color:#c2543a">CONCURSO · 14 DIAS</div><div class="ti">Reabilitação da cobertura e caixilharias — Escola Básica de S. Pedro</div><div class="su">Município de Coimbra · 287 000 €</div></div>
         </div>
+        <div class="opp">
+          <svg width="46" height="46" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="#2c6353" stroke-width="5" stroke-dasharray="105 138" stroke-linecap="round" transform="rotate(-90 26 26)"></circle><text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">76</text></svg>
+          <div><div class="k" style="color:#2c6353">CONCURSO · 21 DIAS</div><div class="ti">Iluminação pública LED e eficiência energética</div><div class="su">Município de Setúbal · 640 000 €</div></div>
+        </div>
         <div class="opp" style="margin-bottom:14px">
-          <svg width="46" height="46" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="#c99a3c" stroke-width="5" stroke-dasharray="98 138" stroke-linecap="round" transform="rotate(-90 26 26)"></circle><text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">71</text></svg>
-          <div><div class="k" style="color:#8a6a1e">RENOVAÇÃO · CONTACTAR ATÉ 18 JUN</div><div class="ti">Conservação do parque escolar 2024–2027</div><div class="su">Aveiro · adjudicatário: Obras do Mondego, Lda · 415 000 €</div></div>
+          <svg width="46" height="46" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="#c99a3c" stroke-width="5" stroke-dasharray="95 138" stroke-linecap="round" transform="rotate(-90 26 26)"></circle><text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">69</text></svg>
+          <div><div class="k" style="color:#8a6a1e">RENOVAÇÃO · CONTACTAR ATÉ 18 JUN</div><div class="ti">Fornecimento de dispositivos médicos 2025–2027</div><div class="su">ULS do Alentejo · adjudicatário: Mediberia, SA · 510 000 €</div></div>
         </div>
         <div class="injogo">
-          <div><div class="lab">EM JOGO · 90 DIAS</div><div class="val">702 000 €</div></div>
-          <div class="r">1 concurso<br>1 renovação</div>
+          <div><div class="lab">EM JOGO · 90 DIAS</div><div class="val">1 437 000 €</div></div>
+          <div class="r">2 concursos<br>1 renovação</div>
         </div>
       </div>
     </div>
@@ -318,11 +322,11 @@
   <div class="band" id="como">
     <div class="wrap">
       <div class="sect-eyebrow">COMO FUNCIONA</div>
-      <h2 class="sect">Do alvará à proposta.</h2>
+      <h2 class="sect">Do perfil à proposta.</h2>
       <div class="steps">
-        <div class="step"><div class="num">01</div><div class="h">Diga o alvará e onde executa</div><p>Classes do alvará, distritos e o intervalo de valor em que concorre. O radar cruza o histórico do BASE e vigia as novas publicações todos os dias.</p></div>
-        <div class="step"><div class="num">02</div><div class="h">Veja as obras que se repetem</div><p>Concursos de reabilitação já publicados e contratos de conservação a terminar — com data de contacto cerca de 4 meses antes de o município relançar.</p></div>
-        <div class="step"><div class="num">03</div><div class="h">Decidir com o caderno</div><p>A IA lê o caderno de encargos: alvará exigido, critérios, cauções, alertas e dossier de resposta. A equipa marca o que vai e o que deixa.</p></div>
+        <div class="step"><div class="num">01</div><div class="h">Diga o que faz e onde concorre</div><p>CPV, distritos, intervalo de valor e certificações (alvará, ISO…). O radar cruza o histórico do BASE e vigia as novas publicações todos os dias.</p></div>
+        <div class="step"><div class="num">02</div><div class="h">Veja os contratos que se repetem</div><p>Concursos já publicados e contratos a terminar — com data de contacto cerca de 4 meses antes da entidade relançar.</p></div>
+        <div class="step"><div class="num">03</div><div class="h">Decidir com o caderno</div><p>A IA lê o caderno de encargos: habilitação exigida, critérios, cauções, alertas e dossier de resposta. A equipa marca o que vai e o que deixa.</p></div>
       </div>
     </div>
   </div>
@@ -347,19 +351,19 @@
           </div>
           <div class="scatter-x"><span>← prazo urgente</span><span>folgado</span></div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Radar de oportunidades<span class="fpill pro">Pro</span></b><div class="d">Matriz valor × prazo para a carteira de obras. As urgentes ficam no canto certo — o responsável por concursos sabe por onde começar.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de oportunidades<span class="fpill pro">Pro</span></b><div class="d">Matriz valor × prazo para a carteira. As urgentes ficam no canto certo — o responsável por concursos sabe por onde começar.</div></div>
       </div>
 
       <div class="fcard">
         <div class="viz">
           <div class="ficha">
-            <div class="fh"><span class="go">AVANÇAR</span><span class="fit">Adequação ao alvará <b>84/100</b></span></div>
-            <div class="fl"><span class="fk">Critérios</span><span>Preço 60% · Técnica 40%</span></div>
-            <div class="fl"><span class="fk">Habilitação</span><span>Alvará classe 3 · seguro RC · CCP art. 81.º</span></div>
-            <div class="fl flag"><span class="fk">Alerta</span><span>Visita ao local obrigatória (5 dias úteis)</span></div>
+            <div class="fh"><span class="go">AVANÇAR</span><span class="fit">Adequação à habilitação <b>76/100</b></span></div>
+            <div class="fl"><span class="fk">Critérios</span><span>Preço 70% · Técnica 30%</span></div>
+            <div class="fl"><span class="fk">Habilitação</span><span>ISO 50001 · CPV 50232100 · seguro RC</span></div>
+            <div class="fl flag"><span class="fk">Alerta</span><span>Garantia de 5 anos sobre as luminárias</span></div>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Análise IA + recomendação<span class="fpill pro">Pro</span></b><div class="d">A IA lê o caderno e devolve avançar / com reservas / não avançar confrontado com o <b>alvará</b> da empresa: critérios, habilitação e alertas — fundamentado nos documentos reais.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Análise IA + recomendação<span class="fpill pro">Pro</span></b><div class="d">A IA lê o caderno e devolve avançar / com reservas / não avançar confrontado com a <b>habilitação</b> da empresa (alvará, ISO, CPV): critérios e alertas — fundamentado nos documentos reais.</div></div>
       </div>
 
       <div class="fcard">
@@ -370,33 +374,33 @@
             <div class="ln" style="width:92%"></div>
             <div class="ln" style="width:78%"></div>
             <div class="ln" style="width:88%"></div>
-            <span class="ph">[EMPRESA]</span> <span class="ph">[Nº ALVARÁ]</span>
+            <span class="ph">[EMPRESA]</span> <span class="ph">[NIF]</span>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Gerador de resposta à candidatura<span class="fpill pro">Pro</span></b><div class="d">Dossier alinhado aos critérios do concurso: memória descritiva, declarações do CCP, DEUCP e lista de verificação — com o número de alvará e os campos da construtora.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Gerador de resposta à candidatura<span class="fpill pro">Pro</span></b><div class="d">Dossier alinhado aos critérios do concurso: memória descritiva, declarações do CCP, DEUCP e lista de verificação — com os campos da sua empresa.</div></div>
       </div>
 
       <div class="fcard">
         <div class="viz">
-          <div class="rnv"><span class="rl">Coimbra · EB S. Pedro</span><div class="rt"><i style="width:82%"></i><span class="flag" style="left:82%"></span></div><span class="rr">jul</span></div>
-          <div class="rnv"><span class="rl">Leiria · pavilhão</span><div class="rt"><i style="width:58%"></i><span class="flag" style="left:58%"></span></div><span class="rr">set</span></div>
-          <div class="rnv"><span class="rl">Évora · mercado</span><div class="rt"><i style="width:38%"></i><span class="flag" style="left:38%"></span></div><span class="rr">nov</span></div>
+          <div class="rnv"><span class="rl">Coimbra · escolas</span><div class="rt"><i style="width:82%"></i><span class="flag" style="left:82%"></span></div><span class="rr">jul</span></div>
+          <div class="rnv"><span class="rl">Setúbal · LED</span><div class="rt"><i style="width:58%"></i><span class="flag" style="left:58%"></span></div><span class="rr">set</span></div>
+          <div class="rnv"><span class="rl">ULS · reagentes</span><div class="rt"><i style="width:38%"></i><span class="flag" style="left:38%"></span></div><span class="rr">nov</span></div>
           <div style="display:flex;gap:14px;font-size:10.5px;color:var(--muted);margin-top:4px">
             <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;height:5px;background:var(--brand);border-radius:99px"></span>tempo até ao fim</span>
             <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--amber);border-radius:50%"></span>contactar</span>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Radar de renovações<span class="fpill pro">Pro</span></b><div class="d">Fim previsto de cada contrato de conservação ou reabilitação em curso e data sugerida de contacto — cerca de 4 meses antes do município relançar. Antecipar o concurso é aqui que rende.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de renovações<span class="fpill pro">Pro</span></b><div class="d">Fim previsto de cada contrato em curso e data sugerida de contacto — cerca de 4 meses antes da entidade relançar. Antecipar o concurso é aqui que rende.</div></div>
       </div>
 
       <div class="fcard">
         <div class="viz">
           <div class="qbar me"><span class="ql">A sua empresa</span><div class="qt"><i style="width:100%"></i></div><span class="qv">32%</span></div>
-          <div class="qbar"><span class="ql">Obras do Mondego</span><div class="qt"><i style="width:81%"></i></div><span class="qv">26%</span></div>
-          <div class="qbar"><span class="ql">Construtora do Lis</span><div class="qt"><i style="width:56%"></i></div><span class="qv">18%</span></div>
-          <div class="qbar"><span class="ql">Edificações Alentejo</span><div class="qt"><i style="width:37%"></i></div><span class="qv">12%</span></div>
+          <div class="qbar"><span class="ql">Lumicidade</span><div class="qt"><i style="width:81%"></i></div><span class="qv">26%</span></div>
+          <div class="qbar"><span class="ql">Mediberia, SA</span><div class="qt"><i style="width:56%"></i></div><span class="qv">18%</span></div>
+          <div class="qbar"><span class="ql">Obras do Mondego</span><div class="qt"><i style="width:37%"></i></div><span class="qv">12%</span></div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Inteligência competitiva<span class="fpill pro">Pro</span></b><div class="d">Quota, valores médios e municípios de cada concorrente na reabilitação. Saiba contra quem vai e onde o adjudicatário actual está vulnerável.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Inteligência competitiva<span class="fpill pro">Pro</span></b><div class="d">Quota, valores médios e entidades de cada concorrente na sua área. Saiba contra quem vai e onde o adjudicatário actual está vulnerável.</div></div>
       </div>
 
       <div class="fcard">
@@ -409,20 +413,20 @@
           <div class="szx"><span>Jan</span><span>Fev</span><span>Mar</span><span>Abr</span><span>Mai</span><span>Jun</span><span>Jul</span><span>Ago</span><span>Set</span><span>Out</span><span>Nov</span><span>Dez</span></div>
           <div style="font-size:10.5px;color:var(--muted);margin-top:7px">Pico de contratação: <strong style="color:var(--brand)">agosto–setembro</strong></div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Mapa e sazonalidade</b><div class="d">Onde os municípios estão a reabilitar, por distrito, e em que meses sai o concurso — para a equipa planear a capacidade da obra.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Mapa e sazonalidade</b><div class="d">Onde as entidades públicas estão a contratar, por distrito, e em que meses sai o concurso — para a equipa planear a capacidade.</div></div>
       </div>
 
       <div class="fcard">
         <div class="viz">
           <div class="mail">
             <div class="mh"><span class="md"></span>Resumo semanal · Segunda 08:00</div>
-            <div class="mr"><span class="k">2</span> concursos de reabilitação</div>
-            <div class="mr"><span class="k">1</span> pavilhão municipal a concurso</div>
-            <div class="mr"><span class="k amber">1</span> contrato de escolas a contactar</div>
+            <div class="mr"><span class="k">1</span> concurso de reabilitação</div>
+            <div class="mr"><span class="k">1</span> concurso de iluminação LED</div>
+            <div class="mr"><span class="k amber">1</span> contrato de dispositivos médicos a contactar</div>
             <div class="mr" style="color:var(--brand);font-weight:600">Abrir a mesa de concursos →</div>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Resumo semanal</b><div class="d">À segunda-feira às 08:00, no email do responsável por concursos: obras novas e contratos a entrar na janela de contacto. Sem abrir o BASE.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Resumo semanal</b><div class="d">À segunda-feira às 08:00, no email do responsável por concursos: contratos novos e a entrar na janela de contacto. Sem abrir o BASE.</div></div>
       </div>
 
       <div class="fcard">
@@ -431,12 +435,12 @@
             <div class="hub">Base<br>Radar</div>
             <div class="wires">
               <div class="wire"><span class="node">Gestão comercial</span></div>
-              <div class="wire"><span class="node">Gestão da obra</span></div>
+              <div class="wire"><span class="node">Sistema interno</span></div>
               <div class="wire"><span class="node">Avisos automáticos</span></div>
             </div>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Ligação à gestão comercial<span class="fpill biz">Business · 99€</span></b><div class="d">Os concursos e as renovações entram na gestão comercial da construtora — o comercial vê o prazo no sítio onde já trabalha. Exclusivo do plano Business (até 10 lugares).</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Ligação à gestão comercial<span class="fpill biz">Business · 99€</span></b><div class="d">Os concursos e as renovações entram na gestão comercial da empresa — o comercial vê o prazo no sítio onde já trabalha. Exclusivo do plano Business (até 10 lugares).</div></div>
       </div>
 
     </div>
@@ -452,7 +456,7 @@
         <div class="plan">
           <div class="pname">Grátis</div>
           <div class="pprice"><span class="n">0€</span><span class="per">/ para sempre</span></div>
-          <div class="ptag">Para vigiar obras municipais e concursos abertos, sem cartão.</div>
+          <div class="ptag">Para vigiar concursos abertos na sua área, sem cartão.</div>
           <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
           <div class="pfine"></div>
           <ul>
@@ -496,7 +500,7 @@
           <ul>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Pro</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Até 10 utilizadores</b></li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Ligação automática</b> à gestão comercial e à obra</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Ligação automática</b> à gestão comercial e aos sistemas internos</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Uso elevado de IA</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Exportação avançada</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Apoio prioritário</li>

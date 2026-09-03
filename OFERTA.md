@@ -10,7 +10,7 @@ Uma aplicação web que cruza o histórico completo da contratação pública po
 
 ## 2. Para quem é (ICP)
 
-O comprador-alvo é o **responsável por concursos de uma construtora de classe média** (alvará, pessoa comercial, orçamento de ferramentas) — não a micro de 3 operários, não a Mota-Engil.
+O produto serve **qualquer empresa que concorra a contratos públicos**. O primeiro sector a atacar é o **responsável por concursos de uma construtora de classe média** (alvará, pessoa comercial, orçamento de ferramentas) — não a micro de 3 operários, não a Mota-Engil. A seguir: energia/ambiente e dispositivos médicos / farmácia hospitalar.
 
 | Ordem | Sector | Porquê paga |
 |---|---|---|

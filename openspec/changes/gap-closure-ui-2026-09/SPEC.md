@@ -101,7 +101,7 @@ Legenda: **Coberto** · **Parcial** · **Em falta**. «Depois» = estado prometi
 | Template / checklist da proposta | **Coberto** (dossier Pro) | Checklist interativa em cima | PIP-08 |
 | Integração CRM | **Declarativa** (Business) | Slack/CRM/ERP **fora**; API fica como está | Landing Business vende CRM; código = API actual |
 | Equipa / seats | **Coberto** (Pro 2, Business 10) | Pipeline partilhado pela empresa | PIP-02 |
-| Radar de renovações | **Coberto** — diferenciador | Sem mudança de modelo; GTM vende-o como reabilitações municipais que **se repetem** | GTM-02 |
+| Radar de renovações | **Coberto** — diferenciador | Sem mudança de modelo; GTM vende-o com contratos que **se repetem** (obras, energia, saúde) | GTM-02 |
 
 ### 1.7 O que a análise pedia e a Fable **não** cobre
 
@@ -494,12 +494,12 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-01 — Hero fala ao responsável por concursos
 - **URL:** `/`
-- **Passa se:** eyebrow com «responsável por concursos» ou obras/reabilitação; H1 sobre obras municipais / concursos **antes de irem a concurso** (ou equivalente); lead com alvará ou construtora.
-- **Falha se:** «a sua atividade» genérica sem sector, ou «festas».
+- **Passa se:** eyebrow com «responsável por concursos»; H1 sobre concursos / contratos públicos **antes de irem a concurso**; lead com perfil, CPV ou habilitação; mais do que um sector nomeado (obras, energia, saúde).
+- **Falha se:** «festas», ou o hero só fala de construtoras/obras sem outro sector.
 
-#### GTM-02 — Cartão do hero é obra municipal
+#### GTM-02 — Cartão do hero mistura sectores
 - **URL:** `/`
-- **Passa se:** 1.º cartão = reabilitação/obra/edifício/escola/fachada, valor ≥ 100 000 €, município; 2.º = renovação de conservação/reabilitação.
+- **Passa se:** pelo menos um cartão = obras/reabilitação/escola ≥ 100 000 € **e** outro = energia/iluminação ou saúde/dispositivos, entidade pública, ≥ 100 000 €.
 - **Falha se:** «Festas da Cidade», «piromusical», «pirotecnia», «Grupo Luso Pirotecnia».
 
 #### GTM-03 — Business destacado; Pro é isco
@@ -509,7 +509,7 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
-- **Passa se:** mocks de obras/municípios/construtoras; resumo = email semanal (segunda 08:00); carteira de propostas ou mesa de trabalho mencionado.
+- **Passa se:** mocks de obras, energia ou saúde e entidades públicas; resumo = email semanal (segunda 08:00); carteira de propostas ou mesa de trabalho mencionado.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas».
 
 #### GTM-05 — Title, meta, CTAs
@@ -518,7 +518,7 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-06 — Registo
 - **URL:** `/app#/registo`
-- **Passa se:** exemplo construção/reabilitação/alvará/CPV de obras.
+- **Passa se:** os exemplos cobrem mais do que construção (obras **e** energia ou saúde / CPV).
 - **Falha se:** «pirotecnia» ou «fogo de artifício».
 
 Anti-regressão: após **qualquer** PR, repetir GTM-01, GTM-02, GTM-06 em produção.
