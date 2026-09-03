@@ -2,9 +2,9 @@
 <html lang="pt">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BaseRadar — Concursos de obras e reabilitação, antes de abrir</title>
-  <meta name="description" content="Radar de concursos para o diretor de obras da construtora: reabilitações municipais que se repetem, go/no-go com o seu alvará, caderno de encargos. Pro 29 € · Business 99 €. 7 dias grátis.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BaseRadar — Concursos de obras e reabilitação, a tempo de concorrer</title>
+  <meta name="description" content="Radar de concursos para o diretor de concursos da construtora: obras e reabilitações municipais, go/no-go com o seu alvará, caderno de encargos. Pro 29 € · Business 99 €. 7 dias grátis.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23173f35%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M4.5 12a7.5 7.5 0 0 1 15 0%22/%3E%3Cpath d=%22M8 12a4 4 0 0 1 8 0%22/%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%221.2%22 fill=%22%23173f35%22/%3E%3Cpath d=%22M12 12l6.5 6.5%22/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,9 +21,9 @@
     *{box-sizing:border-box}
     html,body{margin:0;max-width:100%;overflow-x:hidden}
     body{background:var(--bg);color:var(--ink);font-family:'Schibsted Grotesk',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+    .wrap{max-width:1240px;margin:0 auto;padding:0 48px;padding-left:max(48px, env(safe-area-inset-left, 0px));padding-right:max(48px, env(safe-area-inset-right, 0px));box-sizing:border-box}
     a{color:var(--brand);text-decoration:none}
     img,svg{max-width:100%;vertical-align:middle}
-    .wrap{max-width:1240px;margin:0 auto;padding:0 48px;box-sizing:border-box}
     .logo-mark{width:30px;height:30px;border-radius:8px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
     .btn{display:inline-flex;align-items:center;justify-content:center;font-weight:600;border-radius:10px;cursor:pointer;transition:background .12s ease,color .12s ease;text-decoration:none}
     .btn-primary{background:var(--brand);color:#fff}
@@ -35,8 +35,8 @@
 
     /* Nav */
     .nav{position:sticky;top:0;z-index:100;background:var(--panel);border-bottom:1px solid var(--line)}
-    .nav-in{display:flex;align-items:center;justify-content:space-between;padding:16px 0}
-    .brand{display:flex;align-items:center;gap:10px}
+    .nav-in{display:flex;align-items:center;justify-content:space-between;padding:16px 0;gap:12px;min-width:0}
+    .brand{display:flex;align-items:center;gap:10px;min-width:0}
     .brand .name{font-weight:700;font-size:15px;letter-spacing:-0.01em;color:var(--ink)}
     .brand .tag{font-size:10px;color:var(--muted);letter-spacing:0.06em}
     .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:var(--ink2)}
@@ -61,7 +61,7 @@
     .stats .l{font-size:12px;color:var(--muted)}
 
     /* Hero card */
-    .herocard-wrap{position:relative}
+    .herocard-wrap{position:relative;max-width:100%;min-width:0}
     .herocard-glow{position:absolute;inset:-28px -20px auto auto;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(23,63,53,0.08),transparent 70%)}
     .herocard{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 20px 60px rgba(20,30,25,.12);padding:22px 24px;position:relative}
     .hc-head{display:flex;align-items:center;gap:9px;margin-bottom:14px}
@@ -207,9 +207,9 @@
     .foot .links a:hover{color:var(--brand)}
 
     @media (max-width:960px){
-      .wrap{padding:0 22px}
+      .wrap{padding-left:max(24px, env(safe-area-inset-left, 0px));padding-right:max(24px, env(safe-area-inset-right, 0px))}
       .hero{grid-template-columns:1fr;gap:36px;padding:44px 0}
-      h1.hero-h{font-size:34px}
+      h1.hero-h{font-size:34px;max-width:none}
       .nav-links{display:none}
       .steps{grid-template-columns:1fr}
       .feat-grid{grid-template-columns:1fr;gap:32px}
@@ -217,6 +217,35 @@
       .feat-cards{grid-template-columns:1fr;gap:16px}
       .pricing{position:static}
       .plans{grid-template-columns:1fr;gap:16px}
+    }
+    @media (max-width:640px){
+      .wrap{padding-left:max(20px, env(safe-area-inset-left, 0px));padding-right:max(20px, env(safe-area-inset-right, 0px))}
+      .nav-in{padding:12px 0}
+      .nav-cta .enter{display:none}
+      .nav-cta .start{padding:8px 14px;font-size:12.5px;white-space:nowrap}
+      .brand .tag{font-size:9px;letter-spacing:0.04em}
+      .eyebrow{font-size:11px;padding:6px 12px;white-space:normal;line-height:1.35;max-width:100%}
+      h1.hero-h{font-size:28px;line-height:1.18;margin-bottom:14px}
+      .hero{padding:28px 0 36px;gap:28px}
+      .hero p.lead{font-size:15px;margin-bottom:22px;max-width:none}
+      .hero-cta{flex-direction:column;align-items:stretch;gap:10px}
+      .hero-cta .btn{width:100%;padding:14px 18px}
+      .hero-cta .fine{line-height:1.45}
+      .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px;margin-top:28px;padding-top:20px}
+      .stats .n{font-size:18px}
+      .herocard-glow{display:none}
+      .herocard{padding:16px}
+      .opp{grid-template-columns:40px minmax(0,1fr);gap:10px;padding:12px}
+      .opp .ti{font-size:13px}
+      .injogo{align-items:flex-start;gap:10px}
+      .band{padding:48px 0}
+      .feat-sect{padding:48px 0}
+      h2.sect{font-size:24px;margin-bottom:24px}
+      .step,.plan{padding:22px 20px}
+      .fcard .viz{padding:16px;min-height:0}
+      .fcard .fbody{padding:16px 18px 18px}
+      .foot{padding:20px 0 28px;align-items:flex-start}
+      .foot .links{flex-wrap:wrap;gap:14px}
     }
     @media (min-width:961px) and (max-width:1080px){
       .plan{padding:26px 20px 22px}
@@ -250,9 +279,9 @@
 
   <div class="wrap hero">
     <div>
-      <div class="eyebrow">PARA O DIRETOR DE CONCURSOS · OBRAS E REABILITAÇÃO</div>
-      <h1 class="hero-h">As reabilitações da câmara — <span class="u">antes do concurso abrir</span>.</h1>
-      <p class="lead">O BaseRadar cruza o histórico do Portal BASE com o alvará, os distritos e o valor em que a sua construtora concorre. Diz-lhe que obras municipais se repetem, se o caderno vale a pena, e o que o alvará cobre — a tempo de montar a proposta.</p>
+      <div class="eyebrow">Diretor de concursos · obras e reabilitação</div>
+      <h1 class="hero-h">Concursos de obras, <span class="u">antes de abrirem</span>.</h1>
+      <p class="lead">O BaseRadar cruza o Portal BASE com o alvará, os distritos e o valor da sua construtora. Mostra as obras municipais que se repetem, se o caderno vale a pena, e o que o alvará cobre — com tempo para montar a proposta.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/app#/registo">Começar grátis — 7 dias</a>
         <span class="fine">Sem cartão. Pro a 29 € para começar. A mesa da equipa está no Business a 99 €.</span>
@@ -354,7 +383,7 @@
             <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--amber);border-radius:50%"></span>contactar</span>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Radar de renovações<span class="fpill pro">Pro</span></b><div class="d">Fim previsto de cada contrato de conservação ou reabilitação em curso e data sugerida de contacto — 4 meses antes da câmara relançar. É aqui que o «antes do concurso abrir» ganha dinheiro.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Radar de renovações<span class="fpill pro">Pro</span></b><div class="d">Fim previsto de cada contrato de conservação ou reabilitação em curso e data sugerida de contacto — cerca de 4 meses antes do município relançar. Antecipar o concurso é aqui que rende.</div></div>
       </div>
 
       <div class="fcard">
@@ -403,7 +432,7 @@
             </div>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Integração com o CRM da equipa<span class="fpill biz">Business · 99€</span></b><div class="d">As reabilitações da câmara entram no CRM da construtora via API — o comercial vê o prazo no sítio onde já trabalha. Exclusivo do plano Business (até 10 lugares).</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Integração com o CRM da equipa<span class="fpill biz">Business · 99€</span></b><div class="d">Os concursos e as renovações entram no CRM da construtora via API — o comercial vê o prazo no sítio onde já trabalha. Exclusivo do plano Business (até 10 lugares).</div></div>
       </div>
 
     </div>
@@ -419,7 +448,7 @@
         <div class="plan">
           <div class="pname">Grátis</div>
           <div class="pprice"><span class="n">0€</span><span class="per">/ para sempre</span></div>
-          <div class="ptag">Para o diretor de concursos começar a vigiar as obras da sua câmara.</div>
+          <div class="ptag">Para vigiar obras municipais e concursos abertos, sem cartão.</div>
           <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
           <div class="pfine"></div>
           <ul>
@@ -438,7 +467,7 @@
         <div class="plan">
           <div class="pname">Pro</div>
           <div class="pprice"><span class="n">29€</span><span class="per">/ mês + IVA</span></div>
-          <div class="ptag">O isco: radar completo para um diretor de concursos começar sozinho.</div>
+          <div class="ptag">Radar completo para um diretor de concursos começar sozinho.</div>
           <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
           <div class="pfine">Experimente o Pro 7 dias grátis, sem cartão</div>
           <ul>
