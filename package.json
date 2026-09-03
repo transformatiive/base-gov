@@ -11,7 +11,7 @@
     "start": "node dist/index.js",
     "dev": "tsc --watch & node --watch dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/stripe.test.ts src/billing.test.ts src/account-lifecycle.test.ts src/fit-rules.test.ts src/habilitacao.test.ts src/pipeline.test.ts src/filters.test.ts src/profile-run-policy.test.ts src/display-name.test.ts"
+    "test": "tsx --test src/stripe.test.ts src/billing.test.ts src/account-lifecycle.test.ts src/fit-rules.test.ts src/habilitacao.test.ts src/pipeline.test.ts src/filters.test.ts src/profile-run-policy.test.ts src/display-name.test.ts src/ai-compile.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^10.0.1",

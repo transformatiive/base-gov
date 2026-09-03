@@ -244,7 +244,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      const r = await analyzeAnnouncement(id, profileId);
+      const force = Boolean((req.body as { force?: boolean })?.force);
+      const r = await analyzeAnnouncement(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
         await recordUsage({ companyId, userId, kind: 'analise_anuncio', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
@@ -262,7 +263,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      const r = await analyzeContract(id, profileId);
+      const force = Boolean((req.body as { force?: boolean })?.force);
+      const r = await analyzeContract(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
         await recordUsage({ companyId, userId, kind: 'analise_contrato', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });

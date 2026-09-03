@@ -442,8 +442,21 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .d-actions { display: flex; gap: 8px; flex: none; }
 .d-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; margin-top: 18px; }
 .d-grid > div { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.d-grid.ficha-layout {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-areas:
+    "tabs tabs"
+    "card price";
+  gap: 12px 16px;
+}
+.d-grid.ficha-layout > .ficha-tabs-wrap { display: contents; }
+.d-grid.ficha-layout .ficha-tabs { grid-area: tabs; margin-bottom: 0; }
+.d-grid.ficha-layout .ficha-tabs-wrap > .d-card { grid-area: card; min-width: 0; }
+.d-grid.ficha-layout > .d-side { grid-area: price; min-width: 0; }
 .ficha-tabs-wrap .ficha-tabs { margin-bottom: 12px; }
 .ficha-pane { min-width: 0; }
+.ai-inline { margin: 0; }
+.ai-inline-k { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--brand-text, #2c6353); margin: 0 0 10px; }
 .d-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; box-shadow: var(--shadow-sm); }
 .d-card > .t { font-size: 13px; font-weight: 700; margin-bottom: 14px; }
 .d-card > .t.row { display: flex; justify-content: space-between; align-items: baseline; }
@@ -482,7 +495,20 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .aificha-cards .sub { background: var(--panel); border: 1px solid var(--row-line); border-radius: 10px; padding: 12px 14px; }
 .aificha-cards .sub .h { font-weight: 700; margin-bottom: 6px; }
 .aificha-cards .sub .b { color: var(--ink-2); line-height: 1.6; }
-@media (max-width: 900px) { .d-grid { grid-template-columns: 1fr; } .d-side { order: -1; } .d-head { flex-direction: column; } .aificha-cards { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .d-grid { grid-template-columns: 1fr; }
+  .d-side { order: -1; }
+  .d-head { flex-direction: column; }
+  .aificha-cards { grid-template-columns: 1fr; }
+  .d-grid.ficha-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "tabs"
+      "price"
+      "card";
+  }
+  .d-grid.ficha-layout > .d-side { order: 0; }
+}
 
 /* ---------- Concorrentes (tabela com barra de quota) ---------- */
 .comp-table { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
@@ -655,8 +681,12 @@ button.lnk { background: none; border: 0; padding: 0; cursor: pointer; font: inh
 .pl-dd-menu button[aria-current="true"] { box-shadow: inset 0 0 0 1.5px var(--brand); }
 .pl-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 .pl-col { background: var(--panel, #f4f6f5); border-radius: 12px; padding: 10px; min-height: 180px; }
-.pl-col h3 { margin: 0 0 10px; font-size: 0.92rem; }
-.pl-card { background: #fff; border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.pl-col.drop-target { outline: 2px dashed var(--brand, #173f35); outline-offset: -2px; }
+.pl-col-h { margin: 0 0 10px; font-size: 0.92rem; border-radius: 8px; padding: 8px 10px; font-weight: 700; }
+.pl-col-h .pl-col-count { font-weight: 600; opacity: 0.8; }
+.pl-col-body { min-height: 80px; }
+.pl-card { background: #fff; border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: grab; }
+.pl-card.dragging { opacity: 0.45; cursor: grabbing; }
 .pl-card.overdue { border-color: #c2543a; background: #fdf4f2; }
 .pl-card .ti { font-weight: 600; font-size: 0.9rem; }
 .pl-card .su { font-size: 0.78rem; color: var(--muted, #7d8681); margin-top: 2px; }

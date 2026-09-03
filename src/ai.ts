@@ -9,6 +9,7 @@ import { negativeExamples, negativeExamplesBlock } from './ai-feedback.js';
 import { inferDistrict } from './districts.js';
 import { usageThisMonth, overSoftCap } from './aiUsage.js';
 import { effectivePlan } from './plans.js';
+import { compileAnalysisParts, sumUsage } from './ai-compile.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
@@ -80,6 +81,67 @@ function parseJson(text: string): unknown {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
+const PART_FICHA =
+  '{"resumo":"2-3 frases","criterios_adjudicacao":"...","prazos":{"propostas":"...","execucao":"..."},"preco_base":"...","caucao_garantias":"..."}';
+const PART_REQUISITOS =
+  '{"requisitos_habilitacao":["..."],"red_flags":["..."],"checklist":["passos concretos por ordem"]}';
+const PART_DECISAO =
+  '{"go_no_go":{"recomendacao":"go|condicional|no-go","justificacao":"1-2 frases"},"fit_atividade":{"score":0,"razao":"1 frase"}}';
+
+async function chatJson(model: string, system: Content, user: Content, maxTokens: number): Promise<{ parsed: unknown; usage: AiUsage }> {
+  const { content, usage } = await chat(model, system, user, maxTokens);
+  return { parsed: parseJson(content), usage };
+}
+
+/**
+ * Três pedidos LLM em paralelo (ficha / requisitos / decisão) sobre o mesmo
+ * prefixo cacheável, depois compileAnalysisParts. Se uma parte falhar, as
+ * outras entram na compilação; só falha se as três falharem.
+ */
+async function runSplitAnalysis(lead: string, docBlock: string, activityBlock: string): Promise<{ analysis: Record<string, unknown>; usage: AiUsage; model: string }> {
+  const model = config.aiModelDeep;
+  const user: Part[] = [cached(docBlock), plain(activityBlock)];
+  const specs: { schema: string; max: number }[] = [
+    { schema: PART_FICHA, max: 1400 },
+    { schema: PART_REQUISITOS, max: 1600 },
+    { schema: PART_DECISAO, max: 900 },
+  ];
+  const settled = await Promise.allSettled(
+    specs.map((s) =>
+      chatJson(
+        model,
+        [cached(lead), plain(`Responde APENAS com um objeto JSON válido com esta estrutura:\n${s.schema}`)],
+        user,
+        s.max,
+      ),
+    ),
+  );
+  const parsed: unknown[] = [{}, {}, {}];
+  const usages: AiUsage[] = [];
+  let ok = 0;
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      parsed[i] = r.value.parsed;
+      usages.push(r.value.usage);
+      ok++;
+    } else {
+      console.warn(`[ai] parte paralela ${i} falhou: ${String(r.reason).slice(0, 180)}`);
+    }
+  });
+  if (ok === 0) throw new Error('A análise IA falhou em todos os pedidos em paralelo');
+  return { analysis: compileAnalysisParts(parsed[0], parsed[1], parsed[2]), usage: sumUsage(...usages), model };
+}
+
+async function pdfTextFromBuf(buf: Buffer, maxChars: number): Promise<string | null> {
+  try {
+    const { text } = await pdfParse(buf);
+    const t = text.replace(/\s+\n/g, '\n').trim();
+    return t ? t.slice(0, maxChars) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPdfText(url: string, maxChars = 45_000): Promise<string | null> {
   try {
     const res = await fetch(url, {
@@ -90,9 +152,7 @@ async function fetchPdfText(url: string, maxChars = 45_000): Promise<string | nu
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > 20 * 1024 * 1024) return null;
-    const { text } = await pdfParse(buf);
-    const t = text.replace(/\s+\n/g, '\n').trim();
-    return t ? t.slice(0, maxChars) : null;
+    return pdfTextFromBuf(buf, maxChars);
   } catch (err) {
     console.warn(`[ai] falha a extrair PDF ${url}: ${String(err).slice(0, 120)}`);
     return null;
@@ -154,13 +214,6 @@ function extractDocLinks(html: string, base: string): string[] {
  * algumas exigem registo — nesses casos devolve vazio sem quebrar a análise.
  */
 async function fetchProcedureDocsText(pageUrl: string, maxChars = 55_000): Promise<{ text: string; count: number }> {
-  const budget = { chars: maxChars };
-  const parts: string[] = [];
-  let count = 0;
-  const grabPdf = (buf: Buffer) => pdfParse(buf).then(({ text }) => {
-    const t = text.replace(/\s+\n/g, '\n').trim();
-    if (t) { const s = t.slice(0, Math.max(0, budget.chars)); parts.push(s); budget.chars -= s.length; count++; }
-  }).catch(() => {});
   try {
     const res = await fetch(pageUrl, { headers: { 'User-Agent': UA, Accept: '*/*' }, signal: AbortSignal.timeout(35_000), redirect: 'follow' });
     if (!res.ok) return { text: '', count: 0 };
@@ -168,27 +221,55 @@ async function fetchProcedureDocsText(pageUrl: string, maxChars = 55_000): Promi
     const finalUrl = res.url || pageUrl;
     const buf = Buffer.from(await res.arrayBuffer());
     const looksHtml = /html/i.test(ct);
-    if (/pdf/i.test(ct) || (/\.pdf(\?|#|$)/i.test(finalUrl) && !looksHtml)) { await grabPdf(buf); return { text: parts.join(''), count }; }
-    if (/zip/i.test(ct) || (/\.zip(\?|#|$)/i.test(finalUrl) && !looksHtml)) { parts.push(...await pdfsFromZip(buf, budget)); return { text: parts.join('\n\n---\n\n'), count: parts.length }; }
-    // HTML → descobrir e descarregar documentos
+    if (/pdf/i.test(ct) || (/\.pdf(\?|#|$)/i.test(finalUrl) && !looksHtml)) {
+      const t = await pdfTextFromBuf(buf, maxChars);
+      return t ? { text: t, count: 1 } : { text: '', count: 0 };
+    }
+    if (/zip/i.test(ct) || (/\.zip(\?|#|$)/i.test(finalUrl) && !looksHtml)) {
+      const parts = await pdfsFromZip(buf, { chars: maxChars });
+      return { text: parts.join('\n\n---\n\n').slice(0, maxChars), count: parts.length };
+    }
     const links = extractDocLinks(buf.toString('utf8'), finalUrl).slice(0, 10);
-    for (const link of links) {
-      if (budget.chars <= 0 || count >= 6) break;
+    const grabbed = await Promise.all(links.map(async (link) => {
       try {
         const r = await fetch(link, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000), redirect: 'follow' });
-        if (!r.ok) continue;
+        if (!r.ok) return [] as string[];
         const c = r.headers.get('content-type') || '';
         const b = Buffer.from(await r.arrayBuffer());
-        if (b.length > 25 * 1024 * 1024) continue;
+        if (b.length > 25 * 1024 * 1024) return [];
         const html = /html/i.test(c);
-        if (/pdf/i.test(c) || (/\.pdf(\?|#|$)/i.test(link) && !html)) await grabPdf(b);
-        else if (/zip/i.test(c) || (/\.zip(\?|#|$)/i.test(link) && !html)) { const z = await pdfsFromZip(b, budget); parts.push(...z); count += z.length; }
-      } catch { /* documento individual falhou — continua */ }
+        if (/pdf/i.test(c) || (/\.pdf(\?|#|$)/i.test(link) && !html)) {
+          const t = await pdfTextFromBuf(b, 18_000);
+          return t ? [t] : [];
+        }
+        if (/zip/i.test(c) || (/\.zip(\?|#|$)/i.test(link) && !html)) {
+          return pdfsFromZip(b, { chars: 25_000 });
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    }));
+    const parts: string[] = [];
+    let remain = maxChars;
+    let count = 0;
+    for (const texts of grabbed) {
+      for (const t of texts) {
+        if (remain <= 0 || count >= 6) break;
+        const s = t.slice(0, remain);
+        if (s) {
+          parts.push(s);
+          remain -= s.length;
+          count++;
+        }
+      }
+      if (remain <= 0 || count >= 6) break;
     }
+    return { text: parts.join('\n\n---\n\n').slice(0, maxChars), count };
   } catch (err) {
     console.warn(`[ai] falha a recolher peças do procedimento ${pageUrl}: ${String(err).slice(0, 140)}`);
+    return { text: '', count: 0 };
   }
-  return { text: parts.join('\n\n---\n\n').slice(0, maxChars), count };
 }
 
 async function companyExtras(profileId: number): Promise<{ ctx: string; fewShot: string }> {
@@ -218,44 +299,33 @@ async function profileContext(profileId: number): Promise<string> {
 }
 
 /** Ficha de oportunidade + go/no-go para um anúncio, contextualizada à atividade. */
-export async function analyzeAnnouncement(announcementId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
-  const { rows: hit } = await pool.query(
-    'SELECT analysis, model FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
-    [announcementId, profileId]
-  );
-  if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+export async function analyzeAnnouncement(
+  announcementId: number,
+  profileId: number,
+  opts?: { force?: boolean },
+): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
+  if (!opts?.force) {
+    const { rows: hit } = await pool.query(
+      'SELECT analysis, model FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
+      [announcementId, profileId]
+    );
+    if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+  }
 
   const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [announcementId]);
   if (rows.length === 0) throw new Error('Anúncio não encontrado');
   const a = rows[0];
 
-  // Fonte 1: anúncio publicado em Diário da República (curto, mas oficial).
-  const pdfText = a.reference_url ? await fetchPdfText(a.reference_url) : null;
-  // Fonte 2: peças do procedimento na plataforma eletrónica (caderno de
-  // encargos / programa) — é o que dá critérios e requisitos reais à IA.
-  const proc = a.contracting_procedure_url ? await fetchProcedureDocsText(a.contracting_procedure_url) : { text: '', count: 0 };
-  const ctx = await profileContext(profileId);
-  const extra = await companyExtras(profileId);
+  const [pdfText, proc, ctx, extra] = await Promise.all([
+    a.reference_url ? fetchPdfText(a.reference_url) : Promise.resolve(null),
+    a.contracting_procedure_url ? fetchProcedureDocsText(a.contracting_procedure_url) : Promise.resolve({ text: '', count: 0 }),
+    profileContext(profileId),
+    companyExtras(profileId),
+  ]);
 
-  // Instruções ESTÁVEIS (iguais em todos os anúncios) → bloco cacheável.
-  const system = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), baseia os critérios de adjudicação, requisitos de habilitação, cauções, prazos e red flags NO TEXTO desses documentos (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação.
-Analisa o procedimento e responde APENAS com um objeto JSON válido com esta estrutura:
-{
- "resumo": "2-3 frases sobre o que a entidade quer comprar",
- "criterios_adjudicacao": "critério(s) e ponderações se indicados, ou 'não especificado no anúncio'",
- "prazos": {"propostas": "...", "execucao": "..."},
- "preco_base": "...",
- "caucao_garantias": "...",
- "requisitos_habilitacao": ["lista de requisitos, alvarás, certificações, seguros exigidos"],
- "red_flags": ["riscos, prazos apertados, critérios estranhos — [] se nenhum"],
- "checklist": ["passos concretos para preparar a proposta, por ordem"],
- "go_no_go": {"recomendacao": "go|condicional|no-go", "justificacao": "1-2 frases, considerando o fit com a atividade da empresa"},
- "fit_atividade": {"score": 0-100, "razao": "1 frase sobre a relevância para a atividade da empresa"}
-}`;
+  const lead = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
+Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), baseia os critérios de adjudicação, requisitos de habilitação, cauções, prazos e red flags NO TEXTO desses documentos (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação.`;
 
-  // Bloco de DOCUMENTOS/dados do anúncio: igual para o mesmo anúncio
-  // independentemente do perfil → cacheável (reutilizado entre empresas/perfis).
   const docBlock = `DADOS ESTRUTURADOS DO ANÚNCIO:
 - Designação: ${a.contract_designation}
 - Entidade adjudicante: ${a.contracting_entity}
@@ -268,12 +338,9 @@ Analisa o procedimento e responde APENAS com um objeto JSON válido com esta est
 
 ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${proc.text ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${proc.count} documento(s) da plataforma):\n${proc.text}` : ''}${!pdfText && !proc.text ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
 
-  // Contexto da atividade (varia por perfil) → bloco NÃO cacheável, no fim.
   const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}${extra.ctx ? `\n${extra.ctx}` : ''}${extra.fewShot ? `\n${extra.fewShot}` : ''}`;
 
-  const model = config.aiModelDeep;
-  const { content: raw, usage } = await chat(model, [cached(system)], [cached(docBlock), plain(activityBlock)], 3500);
-  const analysis = parseJson(raw);
+  const { analysis, usage, model } = await runSplitAnalysis(lead, docBlock, activityBlock);
 
   await pool.query(
     `INSERT INTO ai_analyses (announcement_id, profile_id, model, analysis) VALUES ($1,$2,$3,$4)
@@ -449,62 +516,59 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
 }
 
 /** Ficha de preparação para um CONTRATO: usa os documentos PDF guardados na BD. */
-export async function analyzeContract(contractId: number, profileId: number): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
-  const { rows: hit } = await pool.query(
-    'SELECT analysis, model FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
-    [contractId, profileId]
-  );
-  if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+export async function analyzeContract(
+  contractId: number,
+  profileId: number,
+  opts?: { force?: boolean },
+): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
+  if (!opts?.force) {
+    const { rows: hit } = await pool.query(
+      'SELECT analysis, model FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
+      [contractId, profileId]
+    );
+    if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+  }
 
   const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [contractId]);
   if (rows.length === 0) throw new Error('Contrato não encontrado');
   const c = rows[0];
-  const { rows: ents } = await pool.query(
-    `SELECT ce.role, e.name FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id WHERE ce.contract_id = $1`,
-    [contractId]
-  );
 
-  // documentos já descarregados (volume, com fallback a BYTEA) → texto
-  const { rows: docs } = await pool.query(
-    `SELECT id, file_name, content FROM documents WHERE contract_id = $1 AND download_ok
-     ORDER BY size_bytes DESC LIMIT 3`,
-    [contractId]
-  );
-  let docsText = '';
-  let docsUsed = 0;
-  for (const d of docs) {
+  const [{ rows: ents }, { rows: docs }, ctx, extra] = await Promise.all([
+    pool.query(
+      `SELECT ce.role, e.name FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id WHERE ce.contract_id = $1`,
+      [contractId]
+    ),
+    pool.query(
+      `SELECT id, file_name, content FROM documents WHERE contract_id = $1 AND download_ok
+       ORDER BY size_bytes DESC LIMIT 3`,
+      [contractId]
+    ),
+    profileContext(profileId),
+    companyExtras(profileId),
+  ]);
+
+  const extracted = await Promise.all(docs.map(async (d) => {
     try {
       const buf = (await getDocument(d.id)) ?? (d.content as Buffer | null);
-      if (!buf) continue;
-      const { text } = await pdfParse(buf);
-      const t = text.replace(/\s+\n/g, '\n').trim().slice(0, 18_000);
-      if (t) {
-        docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${t}`;
-        docsUsed++;
-      }
-    } catch { /* documento não-PDF ou ilegível */ }
+      if (!buf) return null;
+      const t = await pdfTextFromBuf(buf, 18_000);
+      return t ? { file_name: String(d.file_name), text: t } : null;
+    } catch {
+      return null;
+    }
+  }));
+  let docsText = '';
+  let docsUsed = 0;
+  for (const d of extracted) {
+    if (!d) continue;
+    docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${d.text}`;
+    docsUsed++;
     if (docsText.length > 40_000) break;
   }
 
-  const ctx = await profileContext(profileId);
-  const extra = await companyExtras(profileId);
-  // Instruções ESTÁVEIS → cacheáveis.
-  const system = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-Este é um CONTRATO já celebrado — o objetivo é preparar a empresa para a RENOVAÇÃO/próximo procedimento desta entidade.
-Responde APENAS com um objeto JSON válido:
-{
- "resumo": "2-3 frases: o que foi contratado e a quem",
- "criterios_adjudicacao": "critérios usados, se detetáveis nos documentos, ou 'não determinável'",
- "prazos": {"propostas": "n/a (contrato celebrado)", "execucao": "..."},
- "preco_base": "preço contratual e, se visível, preço base do procedimento",
- "caucao_garantias": "...",
- "requisitos_habilitacao": ["requisitos/alvarás/seguros detetados nos documentos"],
- "red_flags": ["riscos ou particularidades a ter em conta"],
- "checklist": ["o que a empresa deve preparar DESDE JÁ para vencer a renovação: quando contactar, que evidências reunir, que preço trabalhar"],
- "go_no_go": {"recomendacao": "go|condicional|no-go", "justificacao": "vale a pena perseguir a renovação? porquê"},
- "fit_atividade": {"score": 0-100, "razao": "1 frase"}
-}`;
-  // Dados + documentos do contrato: iguais por contrato → cacheáveis.
+  const lead = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
+Este é um CONTRATO já celebrado — o objetivo é preparar a empresa para a RENOVAÇÃO/próximo procedimento desta entidade.`;
+
   const docBlock = `DADOS DO CONTRATO:
 - Objeto: ${c.object_brief_description ?? c.description}
 - Entidades: ${ents.map((e) => `${e.role}: ${e.name}`).join('; ')}
@@ -516,9 +580,7 @@ Responde APENAS com um objeto JSON válido:
 ${docsText ? `\nDOCUMENTOS DO CONTRATO (texto extraído):${docsText}` : '\nSem documentos PDF descarregados para este contrato — analisa com os dados estruturados e indica essa limitação; sugere ativar o download de documentos na pesquisa para uma análise completa.'}`;
   const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}${extra.ctx ? `\n${extra.ctx}` : ''}${extra.fewShot ? `\n${extra.fewShot}` : ''}`;
 
-  const model = config.aiModelDeep;
-  const { content: raw, usage } = await chat(model, [cached(system)], [cached(docBlock), plain(activityBlock)], 3500);
-  const analysis = parseJson(raw);
+  const { analysis, usage, model } = await runSplitAnalysis(lead, docBlock, activityBlock);
   await pool.query(
     `INSERT INTO ai_contract_analyses (contract_id, profile_id, model, analysis) VALUES ($1,$2,$3,$4)
      ON CONFLICT (contract_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
