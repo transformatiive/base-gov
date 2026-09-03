@@ -1,4 +1,5 @@
 import { foldPt } from './fit-rules.js';
+import { normalizeFitScore } from './ai-compile.js';
 
 export type HabilitacaoStatus = 'tem' | 'nao_tem' | 'indeterminavel';
 
@@ -78,6 +79,12 @@ export function overlayHabilitacao(
       : {};
     if (String(gng.recomendacao ?? '') === 'go') gng.recomendacao = 'condicional';
     a.go_no_go = gng;
+  }
+  // PRF-06: certidões em falta não penalizam o fit de atividade (só a habilitação fica indeterminável).
+  if (a.fit_atividade && typeof a.fit_atividade === 'object' && !Array.isArray(a.fit_atividade)) {
+    const fit = { ...(a.fit_atividade as Record<string, unknown>) };
+    fit.score = normalizeFitScore(fit.score);
+    a.fit_atividade = fit;
   }
   return a;
 }

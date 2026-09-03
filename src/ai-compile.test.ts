@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileAnalysisParts, sumUsage } from './ai-compile.js';
+import { compileAnalysisParts, sumUsage, normalizeFitScore } from './ai-compile.js';
 
 test('compileAnalysisParts junta ficha, requisitos e decisão', () => {
   const out = compileAnalysisParts(
@@ -55,10 +55,26 @@ test('compileAnalysisParts sobrevive a partes vazias (falha parcial em paralelo)
   assert.equal((out.fit_atividade as { score: number }).score, 0);
 });
 
+test('compileAnalysisParts: 0,65 no modelo vira 65, não 1', () => {
+  const out = compileAnalysisParts({}, {}, { fit_atividade: { score: 0.65, razao: 'reabilitação' } });
+  assert.equal((out.fit_atividade as { score: number }).score, 65);
+});
+
 test('sumUsage soma tokens das partes paralelas', () => {
   assert.deepEqual(
     sumUsage({ tokens_in: 10, tokens_out: 2 }, { tokens_in: 5, tokens_out: 3 }, { tokens_in: 1, tokens_out: 1 }),
     { tokens_in: 16, tokens_out: 6 },
   );
   assert.deepEqual(sumUsage(), { tokens_in: 0, tokens_out: 0 });
+});
+
+test('normalizeFitScore: 0–100 inteiro, fracção 0–1, nunca 65→1', () => {
+  assert.equal(normalizeFitScore(65), 65);
+  assert.equal(normalizeFitScore(0.65), 65);
+  assert.equal(normalizeFitScore(82.4), 82);
+  assert.equal(normalizeFitScore(1), 1);
+  assert.equal(normalizeFitScore(0), 0);
+  assert.equal(normalizeFitScore(140), 100);
+  assert.equal(normalizeFitScore('65'), 65);
+  assert.equal(normalizeFitScore(undefined), 0);
 });

@@ -3,6 +3,7 @@ const app = document.getElementById('app');
 const topbar = document.getElementById('topbar');
 const whoami = document.getElementById('whoami');
 let pollTimer = null;
+let _viewGen = 0;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -32,6 +33,14 @@ function cleanDisplayText(s) {
   t = t.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, ' — ');
   t = t.replace(/(\S) - (\S)/g, '$1 — $2');
   t = t.replace(/[•●◦‣∙]/g, ' · ');
+  // Aspas partidas do BASE/Windows: ¿ no fim do token (ex. DA MAIA¿). Não mexer em «¿» espanhol ao início da frase.
+  t = t.replace(/(\p{L}|\p{N})¿(?=[\s.,;:)\]»"'”’]|$)/gu, '$1"');
+  t = t.replace(/¿(?=[\s»"'”’]|$)/g, '"');
+  t = t.replace(/´/g, "'");
+  t = t.replace(/`/g, "'");
+  t = t.replace(/Ã§/g, 'ç').replace(/Ã£/g, 'ã').replace(/Ã¡/g, 'á')
+    .replace(/Ã©/g, 'é').replace(/Ã­/g, 'í').replace(/Ã³/g, 'ó')
+    .replace(/Ãº/g, 'ú').replace(/Ãª/g, 'ê').replace(/Ã´/g, 'ô');
   t = t.replace(/[ \u00A0\u202F\u2007\u2009]+/g, ' ');
   t = t.replace(/(?:\s*·\s*)+/g, ' · ');
   t = t.replace(/(?:\s*—\s*)+/g, ' — ');
@@ -111,6 +120,30 @@ const endDaysBadge = (d) => {
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €');
+/** KPI quando o match local bateu o tecto (completed_truncated). */
+function formatKpiCount(n, truncated) {
+  const v = Number.isFinite(Number(n)) ? Math.max(0, Math.round(Number(n))) : 0;
+  const s = String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  return truncated && v > 0 ? `${s}+` : s;
+}
+/** Fit 0–100; fracções 0–1 (ex. 0,65) passam a 65. Nunca arredonda 65 para 1. */
+function displayFitScore(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  const scaled = n > 0 && n < 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
+}
+function clearClientSession() {
+  window._me = null;
+  window._caps = null;
+}
+function onHojeHash() {
+  const h = (location.hash || '#/').split('?')[0];
+  return h === '#/hoje' || h === '#/' || h === '';
+}
+function runInProgress(status) {
+  return status === 'pending' || status === 'running';
+}
 const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
 const fmtDatePt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const daysUntil = (v) => (v ? Math.round((new Date(v) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null);
@@ -542,14 +575,14 @@ async function startFichaAi({ kind, id, force = false }) {
       docNote = '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, active «Descarregar documentos PDF» na pesquisa/perfil.</p>';
     } else if (kind === 'announcement' && r.docs_used > 0) {
       docNote = `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`;
-    } else if (kind === 'announcement' && r.docs_used === 0) {
-      docNote = '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga directa ou com registo) — análise com o anúncio do DR e dados estruturados.</p>';
+    } else if (kind === 'announcement' && (r.docs_used === 0 || r.docs_used === -1)) {
+      docNote = '<p class="hint">A análise usa o anúncio do Diário da República e os dados estruturados. Sem peças/caderno acessíveis, a checklist de preparação não é gerada.</p>';
     }
     const dossier = kind === 'announcement'
       ? `<p style="margin-top:0.6rem"><button type="button" class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
          <div id="ai-template-out"></div>`
       : '';
-    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, r.model, itemType, id)}${docNote}
+    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, r.model, itemType, id, r.docs_used)}${docNote}
       <p style="margin-top:0.8rem"><button type="button" class="btn-secondary" id="ai-rerun-btn">${ico('refresh')} Voltar a analisar</button></p>
       ${dossier}`;
     hydrateChecklist(body);
@@ -915,7 +948,7 @@ function renderLogin() {
         <p><button type="submit">Entrar</button></p>
       </form>
       <p class="login-foot"><a href="#/recuperar">Esqueci-me da password</a></p>
-      <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis — 7 dias</a></p>
+      <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis</a></p>
     </div>`;
   localizeValidation(document.getElementById('login-form'));
   document.getElementById('login-form').onsubmit = async (e) => {
@@ -923,6 +956,8 @@ function renderLogin() {
     const fd = new FormData(e.target);
     try {
       await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }) });
+      clearClientSession();
+      await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
       document.getElementById('login-error').textContent = err.message === 'unauthorized' ? 'Credenciais inválidas' : err.message;
@@ -930,7 +965,7 @@ function renderLogin() {
   };
 }
 
-/* ---------- Inscrição (7 dias grátis) ---------- */
+/* ---------- Inscrição (plano Grátis; trial Pro é opt-in) ---------- */
 async function renderRegister() {
   topbar.hidden = true;
   hideTrialBanner();
@@ -939,7 +974,7 @@ async function renderRegister() {
     <div class="card register-box">
       ${wordmark(24)}
       <h2 style="margin:0.4rem 0 0.2rem">Comece grátis</h2>
-      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado. Pode experimentar o Pro 7 dias grátis a qualquer momento.</p>
+      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado. O teste Pro de 7 dias activa-se depois, nos planos.</p>
       <form id="reg-form">
         <div class="reg-grid">
           <div><label>Primeiro nome *</label><input type="text" name="first_name" required></div>
@@ -997,6 +1032,25 @@ async function renderRegister() {
   };
   document.getElementById('reg-cpv-btn').onclick = doSearch;
   document.getElementById('reg-cpv-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } };
+  const termsInp = document.querySelector('#reg-form [name=terms]');
+  const maybeHintMedicalCpv = async () => {
+    const raw = String(termsInp?.value || '');
+    if (!/dispositiv[oa]s?\s+m[eé]dic/i.test(raw)) return;
+    if ([...chosen.keys()].some((c) => c.replace(/\D/g, '').startsWith('331'))) return;
+    try {
+      const d = await fetch('/api/public/cpv?q=' + encodeURIComponent('dispositivos médicos')).then((r) => r.json());
+      const pick = (d.items || []).find((c) => String(c.code).replace(/\D/g, '').startsWith('331'))
+        || { code: '33100000-1', designation: 'Equipamento médico' };
+      chosen.set(pick.code, pick.designation);
+      renderChips();
+      const box = document.getElementById('reg-cpv-results');
+      if (box && !box.dataset.hinted) {
+        box.dataset.hinted = '1';
+        box.insertAdjacentHTML('afterbegin', '<p class="hint">Adicionámos o CPV de dispositivos médicos (331) para o radar privilegiar fornecimento de equipamento, não obras hospitalares.</p>');
+      }
+    } catch { /* silencioso */ }
+  };
+  if (termsInp) termsInp.addEventListener('blur', () => { maybeHintMedicalCpv(); });
   localizeValidation(document.getElementById('reg-form'));
 
   document.getElementById('reg-form').onsubmit = async (e) => {
@@ -1009,16 +1063,19 @@ async function renderRegister() {
     if (terms.length === 0 && cpv_codes.length === 0) {
       errBox.textContent = 'Escolha pelo menos uma palavra-chave ou código CPV da sua atividade.'; return;
     }
+    await maybeHintMedicalCpv();
+    const cpvAfterHint = [...chosen.keys()];
     const btn = document.getElementById('reg-submit');
     btn.disabled = true; btn.textContent = 'A criar conta…';
     try {
       await api('/api/auth/register', { method: 'POST', body: JSON.stringify({
         first_name: fd.get('first_name'), last_name: fd.get('last_name'), phone: fd.get('phone'),
         email: fd.get('email'), password: fd.get('password'),
-        company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes,
+        company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes: cpvAfterHint,
       }) });
-      window._me = null;
+      clearClientSession();
       try { sessionStorage.setItem('br_onboard', '1'); } catch { /* ignore */ }
+      await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
       errBox.textContent = err.message; btn.disabled = false; btn.textContent = 'Criar conta e começar';
@@ -1085,7 +1142,7 @@ const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDi
 const PLAN_FEATURES = {
   free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
   pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Ligação à gestão comercial e aos sistemas internos', 'Uso elevado de IA', 'Exportação avançada'],
+  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', 'Teto de IA mais alto (250 análises/mês)', 'Apoio prioritário'],
 };
 
 function closeAccountConfirm() {
@@ -1908,7 +1965,7 @@ async function renderProfiles() {
         <td><strong>${esc(p.name)}</strong></td>
         <td class="muted">${p.terms.map(esc).join(', ')}</td>
         <td>${esc(p.schedule)}${p.include_announcements ? ' · anúncios' : ''}</td>
-        <td>${p.n_contracts} / ${p.n_announcements}</td>
+        <td>${formatKpiCount(p.n_contracts, p.contracts_truncated || p.last_run?.contracts_truncated)} / ${formatKpiCount(p.n_announcements, p.announcements_truncated || p.last_run?.announcements_truncated)}</td>
         <td>${p.last_run ? `${badge(p.last_run.status)} <span class="muted">+${p.last_run.new_contracts ?? 0}c +${p.last_run.new_announcements ?? 0}a</span>` : '—'}</td>
         <td>${p.last_run_at ? new Date(p.last_run_at).toLocaleString('pt-PT') : '—'}</td>
       </tr>`).join('');
@@ -2842,8 +2899,10 @@ async function maybeOnboarding() {
 }
 
 /* ---------- Hoje: painel diário de ação (agrega os insights existentes) ---------- */
-async function renderHoje() {
+async function renderHoje(opts = {}) {
+  const gen = _viewGen;
   const profilesData = await api('/api/profiles');
+  if (gen !== _viewGen || !onHojeHash()) return;
   const profiles = profilesData.items;
   if (profiles.length === 0) return renderRadar('opportunities'); // reencaminha ao onboarding
 
@@ -2853,7 +2912,7 @@ async function renderHoje() {
   if (!ctx && pid) setCtx(pid);
   const active = profiles.find((p) => String(p.id) === pid) ?? profiles[0];
 
-  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  if (!opts.silent) app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
   const q = `?profile_id=${pid}`;
   const freeHoje = !can('score_fit');
   const [opp, prof, mapData, compData, pipe, openAnns] = await Promise.all([
@@ -2864,6 +2923,7 @@ async function renderHoje() {
     api('/api/pipeline').catch(() => ({ items: [] })),
     freeHoje ? api(`/api/announcements${q}&open=1&size=50`).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
   ]);
+  if (gen !== _viewGen || !onHojeHash()) return;
   const daysUntil = (dateStr) => {
     if (!dateStr) return null;
     const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
@@ -2898,6 +2958,11 @@ async function renderHoje() {
   const jogoRenov = jogo.filter((o) => o.type === 'renovacao').length;
   const nRenov12 = items.filter((o) => o.type === 'renovacao').length;
   const totals = prof?.totals ?? {};
+  const recolhaPendente = runInProgress(active.last_run?.status)
+    || runInProgress(prof?.runs?.[0]?.status)
+    || (((totals.n_announcements ?? active.n_announcements ?? 0) === 0
+      && (totals.n_contracts ?? active.n_contracts ?? 0) === 0)
+      && runInProgress(active.last_run?.status || prof?.runs?.[0]?.status));
   const fitCache = window._fitCache?.[q] ?? {};
   const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
 
@@ -2980,8 +3045,9 @@ async function renderHoje() {
     <div class="hoje-head">
       <div>
         <div class="day">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
-        <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : 'Sem prazos urgentes esta semana.'}</h1>
+        <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : recolhaPendente ? 'A primeira recolha ainda está a decorrer.' : 'Sem prazos urgentes esta semana.'}</h1>
         ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
+        ${recolhaPendente ? '<p class="hint" style="margin:.5rem 0 0">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>' : ''}
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex:none">
         <select id="ctx-select" aria-label="Atividade">
@@ -3014,7 +3080,7 @@ async function renderHoje() {
           <div class="injogo-stats">
             <div><div class="n">${totals.open_announcements ?? jogoConc}</div><div class="l">concursos abertos</div></div>
             <div><div class="n">${nRenov12}</div><div class="l">renovações 12m</div></div>
-            <div><div class="n">${(totals.n_contracts ?? 0).toLocaleString('pt-PT')}</div><div class="l">contratos</div></div>
+            <div><div class="n">${formatKpiCount(totals.n_contracts ?? active.n_contracts ?? 0, totals.contracts_truncated || active.contracts_truncated)}</div><div class="l">contratos</div></div>
           </div>
         </div>
         ${money ? `<div class="mini-card">
@@ -3028,6 +3094,27 @@ async function renderHoje() {
   const sel = document.getElementById('ctx-select');
   if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
   maybeOnboarding();
+
+  const stillRunning = recolhaPendente;
+  if (stillRunning) {
+    stopPolling();
+    pollTimer = setInterval(async () => {
+      if (!onHojeHash()) { stopPolling(); return; }
+      try {
+        const data = await api('/api/profiles');
+        const p = data.items.find((x) => String(x.id) === pid) ?? data.items[0];
+        if (!p) { stopPolling(); return; }
+        const st = p.last_run?.status;
+        const done = st === 'completed' || st === 'completed_truncated' || st === 'failed';
+        const jumped = Number(p.n_announcements) !== Number(active.n_announcements)
+          || Number(p.n_contracts) !== Number(active.n_contracts);
+        if (done || jumped) {
+          stopPolling();
+          await renderHoje({ silent: true });
+        }
+      } catch { stopPolling(); }
+    }, 3500);
+  }
 }
 
 async function renderPipeline() {
@@ -3062,7 +3149,7 @@ async function renderPipeline() {
   let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Carteira</h1>
     <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — arraste as cartas entre colunas. Estados partilhados.</div></div></div>`;
   if (!(items || []).length) {
-    html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
+    html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="${can('score_fit') ? '#/radar/opportunities' : '#/radar/announcements'}">${can('score_fit') ? 'Oportunidades' : 'Concursos'}</a>.</p>`;
   } else {
     html += `<div class="pl-board">`;
     for (const col of cols) {
@@ -3206,17 +3293,19 @@ async function renderRadar(tab = 'opportunities') {
     ${active ? `<div class="cards" id="radar-stats"></div>` : ''}
     <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
 
-  document.getElementById('ctx-select').onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
+  const ctxSel = document.getElementById('ctx-select');
+  if (ctxSel) ctxSel.onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
 
   if (active) {
     const fillStats = (p) => {
       const holder = document.getElementById('radar-stats');
       if (!holder) return;
-      const running = p.runs?.[0] && p.runs[0].status !== 'completed' && p.runs[0].status !== 'failed';
+      const st = p.runs?.[0]?.status;
+      const running = runInProgress(st);
       holder.innerHTML = `
-        <div class="stat"><div class="n">${p.totals.n_contracts.toLocaleString('pt-PT')}</div><div class="l">Contratos</div></div>
+        <div class="stat"><div class="n">${formatKpiCount(p.totals.n_contracts, p.totals.contracts_truncated)}</div><div class="l">Contratos</div></div>
         <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
-        <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
+        <div class="stat"><div class="n">${formatKpiCount(p.totals.n_announcements, p.totals.announcements_truncated)}</div><div class="l">Anúncios</div></div>
         <div class="stat accent"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>` +
         (p.totals.n_contracts === 0 && running
           ? `<p class="hint" style="flex-basis:100%">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>`
@@ -3309,7 +3398,7 @@ async function renderAnnouncement(id) {
   startFichaAi({ kind: 'announcement', id });
 }
 
-function renderAiFicha(an, cached, model, itemType, itemId) {
+function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
   const rec = an.go_no_go?.recomendacao;
   const badgeGo = { go: ['AVANÇAR', '#2c6353', 'go'], condicional: ['COM RESERVAS', '#b26a00', 'condicional'], 'no-go': ['NÃO AVANÇAR', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
   const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
@@ -3318,15 +3407,19 @@ function renderAiFicha(an, cached, model, itemType, itemId) {
     : (an.requisitos_habilitacao?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const checks = Array.isArray(an.checklist) ? an.checklist : [];
+  const emptyChecklistHint = (docsUsed === -1 || docsUsed === 0 || !checks.length)
+    ? '<p class="muted">A análise é do anúncio do Diário da República. A checklist de preparação precisa das peças do procedimento (caderno de encargos).</p>'
+    : '<p class="muted">Gere a análise de IA para obter a lista de verificação de preparação</p>';
   const checkHtml = itemType && itemId
     ? (checks.length
       ? `<div class="check-list" data-type="${esc(itemType)}" data-id="${itemId}">${checks.map((t) => `<label><input type="checkbox" data-text="${esc(t)}"> ${esc(t)}</label>`).join('')}<p class="muted" id="ck-prog"></p></div>`
-      : '<p class="muted">Gere a análise de IA para obter a lista de verificação de preparação</p>')
+      : emptyChecklistHint)
     : list(an.checklist);
+  const fitScore = displayFitScore(an.fit_atividade?.score);
   return `
     <div class="ai-verdict">
       <span class="ai-badge" style="background:${badgeGo[1]}">${badgeGo[0]}</span>
-      ${an.fit_atividade ? `<span>Adequação à atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
+      ${an.fit_atividade ? `<span>Adequação à atividade: <strong style="color:${fitColor(fitScore)}">${fitScore}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
     </div>
     ${an.go_no_go?.justificacao ? `<div class="ai-callout ${badgeGo[2]}">${esc(an.go_no_go.justificacao)}</div>` : ''}
     <dl class="detail">
@@ -3418,10 +3511,12 @@ async function wireFichaPipeline(type, id) {
 
 /* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
 async function renderDigest() {
+  const gen = _viewGen;
   let ctx = getCtx();
   if (!ctx) {
     try {
       const profilesData = await api('/api/profiles');
+      if (gen !== _viewGen || location.hash.split('?')[0] !== '#/digest') return;
       const first = profilesData.items?.[0];
       if (first) { ctx = String(first.id); setCtx(ctx); }
     } catch { /* sem perfis */ }
@@ -3429,6 +3524,7 @@ async function renderDigest() {
   if (!ctx) { location.hash = '#/'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A gerar o digest da semana…</p></div>';
   const d = await api(`/api/profiles/${ctx}/digest.json`);
+  if (gen !== _viewGen || location.hash.split('?')[0] !== '#/digest') return;
   app.innerHTML = `
     <div class="toolbar">
       <div>
@@ -3467,6 +3563,8 @@ async function renderDigest() {
         : '<p class="muted">Sem renovações no horizonte de 90 dias.</p>'}
     </div>
     <p class="muted">Fonte: Portal BASE — IMPIC / dados.gov.pt</p>`;
+  const ctxSel = document.getElementById('ctx-select');
+  if (ctxSel) ctxSel.onchange = (e) => { setCtx(e.target.value); renderDigest(); };
 }
 
 /* ---------- Dados abertos (histórico oficial IMPIC) ---------- */
@@ -4004,6 +4102,7 @@ async function route() {
   stopPolling();
   hideMatrixTip();
   setAppNavOpen(false);
+  _viewGen++;
   _fichaAiGen++;
   const hash = location.hash || '#/';
   const hashBase = hash.split('?')[0];
@@ -4019,12 +4118,12 @@ async function route() {
     else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
     a.classList.toggle('active', on);
   });
-  if (hashBase === '#/login') { window._me = null; return renderLogin(); }
-  if (hashBase === '#/recuperar') { window._me = null; return renderForgot(); }
-  if (hashBase === '#/repor-password') { window._me = null; return renderReset(); }
-  if (hashBase === '#/registo') { window._me = null; return renderRegister(); }
+  if (hashBase === '#/login') { clearClientSession(); return renderLogin(); }
+  if (hashBase === '#/recuperar') { clearClientSession(); return renderForgot(); }
+  if (hashBase === '#/repor-password') { clearClientSession(); return renderReset(); }
+  if (hashBase === '#/registo') { clearClientSession(); return renderRegister(); }
   const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
-  if (invite) { window._me = null; return renderAcceptInvite(decodeURIComponent(invite[1])); }
+  if (invite) { clearClientSession(); return renderAcceptInvite(decodeURIComponent(invite[1])); }
 
   // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
   // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
@@ -4085,7 +4184,7 @@ async function route() {
 }
 
 document.getElementById('logout-btn').onclick = async () => {
-  window._me = null;
+  clearClientSession();
   setAppNavOpen(false);
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   location.hash = '#/login';

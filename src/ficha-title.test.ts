@@ -23,19 +23,21 @@ function extractFn(src: string, name: string): string {
 
 const appJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../public/app.js'), 'utf8');
 const escSrc = "const esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));";
-const names = ['unwrapDisplayQuotes', 'cleanDisplayText', 'normalizeFichaCompare', 'fichaTitleParts', 'fichaHeadHtml', 'escTitle', 'escTitleMax'];
+const names = ['unwrapDisplayQuotes', 'cleanDisplayText', 'normalizeFichaCompare', 'fichaTitleParts', 'fichaHeadHtml', 'escTitle', 'escTitleMax', 'formatKpiCount', 'displayFitScore'];
 const ctx = createContext({ exports: {} });
 runInContext(
   `${escSrc}\n${names.map((n) => extractFn(appJs, n)).join('\n')}\n` +
-    'this.cleanDisplayText = cleanDisplayText; this.fichaTitleParts = fichaTitleParts; this.fichaHeadHtml = fichaHeadHtml; this.escTitle = escTitle;',
+    'this.cleanDisplayText = cleanDisplayText; this.fichaTitleParts = fichaTitleParts; this.fichaHeadHtml = fichaHeadHtml; this.escTitle = escTitle; this.formatKpiCount = formatKpiCount; this.displayFitScore = displayFitScore;',
   ctx,
 );
 
-const { cleanDisplayText, fichaTitleParts, fichaHeadHtml, escTitle } = ctx as {
+const { cleanDisplayText, fichaTitleParts, fichaHeadHtml, escTitle, formatKpiCount, displayFitScore } = ctx as {
   cleanDisplayText: (s: unknown) => string;
   fichaTitleParts: (brief: unknown, extra: unknown) => { ref: string; title: string; lead: string };
   fichaHeadHtml: (brief: unknown, extra: unknown, fallback?: string) => string;
   escTitle: (s: unknown) => string;
+  formatKpiCount: (n: unknown, truncated: boolean) => string;
+  displayFitScore: (score: unknown) => number;
 };
 
 const SAMPLE = '2324000137 - "Transição Digital na Segurança Social\u0096\u0096 Aquisição de serviços de testes e acreditação de software para o Projeto Portal Unificado da Segurança Social (SSD Nova Geração\u0096 Arquitetura da Informação e Design Visual), ao abrigo dos Acordos Quadro do I.I., IP.\u0096 Programas Informáticos\u0096 Lote 1 (Serviços de Testes e Acreditação de Software)';
@@ -120,4 +122,23 @@ test('fallback quando o brief está vazio', () => {
   const html = fichaHeadHtml('', null, 'Contrato #9');
   assert.match(html, /<h1>Contrato #9<\/h1>/);
   assert.equal(html.includes('d-ref'), false);
+});
+
+test('cleanDisplayText troca ¿ residual de aspas (DA MAIA¿) e não um ¿ espanhol inicial', () => {
+  assert.equal(cleanDisplayText('CONSTRUÇÃO DO JARDIM DE INFÂNCIA DA MAIA¿').includes('¿'), false);
+  assert.match(cleanDisplayText('CONSTRUÇÃO DO JARDIM DE INFÂNCIA DA MAIA¿'), /DA MAIA/);
+  assert.match(cleanDisplayText('¿Dónde está el pliego?'), /¿Dónde/);
+  assert.equal(cleanDisplayText('ReabilitaÃ§Ã£o de cobertura').includes('Ã'), false);
+  assert.match(cleanDisplayText('ReabilitaÃ§Ã£o de cobertura'), /Reabilitação/);
+});
+
+test('displayFitScore: 65 fica 65; 0,65 vira 65; não mostra 1', () => {
+  assert.equal(displayFitScore(65), 65);
+  assert.equal(displayFitScore(0.65), 65);
+  assert.equal(displayFitScore(1), 1);
+});
+
+test('formatKpiCount acrescenta + quando truncado', () => {
+  assert.equal(formatKpiCount(2000, true), '2\u00a0000+');
+  assert.equal(formatKpiCount(55, false), '55');
 });
