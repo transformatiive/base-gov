@@ -13,13 +13,13 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-01 — Hero fala ao responsável por concursos
 - **URL:** `/` (sem login)
 - **Passos:** Ler o H1, o lead e o eyebrow.
-- **Passa se:** o eyebrow contém «responsável por concursos» ou «obras» / «reabilitação»; o H1 fala de obras municipais / concursos **antes de irem a concurso** (ou equivalente: a tempo de concorrer); o lead menciona alvará **ou** construtora **ou** reabilitação municipal.
-- **Falha se:** o H1 ou o lead vendem «a sua atividade» genérica sem sector, ou «festas».
+- **Passa se:** o eyebrow contém «responsável por concursos»; o H1 fala de concursos / contratos públicos **antes de irem a concurso** (ou equivalente); o lead menciona perfil da empresa **ou** CPV **ou** habilitação. O copy não se limita a construtoras: eyebrow ou exemplos nomeiam mais do que um sector (obras, energia, saúde).
+- **Falha se:** o H1 ou o lead vendem «festas», ou o hero só fala de construtoras/obras sem outro sector.
 
-### GTM-02 — Cartão do hero é uma obra municipal, não uma festa
+### GTM-02 — Cartão do hero mistura sectores, não é uma festa
 - **URL:** `/`
-- **Passos:** Ler os dois cartões de oportunidade no hero.
-- **Passa se:** o primeiro cartão é um concurso de **reabilitação / obra / edifício / escola / cobertura / fachada** com valor ≥ 100 000 € e uma câmara/município; o segundo é uma **renovação** de conservação/reabilitação.
+- **Passos:** Ler os cartões de oportunidade no hero.
+- **Passa se:** há pelo menos um concurso de **obras / reabilitação / escola** (≥ 100 000 €, município) **e** pelo menos outro sector de contratação pública (energia / iluminação **ou** saúde / dispositivos médicos), com entidade pública e valor ≥ 100 000 €.
 - **Falha se:** aparece «Festas da Cidade», «piromusical», «pirotecnia», «Barcelos · Festas», «Grupo Luso Pirotecnia».
 
 ### GTM-03 — Business é a oferta da equipa; Pro é o isco
@@ -31,7 +31,7 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
 - **Passos:** Percorrer os cartões (renovações, concorrentes, resumo semanal).
-- **Passa se:** as mini-visualizações usam nomes de **obras/municípios/construtoras**; o resumo promete email semanal; existe (ou o copy promete) carteira de propostas ou mesa de trabalho.
+- **Passa se:** as mini-visualizações usam nomes de **obras, energia ou saúde** e entidades públicas; o resumo promete email semanal; existe (ou o copy promete) carteira de propostas ou mesa de trabalho.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas», «pirotecnia».
 
 ### GTM-05 — CTA e meta
@@ -42,7 +42,7 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-06 — Registo já não exemplifica com fogo de artifício
 - **URL:** `/app#/registo`
 - **Passos:** Ler o parágrafo da atividade e o placeholder do CPV.
-- **Passa se:** o exemplo é construção / reabilitação / alvará / CPV de obras.
+- **Passa se:** os exemplos cobrem mais do que construção (obras **e** energia ou saúde / CPV).
 - **Falha se:** «pirotecnia» ou «fogo de artifício».
 
 ---

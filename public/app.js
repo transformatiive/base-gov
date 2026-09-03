@@ -591,11 +591,11 @@ async function renderRegister() {
         </div>
 
         <label style="margin-top:0.8rem">A sua atividade</label>
-        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, conservação de escolas, pavilhão, alvará) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
+        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, iluminação pública, dispositivos médicos) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
         <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
         <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
         <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
-          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, reabilitação, conservação)" style="flex:1">
+          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, energia, saúde)" style="flex:1">
           <button type="button" class="btn-secondary" id="reg-cpv-btn">${ico('search')} Procurar</button>
         </div>
         <div id="reg-cpv-results" style="margin-top:0.4rem"></div>
@@ -720,7 +720,7 @@ const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDi
 const PLAN_FEATURES = {
   free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
   pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Ligação à gestão comercial e à obra', 'Uso elevado de IA', 'Exportação avançada'],
+  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Ligação à gestão comercial e aos sistemas internos', 'Uso elevado de IA', 'Exportação avançada'],
 };
 
 async function renderPlans() {
@@ -2204,7 +2204,7 @@ async function maybeOnboarding() {
       excluded_terms: (p.excluded_terms || []).join(', '),
     });
   } catch { /* continua */ }
-  const labels = ['Onde executa?', 'Que alvarás e certificações tem?', 'Em que intervalo de valor concorre?', 'O que nunca faz?'];
+  const labels = ['Onde executa?', 'Que certificações e alvarás tem?', 'Em que intervalo de valor concorre?', 'O que nunca faz?'];
   const draw = () => {
     wrap.querySelector('#ob-step-lbl').textContent = `Passo ${step + 1} de 4 — ${labels[step]}`;
     const body = wrap.querySelector('#ob-body');
