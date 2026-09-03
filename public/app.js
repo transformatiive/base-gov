@@ -153,6 +153,10 @@ const PL_LABELS = {
   nova: 'Nova', interessa: 'Interessa', preparacao: 'Em preparação',
   submetida: 'Submetida', ganha: 'Ganha', perdida: 'Perdida', descartada: 'Descartada',
 };
+const PL_TONE = {
+  nova: 'muted', interessa: 'teal', preparacao: 'amber',
+  submetida: 'blue', ganha: 'ok', perdida: 'bad', descartada: 'muted',
+};
 const PL_NEXT = {
   nova: ['interessa', 'preparacao', 'submetida', 'descartada'],
   interessa: ['preparacao', 'submetida', 'descartada'],
@@ -216,35 +220,108 @@ function pipelineIdOf(o) {
 
 function pipelineSelect(type, id, status) {
   const cur = status || 'nova';
-  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
-  return `<select class="pl-status" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}" onclick="event.stopPropagation()">
-    <option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}</select>`;
+  const opts = (PL_NEXT[cur] || []).map((s) =>
+    `<button type="button" class="pl-dd-opt tone-${PL_TONE[s] || 'muted'}" role="option" data-v="${s}">${esc(PL_LABELS[s])}</button>`
+  ).join('');
+  return `<div class="pl-dd" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}">
+    <button type="button" class="pl-dd-btn tone-${PL_TONE[cur] || 'muted'}" aria-haspopup="listbox" aria-expanded="false">
+      <span class="pl-dd-dot" aria-hidden="true"></span>${esc(PL_LABELS[cur] || cur)}<span class="pl-dd-chev" aria-hidden="true"></span>
+    </button>
+    <div class="pl-dd-menu" role="listbox" hidden>${opts || `<span class="pl-dd-empty">Sem transições</span>`}</div>
+  </div>`;
 }
 
-function rebuildPipelineSelect(sel, status) {
-  const cur = status || 'nova';
-  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
-  sel.dataset.cur = cur;
-  sel.innerHTML = `<option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}`;
-}
-
-function bindPipelineChips(root) {
-  (root || document).querySelectorAll('select.pl-status').forEach((sel) => {
-    sel.onchange = async () => {
-      const prev = sel.dataset.cur;
-      const next = sel.value;
-      if (next === prev) return;
-      try {
-        await api(`/api/pipeline/${sel.dataset.type}/${sel.dataset.id}`, {
-          method: 'PUT', body: JSON.stringify({ status: next }),
-        });
-        rebuildPipelineSelect(sel, next);
-      } catch (err) {
-        rebuildPipelineSelect(sel, prev);
-        alert(err.message);
-      }
-    };
+function closePipelineMenus(except) {
+  document.querySelectorAll('.pl-dd.open').forEach((el) => {
+    if (el === except) return;
+    el.classList.remove('open');
+    const menu = el.querySelector('.pl-dd-menu');
+    const btn = el.querySelector('.pl-dd-btn');
+    if (menu) menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
   });
+}
+
+function rebuildPipelineSelect(wrap, status) {
+  const parent = wrap.parentNode;
+  if (!parent) return;
+  wrap.outerHTML = pipelineSelect(wrap.dataset.type, wrap.dataset.id, status);
+  bindPipelineChips(parent);
+}
+
+function bindPipelineChips(root, onChanged) {
+  if (!window._plDdDocBound) {
+    window._plDdDocBound = true;
+    document.addEventListener('click', () => closePipelineMenus());
+  }
+  (root || document).querySelectorAll('.pl-dd').forEach((wrap) => {
+    if (wrap.dataset.bound === '1') return;
+    wrap.dataset.bound = '1';
+    const btn = wrap.querySelector('.pl-dd-btn');
+    const menu = wrap.querySelector('.pl-dd-menu');
+    if (!btn || !menu) return;
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const open = wrap.classList.contains('open');
+      closePipelineMenus();
+      if (open) return;
+      wrap.classList.add('open');
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+    };
+    wrap.onclick = (ev) => ev.stopPropagation();
+    menu.querySelectorAll('.pl-dd-opt').forEach((opt) => {
+      opt.onclick = async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const prev = wrap.dataset.cur;
+        const next = opt.dataset.v;
+        if (!next || next === prev) { closePipelineMenus(); return; }
+        try {
+          await api(`/api/pipeline/${wrap.dataset.type}/${wrap.dataset.id}`, {
+            method: 'PUT', body: JSON.stringify({ status: next }),
+          });
+          if (typeof onChanged === 'function') onChanged(next);
+          else rebuildPipelineSelect(wrap, next);
+        } catch (err) {
+          closePipelineMenus();
+          alert(err.message);
+        }
+      };
+    });
+  });
+}
+
+function kvTable(rows) {
+  return `<table class="kv-table"><tbody>${rows.map(([k, v]) =>
+    `<tr><th scope="row">${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function nextStepHtml({ kind, isRenewal, isOpen, daysLeft, ctaId, ctaLabel }) {
+  const ia = can('analise_ia');
+  let kicker = 'PRÓXIMO PASSO';
+  let copy = 'Guarde este procedimento no pipeline para a equipa acompanhar a candidatura.';
+  if (kind === 'contract' && isRenewal) {
+    copy = daysLeft != null && daysLeft >= 0
+      ? `Faltam ${daysLeft} dia${daysLeft === 1 ? '' : 's'} para o fim previsto. Prepare a renovação — a ficha de IA resume caderno, habilitação e abordagem.`
+      : 'Prepare a renovação com a ficha de IA: caderno, habilitação e abordagem comercial.';
+  } else if (kind === 'contract') {
+    copy = 'Analise o contrato com IA para perceber se vale disputar a próxima ronda.';
+  } else if (kind === 'announcement' && isOpen) {
+    copy = daysLeft != null && daysLeft >= 0
+      ? `Prazo de propostas em ${daysLeft} dia${daysLeft === 1 ? '' : 's'}. Analise o caderno e decida se avança.`
+      : 'Analise o caderno e decida se a empresa avança a este concurso.';
+  } else if (kind === 'announcement') {
+    copy = 'Este concurso já fechou. Use a análise para aprender critérios e preparar o próximo.';
+  }
+  const cta = ia
+    ? `<button type="button" class="btn primary" id="${esc(ctaId)}">${ico('search')} ${esc(ctaLabel)}</button>`
+    : `<a class="btn primary" href="#/planos">Ver planos Pro</a>`;
+  return `<div class="next-step">
+    <div class="next-step-copy"><div class="k">${kicker}</div><p>${esc(copy)}</p></div>
+    <div class="next-step-cta">${cta}</div>
+  </div>`;
 }
 
 function fitCell(f, type, id) {
@@ -1189,7 +1266,10 @@ async function renderContract(id) {
   const entLine = (role) => (c.entities?.[role] ?? []).map((e) =>
     (e.id ? `<a href="#/entities/${e.id}" style="font-weight:600;border-bottom:1px solid var(--border-btn)">${esc(e.name)}</a>` : `<span style="font-weight:600">${esc(e.name)}</span>`)
     + (e.nif ? ` <span class="nif">NIF ${esc(e.nif)}</span>` : '')).join(' · ') || '—';
-  const concorrentes = (c.entities?.contestant ?? []).map((e) => esc(e.name)).join(' · ') || '—';
+  const concorrentes = (c.entities?.contestant ?? []).length
+    ? `<ul class="kv-list">${(c.entities.contestant).map((e) =>
+      `<li>${e.id ? `<a href="#/entities/${e.id}">${esc(e.name)}</a>` : esc(e.name)}</li>`).join('')}</ul>`
+    : '—';
   const isRenewal = c.estimated_end_date && new Date(c.estimated_end_date) >= new Date(new Date().toISOString().slice(0, 10));
 
   const docs = (c.documents ?? []).map((d) => {
@@ -1237,24 +1317,28 @@ async function renderContract(id) {
         <h1>${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h1>
         ${c.description ? `<p class="lead">${esc(c.description)}</p>` : ''}
       </div>
-      <div class="d-actions">
-        <button id="ai-contract-btn">${ico('search')} ${isRenewal ? 'Preparar renovação com IA' : 'Analisar com IA'}</button>
-        <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-      </div>
+      <div class="d-actions"></div>
     </div>
+    ${nextStepHtml({
+      kind: 'contract',
+      isRenewal,
+      daysLeft: c.estimated_end_date ? Math.round((new Date(c.estimated_end_date) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null,
+      ctaId: 'ai-contract-btn',
+      ctaLabel: isRenewal ? 'Preparar renovação com IA' : 'Analisar com IA',
+    })}
     <div class="d-grid">
       <div>
         <div class="d-card">
           <div class="t">Partes e enquadramento</div>
-          <div class="parts">
-            <span class="lb">Adjudicante</span><span>${entLine('contracting')}</span>
-            <span class="lb">Adjudicatário</span><span>${entLine('contracted')}</span>
-            <span class="lb">Concorrentes</span><span>${concorrentes}</span>
-            <span class="lb">Local de execução</span><span>${esc(c.execution_place ?? '—')}</span>
-            <span class="lb">CPV</span><span>${esc(c.cpvs ?? '—')}${c.cpvs_designation ? ' · ' + esc(c.cpvs_designation) : ''}</span>
-            <span class="lb">Fundamentação</span><span>${esc(c.contract_fundamentation ?? '—')}</span>
-            <span class="lb">Regime</span><span>${esc(c.regime ?? '—')}</span>
-          </div>
+          ${kvTable([
+            ['Adjudicante', entLine('contracting')],
+            ['Adjudicatário', entLine('contracted')],
+            ['Concorrentes', concorrentes],
+            ['Local de execução', esc(c.execution_place ?? '—')],
+            ['CPV', `${esc(c.cpvs ?? '—')}${c.cpvs_designation ? ' · ' + esc(c.cpvs_designation) : ''}`],
+            ['Fundamentação', esc(c.contract_fundamentation ?? '—')],
+            ['Regime', esc(c.regime ?? '—')],
+          ])}
         </div>
         ${(c.documents ?? []).length ? `<div class="d-card">
           <div class="t">Documentos · ${(c.documents ?? []).length}</div>
@@ -1294,7 +1378,7 @@ async function renderContract(id) {
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
         ${formalidadesHtml(c.contracting_procedure_url)}
         <div class="d-card" id="pl-ficha">
-          <div class="t">Carteira</div>
+          <div class="t">Pipeline</div>
           <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
           <div>${pipelineSelect('renovacao', c.id, c.pipeline_status)}</div>
           <label style="display:block;margin-top:.6rem">Nota</label>
@@ -1315,7 +1399,7 @@ async function renderContract(id) {
   bindPipelineChips(app);
   wireFichaPipeline('renovacao', c.id);
 
-  document.getElementById('ai-contract-btn').onclick = async () => {
+  document.getElementById('ai-contract-btn') && (document.getElementById('ai-contract-btn').onclick = async () => {
     const btn = document.getElementById('ai-contract-btn');
     const out = document.getElementById('ai-contract-result');
     btn.disabled = true;
@@ -2357,13 +2441,15 @@ async function renderHoje() {
   const pipeDue = pipeItems.filter(hojePipelineDue);
   const mine = pipeDue.filter((it) => meId != null && Number(it.assigned_user_id) === Number(meId));
   const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
-    <div style="min-width:0"><div class="k"><span class="mini-chip">${esc(PL_LABELS[it.status] || it.status)}</span></div>
+    <div><div class="k"><span class="mini-chip ${it.item_type === 'anuncio_aberto' ? 'concurso' : 'renovacao'}">${it.item_type === 'anuncio_aberto' ? 'CONCURSO' : 'RENOVAÇÃO'}</span>
+      <span class="mini-chip tone-${PL_TONE[it.status] || 'muted'}">${esc(PL_LABELS[it.status] || it.status)}</span></div>
       <div class="ti">${esc(it.title ?? '')}</div>
-      <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
+      <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div>
+    <div class="opp-actions" onclick="event.stopPropagation()">${pipelineSelect(it.item_type, it.item_id, it.status)}</div></div>`;
   const pipeHtml = pipeDue.length ? `<div class="hoje-pipe">
       ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
         <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
-      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span><span class="sh">prazos próximos</span></div>
+      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span><a class="sh" href="#/pipeline">ver pipeline →</a></div>
       <div class="opp-cards">${pipeDue.map(pipeCard).join('')}</div>
     </div>` : '';
   const chipText = (o) => (o.type === 'anuncio_aberto' ? `CONCURSO · ${o.days_left}d` : 'RENOVAÇÃO');
@@ -2384,7 +2470,7 @@ async function renderHoje() {
         ${showIa
           ? `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>`
           : `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Ver concurso</a>`}
-        <a class="btn ghost" href="${esc(o.basegov_url ?? '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ver peças</a>
+        <a class="btn ghost" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Abrir ficha</a>
       </div></div>`;
   };
   const prepRow = (o) => `<div class="prep-row" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
@@ -2463,54 +2549,98 @@ async function renderHoje() {
 
   const sel = document.getElementById('ctx-select');
   if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
+  bindPipelineChips(app, () => renderHoje());
   maybeOnboarding();
 }
 
 async function renderPipeline() {
   app.innerHTML = '<div class="card"><p class="muted">A carregar o pipeline…</p></div>';
   const { items } = await api('/api/pipeline');
+  const tipo = hashQuery().get('tipo') || 'todos';
+  const isConcurso = (it) => it.item_type === 'anuncio_aberto';
+  const all = items || [];
+  const filtered = all.filter((it) => {
+    if (tipo === 'concursos') return isConcurso(it);
+    if (tipo === 'renovacoes') return !isConcurso(it);
+    return true;
+  });
   const openIds = new Set(['interessa', 'preparacao', 'submetida']);
-  const closed = (items || []).filter((i) => !openIds.has(i.status));
-  const open = (items || []).filter((i) => openIds.has(i.status));
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const closed = filtered.filter((i) => !openIds.has(i.status));
+  const open = filtered.filter((i) => openIds.has(i.status));
+  const nConc = all.filter(isConcurso).length;
+  const nRenov = all.length - nConc;
   const cols = [
-    { id: 'interessa', label: 'Interessa' },
-    { id: 'preparacao', label: 'Em preparação' },
-    { id: 'submetida', label: 'Submetida' },
+    { id: 'interessa', label: 'Interessa', tone: 'teal' },
+    { id: 'preparacao', label: 'Em preparação', tone: 'amber' },
+    { id: 'submetida', label: 'Submetida', tone: 'blue' },
   ];
+  const overdueOf = (it) => {
+    if (!openIds.has(it.status) || !it.deadline) return false;
+    const d = daysUntil(it.deadline);
+    return d != null && d < 0 && (it.status === 'interessa' || it.status === 'preparacao');
+  };
 
   function card(it) {
-    const dl = it.deadline ? new Date(it.deadline) : null;
-    const overdue = !!(dl && dl < today && it.status === 'preparacao');
-    const href = it.internal_url || (it.item_type === 'anuncio_aberto' ? `#/announcements/${it.item_id}` : `#/contracts/${it.item_id}`);
+    const overdue = overdueOf(it);
+    const href = it.internal_url || (isConcurso(it) ? `#/announcements/${it.item_id}` : `#/contracts/${it.item_id}`);
     const tot = it.checklist?.total || 0;
     const done = it.checklist?.checked || 0;
     const pct = tot ? Math.round((done / tot) * 100) : 0;
+    const kind = isConcurso(it) ? 'CONCURSO' : 'RENOVAÇÃO';
+    const kindCls = isConcurso(it) ? 'concurso' : 'renovacao';
+    const dl = daysUntil(it.deadline);
+    const prazo = it.deadline
+      ? (dl != null && dl < 0 ? `prazo ${fmtDateDMY(it.deadline)} · ultrapassado` : `prazo ${fmtDateDMY(it.deadline)}${dl != null ? ` · ${dl}d` : ''}`)
+      : 'sem prazo';
     return `<div class="pl-card${overdue ? ' overdue' : ''}" onclick="location.hash='${esc(href)}'">
+      <div class="k" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <span class="mini-chip ${kindCls}">${kind}</span>
+      </div>
       <div class="ti">${esc(it.title || '—')}</div>
-      <div class="su">${esc(it.entity || '—')} · ${fmtEuro0(it.value)} · prazo ${fmtDateDMY(it.deadline)}</div>
+      <div class="su">${esc(it.entity || '—')}</div>
+      <div class="su">${fmtEuro0(it.value)} · ${esc(prazo)}</div>
       ${it.assignee?.name ? `<div class="su">Resp.: ${esc(it.assignee.name)}</div>` : ''}
-      ${tot ? `<div class="su">Checklist ${done}/${tot} · ${pct} %</div>` : ''}
-      ${overdue ? '<div class="pl-overdue">Prazo ultrapassado — marcar como Submetida ou Descartada</div>' : ''}
+      ${tot ? `<div class="pl-bar" aria-label="Checklist ${done} de ${tot}"><i style="width:${pct}%"></i></div>
+        <div class="su">Checklist ${done}/${tot}</div>` : ''}
+      ${overdue ? '<div class="pl-overdue">Prazo ultrapassado — avançar para Submetida ou Descartada</div>' : ''}
+      <div class="pl-meta" onclick="event.stopPropagation()">${pipelineSelect(it.item_type, it.item_id, it.status)}</div>
     </div>`;
   }
 
-  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Carteira</h1>
-    <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — estados partilhados.</div></div></div>`;
-  if (!(items || []).length) {
-    html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
+  const filtBtn = (id, label) =>
+    `<button type="button" data-pl-tipo="${id}" class="${tipo === id ? 'on' : ''}">${label}</button>`;
+
+  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Pipeline de candidaturas</h1>
+    <div class="muted" style="margin-top:3px">${all.length
+      ? `${all.length} procedimento${all.length === 1 ? '' : 's'} · ${nConc} concurso${nConc === 1 ? '' : 's'} · ${nRenov} renovaç${nRenov === 1 ? 'ão' : 'ões'}`
+      : 'Concursos e renovações que a empresa planeia disputar.'}</div></div>
+    <div class="pl-filt">${filtBtn('todos', 'Todos')}${filtBtn('concursos', 'Concursos')}${filtBtn('renovacoes', 'Renovações')}</div>
+    </div>`;
+  if (!all.length) {
+    html += `<p class="empty-copy">Ainda não há candidaturas neste pipeline. Abra um <a href="#/radar/announcements">concurso</a> e avance o estado (Interessa, Em preparação, Submetida).</p>`;
+  } else if (!filtered.length) {
+    html += `<p class="empty-copy">Nenhuma candidatura neste filtro.</p>`;
   } else {
     html += `<div class="pl-board">`;
     for (const col of cols) {
       const colItems = open.filter((i) => i.status === col.id);
-      html += `<div class="pl-col"><h3>${esc(col.label)} <span class="muted">(${colItems.length})</span></h3>
-        ${colItems.map(card).join('') || '<p class="muted">—</p>'}</div>`;
+      const nOver = colItems.filter(overdueOf).length;
+      html += `<div class="pl-col tone-${col.tone}"><h3>${esc(col.label)} <span class="n">${colItems.length}</span>
+        ${nOver ? `<span class="pl-overdue">${nOver} fora de prazo</span>` : ''}</h3>
+        ${colItems.map(card).join('') || '<p class="muted pl-empty">Nenhuma candidatura neste estado.</p>'}</div>`;
     }
     html += `</div>`;
     html += `<details class="pl-closed"><summary>Fechadas (${closed.length})</summary>
       ${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</details>`;
   }
   app.innerHTML = html;
+  app.querySelectorAll('[data-pl-tipo]').forEach((b) => {
+    b.onclick = () => setHashQuery((p) => {
+      if (b.dataset.plTipo === 'todos') p.delete('tipo');
+      else p.set('tipo', b.dataset.plTipo);
+    });
+  });
+  bindPipelineChips(app, () => renderPipeline());
 }
 
 async function renderRadar(tab = 'opportunities') {
@@ -2620,24 +2750,28 @@ async function renderAnnouncement(id) {
         </div>
         <h1>${esc(a.contract_designation ?? `Anúncio #${a.basegov_id}`)}</h1>
       </div>
-      <div class="d-actions">
-        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button>
-        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-      </div>
+      <div class="d-actions"></div>
     </div>
+    ${nextStepHtml({
+      kind: 'announcement',
+      isOpen: a.is_open,
+      daysLeft: dl,
+      ctaId: 'ai-analyze-btn',
+      ctaLabel: 'Analisar com IA',
+    })}
     <div class="d-grid">
       <div>
         <div class="d-card">
           <div class="t">Partes e enquadramento</div>
-          <div class="parts">
-            <span class="lb">Entidade adjudicante</span><span style="font-weight:600">${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</span>
-            <span class="lb">Tipo de anúncio</span><span>${esc(a.announcement_type ?? '—')}</span>
-            <span class="lb">Modelo / procedimento</span><span>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</span>
-            <span class="lb">Tipo de contrato</span><span>${esc(a.contract_type ?? '—')}</span>
-            <span class="lb">CPV</span><span>${esc(a.cpvs ?? '—')}</span>
-            <span class="lb">Peças do procedimento</span><span>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">abrir na plataforma ↗</a>` : '—'}</span>
-            <span class="lb">Publicação DR (PDF)</span><span>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">ver no Diário da República ↗</a>` : '—'}${raw.dreNumber ? ` · DR n.º ${esc(raw.dreNumber)}, série ${esc(raw.dreSeries ?? '—')}` : ''}</span>
-          </div>
+          ${kvTable([
+            ['Entidade adjudicante', `<span style="font-weight:600">${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</span>`],
+            ['Tipo de anúncio', esc(a.announcement_type ?? '—')],
+            ['Modelo / procedimento', esc(a.model_type ?? a.contracting_procedure_type ?? '—')],
+            ['Tipo de contrato', esc(a.contract_type ?? '—')],
+            ['CPV', esc(a.cpvs ?? '—')],
+            ['Peças do procedimento', a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener">abrir na plataforma ↗</a>` : '—'],
+            ['Publicação DR (PDF)', `${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener">ver no Diário da República ↗</a>` : '—'}${raw.dreNumber ? ` · DR n.º ${esc(raw.dreNumber)}, série ${esc(raw.dreSeries ?? '—')}` : ''}`],
+          ])}
         </div>
         <div id="ai-result"></div>
       </div>
@@ -2654,7 +2788,7 @@ async function renderAnnouncement(id) {
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
         ${formalidadesHtml(a.contracting_procedure_url)}
         <div class="d-card" id="pl-ficha">
-          <div class="t">Carteira</div>
+          <div class="t">Pipeline</div>
           <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
           <div>${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</div>
           <label style="display:block;margin-top:.6rem">Nota</label>
@@ -2674,7 +2808,7 @@ async function renderAnnouncement(id) {
   bindPipelineChips(app);
   wireFichaPipeline('anuncio_aberto', a.id);
 
-  document.getElementById('ai-analyze-btn').onclick = async () => {
+  document.getElementById('ai-analyze-btn') && (document.getElementById('ai-analyze-btn').onclick = async () => {
     const btn = document.getElementById('ai-analyze-btn');
     const out = document.getElementById('ai-result');
     btn.disabled = true;
@@ -2737,9 +2871,13 @@ function renderAiFicha(an, cached, model, itemType, itemId) {
   const badgeGo = { go: ['AVANÇAR', '#2c6353', 'go'], condicional: ['COM RESERVAS', '#b26a00', 'condicional'], 'no-go': ['NÃO AVANÇAR', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
   const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
   const habHtml = hab
-    ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${hab.map((i) => `<li>${esc(i.text)} — <strong>${esc(i.label || i.status)}</strong></li>`).join('')}</ul>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
-    : (an.requisitos_habilitacao?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
-  const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
+    ? `<table class="kv-table kv-table-2"><thead><tr><th>Requisito</th><th>Estado</th></tr></thead><tbody>${
+        hab.map((i) => `<tr><td>${esc(i.text)}</td><td><strong>${esc(i.label || i.status)}</strong></td></tr>`).join('')
+      }</tbody></table>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
+    : (an.requisitos_habilitacao?.length
+      ? `<ul class="kv-list">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>`
+      : '<p class="muted">Nenhum.</p>');
+  const list = (arr) => (arr?.length ? `<ul class="kv-list">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const checks = Array.isArray(an.checklist) ? an.checklist : [];
   const checkHtml = itemType && itemId
     ? (checks.length
@@ -2752,14 +2890,14 @@ function renderAiFicha(an, cached, model, itemType, itemId) {
       ${an.fit_atividade ? `<span>Adequação à atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
     </div>
     ${an.go_no_go?.justificacao ? `<div class="ai-callout ${badgeGo[2]}">${esc(an.go_no_go.justificacao)}</div>` : ''}
-    <dl class="detail">
-      <dt>Resumo</dt><dd>${esc(an.resumo ?? '—')}</dd>
-      <dt>Critérios de adjudicação</dt><dd>${esc(an.criterios_adjudicacao ?? '—')}</dd>
-      <dt>Prazo de propostas</dt><dd>${esc(an.prazos?.propostas ?? '—')}</dd>
-      <dt>Prazo de execução</dt><dd>${esc(an.prazos?.execucao ?? '—')}</dd>
-      <dt>Preço base</dt><dd>${esc(an.preco_base ?? '—')}</dd>
-      <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
-    </dl>
+    ${kvTable([
+      ['Resumo', esc(an.resumo ?? '—')],
+      ['Critérios de adjudicação', esc(an.criterios_adjudicacao ?? '—')],
+      ['Prazo de propostas', esc(an.prazos?.propostas ?? '—')],
+      ['Prazo de execução', esc(an.prazos?.execucao ?? '—')],
+      ['Preço base', esc(an.preco_base ?? '—')],
+      ['Caução / garantias', esc(an.caucao_garantias ?? '—')],
+    ])}
     <h3>Requisitos de habilitação</h3>${habHtml}
     <h3>Alertas</h3>${list(an.red_flags)}
     <h3>Checklist para a proposta</h3>${checkHtml}
@@ -2820,12 +2958,12 @@ async function wireFichaPipeline(type, id) {
     }
     const save = document.getElementById('pl-save');
     if (save) save.onclick = async () => {
-      const sel = document.querySelector('#pl-ficha select.pl-status');
+      const dd = document.querySelector('#pl-ficha .pl-dd');
       try {
         await api(`/api/pipeline/${type}/${id}`, {
           method: 'PUT',
           body: JSON.stringify({
-            status: sel?.value || cur.status || 'interessa',
+            status: dd?.dataset.cur || cur.status || 'interessa',
             note: note?.value || '',
             assigned_user_id: ass?.value ? Number(ass.value) : null,
           }),
@@ -2833,6 +2971,8 @@ async function wireFichaPipeline(type, id) {
         wireFichaPipeline(type, id);
       } catch (e) { alert(e.message); }
     };
+    const dd = document.querySelector('#pl-ficha .pl-dd');
+    if (dd && cur.status && cur.status !== dd.dataset.cur) rebuildPipelineSelect(dd, cur.status);
     hydrateChecklist(app);
   } catch { /* nova oportunidade sem linha */ }
 }
@@ -3026,7 +3166,7 @@ async function renderEntity(id) {
   if (conc != null && topCp) signals.push(`<b>${conc}%</b> do valor ${isBuyer ? 'adjudicado a' : 'proveniente de'} <b>${esc(topCp.name)}</b>${conc >= 50 ? ' — dependência elevada.' : '.'}`);
   if (usesAQ) signals.push(isBuyer ? 'Compra ao abrigo de <b>acordos-quadro</b> — para fornecer é preciso estar no AQ.' : 'Fornece ao abrigo de <b>acordos-quadro</b>.');
 
-  const recent = (r.recent_contracts ?? []).slice(0, 8).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
+  const recent = (r.recent_contracts ?? []).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
     <span class="pub">${fmtDate(c.publication_date)}</span>
     <span class="obj">${esc(c.object_brief_description ?? '—')}</span>
     <span class="val">${fmtCompact(c.initial_contractual_price)}</span>
@@ -3044,35 +3184,32 @@ async function renderEntity(id) {
       <div class="c"><div class="n">${fmtCompact(r.total_value)}</div><div class="l">valor total</div></div>
       <div class="c"><div class="n">${fmtCompact(r.avg_value)}</div><div class="l">valor médio</div></div>
     </div>
-    <div class="d-grid">
-      <div>
-        <div class="ent-recent">
-          <div class="h">Contratos recentes</div>
-          ${recent}
-        </div>
+    <div class="ent-strip">
+      <div class="d-card">
+        <div class="t">${isBuyer ? 'Como compra' : 'Como vende'}</div>
+        <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${topProc ? `Sobretudo por <b>${esc(topProc.type ?? '—')}</b> · ` : ''}${r.n_contracts} contrato${r.n_contracts === 1 ? '' : 's'}${sinceYear ? ` desde ${sinceYear}` : ''} (média ${fmtCompact(r.avg_value)}).</div>
       </div>
-      <div>
-        <div class="d-card">
-          <div class="t">${isBuyer ? 'Como compra' : 'Como vende'}</div>
-          <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${topProc ? `Sobretudo por <b>${esc(topProc.type ?? '—')}</b> · ` : ''}${r.n_contracts} contrato${r.n_contracts === 1 ? '' : 's'}${sinceYear ? ` desde ${sinceYear}` : ''} (média ${fmtCompact(r.avg_value)}).</div>
+      ${signals.length ? `<div class="d-card">
+        <div class="t">Sinais</div>
+        <ul class="kv-list" style="font-size:12.5px;color:var(--ink-2);line-height:1.75">${signals.map((s) => `<li>${s}</li>`).join('')}</ul>
+        ${vulnerable ? '<div class="ai-callout condicional" style="margin:12px 0 0;font-size:12.5px">Sinal de abertura: adjudicatário em declínio e dependente de poucos clientes — bom alvo para disputar contas.</div>' : ''}
+      </div>` : ''}
+      ${(r.counterparts ?? []).length ? `<div class="d-card">
+        <div class="t">${counterLabel}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+          ${r.counterparts.slice(0, 5).map((c) => `<a href="#/entities/${c.id}" style="display:flex;justify-content:space-between;gap:10px;color:var(--ink)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span><b>${c.count} contrato${c.count === 1 ? '' : 's'}</b></a>`).join('')}
         </div>
-        ${signals.length ? `<div class="d-card">
-          <div class="t">Sinais</div>
-          <ul style="margin:0;padding-left:1.1rem;font-size:12.5px;color:var(--ink-2);line-height:1.75">${signals.map((s) => `<li>${s}</li>`).join('')}</ul>
-          ${vulnerable ? '<div class="ai-callout condicional" style="margin:12px 0 0;font-size:12.5px">Sinal de abertura: adjudicatário em declínio e dependente de poucos clientes — bom alvo para disputar contas.</div>' : ''}
-        </div>` : ''}
-        ${(r.counterparts ?? []).length ? `<div class="d-card">
-          <div class="t">${counterLabel}</div>
-          <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
-            ${r.counterparts.slice(0, 5).map((c) => `<a href="#/entities/${c.id}" style="display:flex;justify-content:space-between;gap:10px;color:var(--ink)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span><b>${c.count} contrato${c.count === 1 ? '' : 's'}</b></a>`).join('')}
-          </div>
-        </div>` : ''}
-        ${future ? `<div class="d-price" style="padding:16px 20px">
-          <div class="k" style="letter-spacing:0.06em">PRÓXIMA JANELA</div>
-          <p style="font-size:12.5px;color:var(--accent-line);margin:6px 0 0;line-height:1.55">Um contrato termina a <b style="color:#fff">${fmtDatePt(future.end_date)}</b>. Contactar cerca de 4 meses antes.</p>
-          <a href="#/contracts/${future.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;color:#fff;border-bottom:1px solid var(--on-dark-muted)">Ver contrato →</a>
-        </div>` : ''}
-      </div>
+      </div>` : ''}
+      ${future ? `<div class="d-price" style="padding:16px 20px">
+        <div class="k" style="letter-spacing:0.06em">PRÓXIMA JANELA</div>
+        <p style="font-size:12.5px;color:var(--accent-line);margin:6px 0 0;line-height:1.55">Um contrato termina a <b style="color:#fff">${fmtDatePt(future.end_date)}</b>. Contactar cerca de 4 meses antes.</p>
+        <a href="#/contracts/${future.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;color:#fff;border-bottom:1px solid var(--on-dark-muted)">Ver contrato →</a>
+      </div>` : ''}
+    </div>
+    <div class="ent-recent">
+      <div class="h">Contratos recentes${(r.recent_contracts ?? []).length ? ` · ${r.recent_contracts.length}` : ''}</div>
+      <div class="row head"><span class="pub">Publicação</span><span>Objeto</span><span class="val">Valor</span><span class="ter">Fim</span></div>
+      ${recent}
     </div>`;
 }
 
