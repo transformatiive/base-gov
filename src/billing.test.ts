@@ -31,6 +31,7 @@ test('billingMode: trial / past_due / canceled / free', () => {
   assert.equal(billingMode({ plan: 'pro', subscription_status: 'past_due' }), 'past_due');
   assert.equal(billingMode({ plan: 'business', subscription_status: 'canceled' }), 'canceled');
   assert.equal(billingMode({ plan: 'free', subscription_status: 'active' }), 'free');
+  assert.equal(billingMode({ plan: 'free', subscription_status: 'canceled' }), 'free');
 });
 
 test('billingSnapshot: cartão expõe renews_at, não access_until', () => {

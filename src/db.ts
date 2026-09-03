@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_company_id_fkey;
+ALTER TABLE users ADD CONSTRAINT users_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email       TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name  TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name   TEXT;
@@ -137,6 +140,9 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL D
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cpv_codes TEXT[] NOT NULL DEFAULT '{}';
 -- Multi-tenant: perfis pertencem a uma empresa; nome único por empresa (não global).
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_company_id_fkey;
+ALTER TABLE profiles ADD CONSTRAINT profiles_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_name_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_company_name ON profiles (company_id, lower(name));
 CREATE INDEX IF NOT EXISTS idx_profiles_company ON profiles (company_id);
@@ -160,6 +166,12 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE searches DROP CONSTRAINT IF EXISTS searches_company_id_fkey;
+ALTER TABLE searches ADD CONSTRAINT searches_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE searches DROP CONSTRAINT IF EXISTS searches_created_by_fkey;
+ALTER TABLE searches ADD CONSTRAINT searches_created_by_fkey
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_searches_company ON searches (company_id);
 
 -- v2: anúncios de procedimento (concursos abertos)

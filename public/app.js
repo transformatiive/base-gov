@@ -730,6 +730,124 @@ const PLAN_FEATURES = {
   business: ['Tudo do Pro', 'Até 10 utilizadores', 'Ligação à gestão comercial e aos sistemas internos', 'Uso elevado de IA', 'Exportação avançada'],
 };
 
+function closeAccountConfirm() {
+  document.getElementById('acct-confirm')?.remove();
+}
+
+function openAccountConfirm({ title, bodyHtml, confirmLabel, keepLabel = 'Manter', danger = false, infoOnly = false, onConfirm }) {
+  closeAccountConfirm();
+  const wrap = document.createElement('div');
+  wrap.id = 'acct-confirm';
+  wrap.className = 'modal-backdrop';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+  wrap.setAttribute('aria-labelledby', 'acct-confirm-title');
+  const actions = infoOnly
+    ? `<button type="button" class="btn-secondary" data-act="keep">${esc(keepLabel)}</button>`
+    : `<button type="button" class="btn-secondary" data-act="keep">${esc(keepLabel)}</button>
+       <button type="button" class="${danger ? 'btn-danger' : ''}" data-act="go">${esc(confirmLabel)}</button>`;
+  wrap.innerHTML = `<div class="modal-box">
+    <button class="modal-x" type="button" aria-label="Fechar">×</button>
+    <h3 id="acct-confirm-title" style="margin:0 0 .5rem">${esc(title)}</h3>
+    <div class="muted" style="margin:0 0 1.1rem;line-height:1.55">${bodyHtml}</div>
+    <div class="inline" style="gap:.5rem;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+    <div class="acct-confirm-out"></div>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('.modal-x').onclick = closeAccountConfirm;
+  wrap.querySelector('[data-act=keep]').onclick = closeAccountConfirm;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeAccountConfirm(); });
+  const go = wrap.querySelector('[data-act=go]');
+  if (!go) return;
+  go.onclick = async () => {
+    go.disabled = true;
+    const out = wrap.querySelector('.acct-confirm-out');
+    out.innerHTML = '<p class="muted">A processar…</p>';
+    try {
+      await onConfirm();
+      closeAccountConfirm();
+    } catch (err) {
+      go.disabled = false;
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  };
+}
+
+function promptDowngradeToFree({ memberCount, onDone }) {
+  if (memberCount > 1) {
+    openAccountConfirm({
+      title: 'Passar para Grátis',
+      bodyHtml: '<p style="margin:0">O plano Grátis permite apenas 1 utilizador. Remova os outros membros da equipa em Conta → Equipa e volte a tentar.</p>',
+      keepLabel: 'Fechar',
+      infoOnly: true,
+    });
+    return;
+  }
+  openAccountConfirm({
+    title: 'Passar para Grátis',
+    bodyHtml: '<p style="margin:0">A subscrição paga é cancelada já. Fica o plano Grátis: 1 utilizador, sem análises IA, com os limites do Grátis. As faturas já emitidas mantêm-se.</p>',
+    confirmLabel: 'Passar para Grátis',
+    keepLabel: 'Manter o plano',
+    onConfirm: async () => {
+      await api('/api/billing/downgrade-free', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      window._me = null;
+      window._caps = null;
+      onDone();
+    },
+  });
+}
+
+function promptDeleteAccount({ companyName, onDone }) {
+  openAccountConfirm({
+    title: 'Cancelar e apagar a conta',
+    bodyHtml: `<p style="margin:0 0 .6rem">Isto cancela a subscrição, apaga <strong>${esc(companyName || 'a empresa')}</strong> e todos os dados (equipa, carteira, radar). Não dá para recuperar.</p>
+      <p style="margin:0">Se só quer deixar de pagar, passe para o plano Grátis.</p>`,
+    confirmLabel: 'Apagar a conta',
+    keepLabel: 'Manter a conta',
+    danger: true,
+    onConfirm: async () => {
+      await api('/api/account/delete', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      window._me = null;
+      window._caps = null;
+      onDone();
+    },
+  });
+}
+
+function renderCancelAccountBlock() {
+  return `<div class="acct-danger">
+    <h3>Cancelar conta</h3>
+    <p class="muted" style="margin:.2rem 0 .8rem">Cancela a subscrição e apaga a empresa e todos os dados. Não dá para recuperar.</p>
+    <button type="button" class="btn-danger" id="acct-delete">Cancelar e apagar a conta</button>
+  </div>`;
+}
+
+function wireAccountLifecycle({ companyName, memberCount }) {
+  const freeBtn = document.getElementById('bill-free');
+  if (freeBtn) {
+    freeBtn.onclick = () => promptDowngradeToFree({
+      memberCount,
+      onDone: () => { location.hash = '#/conta'; renderAccount(); },
+    });
+  }
+  document.querySelectorAll('[data-act=downgrade]').forEach((b) => {
+    b.onclick = () => promptDowngradeToFree({
+      memberCount,
+      onDone: () => { location.hash = '#/conta'; },
+    });
+  });
+  const delBtn = document.getElementById('acct-delete');
+  if (delBtn) {
+    delBtn.onclick = () => promptDeleteAccount({
+      companyName,
+      onDone: async () => {
+        await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        location.hash = '#/login';
+      },
+    });
+  }
+}
+
 async function renderPlans() {
   topbar.hidden = false;
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
@@ -747,7 +865,7 @@ async function renderPlans() {
     const paid = p.key !== 'free';
     let cta = '';
     if (isCurrent) cta = `<button class="btn-secondary" disabled>Plano atual</button>`;
-    else if (p.key === 'free') cta = '';
+    else if (p.key === 'free') cta = `<button type="button" class="btn-secondary" data-act="downgrade">Passar para Grátis</button>`;
     else if (p.key === 'pro' && canTrial) cta = `<button class="plan-cta" data-act="trial">Experimentar 7 dias grátis</button>`;
     else cta = `<button class="plan-cta" data-plan="${p.key}" data-act="checkout">${current === 'free' ? 'Subscrever' : 'Mudar para ' + PLAN_LABEL[p.key]}</button>`;
     return `<div class="plan-box${isCurrent ? ' current' : ''}" style="flex:1;min-width:210px;border:1px solid ${isCurrent ? 'var(--brand)' : 'var(--line,#e2e8f0)'};border-radius:12px;padding:1.1rem;display:flex;flex-direction:column;gap:.6rem">
@@ -768,8 +886,11 @@ async function renderPlans() {
       ${!cat.billing_enabled ? '<div class="hint" style="margin-top:1rem">Os pagamentos ainda não estão ativos nesta instalação. O teste gratuito funciona; para subscrever contacte o suporte.</div>' : ''}
       <div id="plan-method" style="margin-top:1rem"></div>
       <div id="plan-result" style="margin-top:1rem"></div>
+      ${renderCancelAccountBlock()}
       <p style="margin-top:1.2rem"><a href="#/conta">← Conta e subscrição</a></p>
     </div>`;
+
+  wireAccountLifecycle({ companyName: c.name, memberCount: Number(summary.members) || 1 });
 
   app.querySelectorAll('.plan-cta').forEach((b) => {
     b.onclick = async () => {
@@ -926,12 +1047,13 @@ async function renderAccount() {
   try { invoices = await api('/api/billing/invoices'); } catch { invoices = { items: [] }; }
   const c = summary.company || {};
   const b = summary.billing || {};
-  const plan = caps.plan || 'free';
+  const plan = summary.plan || 'free';
   const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
   const seatMax = caps.seats?.max ?? 1;
   const seatUsed = caps.seats?.used ?? 1;
+  const memberCount = (seats?.members || []).length || Number(summary.members) || 1;
   const upgradeLabel = plan === 'business' ? 'Ver planos' : plan === 'free' ? 'Fazer upgrade' : 'Mudar de plano';
 
   app.innerHTML = `
@@ -948,6 +1070,7 @@ async function renderAccount() {
           <div class="muted" style="font-size:.85rem">${esc(period)}</div>
           <div class="bill-actions">
             <a class="btn" href="#/planos">${esc(upgradeLabel)}</a>
+            ${plan !== 'free' ? '<button type="button" class="btn-secondary" id="bill-free">Passar para Grátis</button>' : ''}
             ${b.can_manage_payment ? '<button type="button" class="btn-secondary" id="bill-portal">Gerir subscrição</button>' : ''}
           </div>
           <div id="bill-result"></div>
@@ -965,11 +1088,13 @@ async function renderAccount() {
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
       <div id="company-profile-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
       <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      ${renderCancelAccountBlock()}
     </div>`;
 
   wireSeats();
   wireInvoices();
   wireBillingPortal();
+  wireAccountLifecycle({ companyName: c.name, memberCount });
   fillCompanyProfileBlock();
   fillNotifyBlock();
 }

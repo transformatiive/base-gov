@@ -11,6 +11,7 @@ import {
   buildPortalSessionParams,
   classifyPortalError,
   mapStripeSubscriptionStatus,
+  isStripeMissingResource,
   type SqlQuery,
 } from './stripe.js';
 import { config } from './config.js';
@@ -146,6 +147,13 @@ test('duplicate webhook event is idempotent', async () => {
   assert.equal(second.duplicate, true);
 });
 
+test('isStripeMissingResource cobre resource_missing e 404', () => {
+  assert.equal(isStripeMissingResource({ code: 'resource_missing' }), true);
+  assert.equal(isStripeMissingResource({ statusCode: 404 }), true);
+  assert.equal(isStripeMissingResource({ code: 'card_declined' }), false);
+  assert.equal(isStripeMissingResource('nope'), false);
+});
+
 test('customer.subscription.deleted maps to canceled', async () => {
   const { query, calls } = mockQuery();
   const event = {
@@ -168,6 +176,7 @@ test('customer.subscription.deleted maps to canceled', async () => {
   assert.equal(result.companyId, 9);
   const update = calls.find((c) => c.sql.includes("subscription_status = 'canceled'"));
   assert.ok(update);
+  assert.match(update!.sql, /plan = 'free'/);
   assert.equal(update!.params[0], 9);
 });
 
