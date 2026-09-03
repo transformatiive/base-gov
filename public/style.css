@@ -131,6 +131,8 @@ button {
 button:hover { background: var(--brand-dark); }
 button.btn-secondary { background: #fff; color: var(--brand); border-color: var(--border-btn); }
 button.btn-secondary:hover { background: var(--row-line); }
+button.btn-danger { background: #fff; color: #9b2c1a; border-color: #ecc9bf; }
+button.btn-danger:hover { background: #f7e9e4; }
 button:disabled { opacity: 0.45; cursor: default; }
 form.inline { display: flex; gap: 0.6rem; }
 label { font-size: 0.9rem; }
@@ -640,6 +642,9 @@ button.lnk { background: none; border: 0; padding: 0; cursor: pointer; font: inh
   text-decoration: none; font-size: 0.85rem; font-weight: 600;
 }
 .bill-actions a.btn:hover { color: #fff; text-decoration: none; background: var(--brand-dark); }
+.acct-danger { margin-top: 1.4rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.acct-danger h3 { margin: 0 0 0.4rem; color: #9b2c1a; font-size: 1.05rem; }
+.acct-confirm-out { margin-top: 0.8rem; min-height: 0; }
 .card table.inv-table { min-width: 0; width: 100%; margin-top: 0.4rem; }
 .inv-table th:last-child, .inv-table td:last-child { text-align: right; white-space: nowrap; }
 a.inv-dl { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 600; }

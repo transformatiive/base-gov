@@ -6,7 +6,7 @@ import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { stripeConfigured, createCheckout, createBillingPortal, classifyPortalError,
-         constructStripeEvent, handleStripeEvent, grossCents,
+         constructStripeEvent, handleStripeEvent, grossCents, cancelStripeSubscription,
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
 import { discoverMoloniConfig, getMoloniInvoicePdf, moloniStatus, MoloniPdfError } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
@@ -16,6 +16,9 @@ import {
   billingSnapshot, invoiceDownloadable, invoicePdfUnavailableMessage,
   mapPaymentToInvoice, pdfFilename,
 } from './billing.js';
+import {
+  confirmRequested, downgradeCompanyToFree, deleteCompanyAccount,
+} from './account-lifecycle.js';
 
 /** IP do cliente, respeitando o proxy à frente da aplicação. */
 function clientIp(req: { headers: Record<string, unknown>; ip?: string }): string {
@@ -167,6 +170,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       delete company.has_stripe_customer;
       delete company.has_stripe_subscription;
     }
+    let members = 0;
+    if (companyId != null) {
+      const { rows: mc } = await pool.query(
+        'SELECT count(*)::int AS n FROM users WHERE company_id = $1', [companyId]);
+      members = Number(mc[0]?.n ?? 0);
+    }
     return {
       plan,   // plano efetivo
       plan_name: config.planName,
@@ -174,6 +183,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       billing_enabled: stripeConfigured(),
       company,
       billing,
+      members,
     };
   });
 
@@ -300,6 +310,65 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     } catch (err) {
       return reply.code(502).send({ error: { code: 'billing_failed', message: String(err).slice(0, 300) } });
     }
+  });
+
+  // Passar para Grátis: cancela a subscrição Stripe (já) e fica a conta.
+  app.post('/api/billing/downgrade-free', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) {
+      return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    }
+    if (!confirmRequested(req.body)) {
+      return reply.code(400).send({
+        error: { code: 'confirm_required', message: 'Confirme que quer passar para o plano Grátis.' },
+      });
+    }
+    try {
+      const result = await downgradeCompanyToFree(companyId, {
+        query: (sql, params) => pool.query(sql, params),
+        cancelSubscription: cancelStripeSubscription,
+        billingReady: stripeConfigured(),
+      });
+      if (!result.ok) {
+        return reply.code(result.http).send({ error: { code: result.code, message: result.message } });
+      }
+      return { ok: true, plan: result.plan };
+    } catch (err) {
+      console.error('[billing] downgrade-free:', err);
+      return reply.code(502).send({
+        error: { code: 'downgrade_failed', message: 'Não foi possível passar para o plano Grátis. Tente de novo ou contacte o suporte.' },
+      });
+    }
+  });
+
+  // Cancelar = apagar a conta (empresa + utilizadores). Exige confirmação no corpo.
+  app.post('/api/account/delete', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) {
+      return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    }
+    if (!confirmRequested(req.body)) {
+      return reply.code(400).send({
+        error: { code: 'confirm_required', message: 'Confirme que quer apagar a conta.' },
+      });
+    }
+    try {
+      const result = await deleteCompanyAccount(companyId, {
+        query: (sql, params) => pool.query(sql, params),
+        cancelSubscription: cancelStripeSubscription,
+        billingReady: stripeConfigured(),
+      });
+      if (!result.ok) {
+        return reply.code(result.http).send({ error: { code: result.code, message: result.message } });
+      }
+    } catch (err) {
+      console.error('[account] delete:', err);
+      return reply.code(502).send({
+        error: { code: 'delete_failed', message: 'Não foi possível apagar a conta. Tente de novo ou contacte o suporte.' },
+      });
+    }
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true, deleted: true };
   });
 
   // Webhook do Stripe (público). Regra inviolável: a assinatura é verificada

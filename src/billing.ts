@@ -76,8 +76,9 @@ export function isoOrNull(v: Date | string | null | undefined): string | null {
 
 /** Como o cliente paga / em que fase está a subscrição. */
 export function billingMode(c: CompanyBillingInput): BillingMode {
-  const status = subStatus(c.subscription_status);
   const plan = normalizePlan(c.plan);
+  if (plan === 'free') return 'free';
+  const status = subStatus(c.subscription_status);
   switch (status) {
     case 'trialing':
       return 'trial';
@@ -86,7 +87,6 @@ export function billingMode(c: CompanyBillingInput): BillingMode {
     case 'canceled':
       return 'canceled';
     case 'active':
-      if (plan === 'free') return 'free';
       if (c.has_stripe_subscription) return 'subscription';
       if (c.access_until) return 'one_time';
       return 'subscription';
