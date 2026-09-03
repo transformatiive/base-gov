@@ -13,6 +13,7 @@ import { digestData as loadDigest, digestStatsText, digestIsEmpty } from './dige
 import { fmtDatePT } from './mail.js';
 import { loadCompanyProfile } from './company-profile.js';
 import { overlayHabilitacao } from './habilitacao.js';
+import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
 import { announcementDistrictSql } from './districts.js';
 import { Plan } from './plans.js';
 
@@ -115,10 +116,23 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         (SELECT count(*) FROM (${PROFILE_CONTRACTS.replace('$1', 'p.id')}) x) AS n_contracts,
         (SELECT count(*) FROM (${PROFILE_ANNOUNCEMENTS.replace('$1', 'p.id')}) x) AS n_announcements,
         (SELECT row_to_json(r) FROM (
-           SELECT id, status, new_contracts, new_announcements, started_at, finished_at
+           SELECT id, status, new_contracts, new_announcements, started_at, finished_at,
+             EXISTS (SELECT 1 FROM searches s WHERE s.profile_run_id = profile_runs.id AND s.kind = 'contratos' AND s.status = 'completed_truncated') AS contracts_truncated,
+             EXISTS (SELECT 1 FROM searches s WHERE s.profile_run_id = profile_runs.id AND s.kind = 'anuncios' AND s.status = 'completed_truncated') AS announcements_truncated
            FROM profile_runs WHERE profile_id = p.id ORDER BY created_at DESC LIMIT 1) r) AS last_run
       FROM profiles p ${where} ORDER BY p.name`, params);
-    return { items: rows.map((p) => ({ ...p, n_contracts: Number(p.n_contracts), n_announcements: Number(p.n_announcements) })) };
+    return {
+      items: rows.map((p) => {
+        const last = p.last_run as Record<string, unknown> | null;
+        return {
+          ...p,
+          n_contracts: Number(p.n_contracts),
+          n_announcements: Number(p.n_announcements),
+          contracts_truncated: Boolean(last?.contracts_truncated),
+          announcements_truncated: Boolean(last?.announcements_truncated),
+        };
+      }),
+    };
   });
 
   app.post('/api/profiles', { preHandler: requireAuth }, async (req, reply) => {
@@ -126,9 +140,11 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       name?: string; terms?: string[]; cpv_codes?: string[]; schedule?: string;
       include_announcements?: boolean; fetch_documents?: boolean; run_now?: boolean;
     };
-    const cpvCodes = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
+    const rawCpvs = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
     const name = body.name?.trim();
-    const terms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const rawTerms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const terms = refineActivityTerms(rawTerms);
+    const cpvCodes = mergeCpvHints(rawTerms, rawCpvs);
     const schedule = ['manual', 'daily', 'weekly'].includes(body.schedule ?? '') ? body.schedule : 'manual';
     if (!name || terms.length === 0) {
       return reply.code(400).send({ error: { code: 'invalid_profile', message: 'name e terms[] são obrigatórios' } });
@@ -176,6 +192,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
            WHERE a.proposal_deadline_date >= CURRENT_DATE) AS open_announcements`,
       [id]
     );
+    const latestSearches = (runs[0]?.searches ?? []) as { kind?: string; status?: string }[];
+    const truncatedKind = (kind: string) =>
+      latestSearches.some((s) => s.kind === kind && s.status === 'completed_truncated');
     return {
       ...rows[0],
       runs,
@@ -184,6 +203,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         total_value: Number(totals.total_value),
         n_announcements: Number(totals.n_announcements),
         open_announcements: Number(totals.open_announcements),
+        contracts_truncated: truncatedKind('contratos'),
+        announcements_truncated: truncatedKind('anuncios'),
       },
     };
   });

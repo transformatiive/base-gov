@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
+import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
 import { stripeConfigured, createCheckout, createBillingPortal, classifyPortalError,
          constructStripeEvent, handleStripeEvent, grossCents, cancelStripeSubscription,
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
@@ -87,11 +88,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         [email, hash, company.id, firstName, lastName || null, phone, config.termsVersion, clientIp(req)]
       );
       // Perfil inicial pré-configurado com a atividade escolhida.
-      const profileTerms = terms.length ? terms : [companyName];
+      const profileTerms = refineActivityTerms(terms.length ? terms : [companyName]);
+      const profileCpvs = mergeCpvHints(terms.length ? terms : profileTerms, cpvCodes);
       const { rows: [profile] } = await client.query(
         `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, company_id)
          VALUES ($1, $2, $3, 'daily', true, $4) RETURNING id`,
-        ['A minha atividade', profileTerms, cpvCodes, company.id]
+        ['A minha atividade', profileTerms, profileCpvs, company.id]
       );
       await client.query('COMMIT');
       // Popula o radar do perfil a partir do corpus já recolhido (fora da transação).

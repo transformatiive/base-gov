@@ -38,3 +38,25 @@ test('certificação coberta → tem, não rebaixa go', () => {
   assert.equal(over.habilitacao[0]?.status, 'tem');
   assert.equal(over.go_no_go.recomendacao, 'go');
 });
+
+test('PRF-06: perfil sem certidões não esmaga fit_atividade 65', () => {
+  const over = overlayHabilitacao(
+    {
+      requisitos_habilitacao: ['Alvará classe 4'],
+      go_no_go: { recomendacao: 'go' },
+      fit_atividade: { score: 65, razao: 'Alinhado com reabilitação' },
+    },
+    [],
+  ) as { fit_atividade: { score: number; razao: string }; go_no_go: { recomendacao: string } };
+  assert.equal(over.fit_atividade.score, 65);
+  assert.equal(over.fit_atividade.razao, 'Alinhado com reabilitação');
+  assert.equal(over.go_no_go.recomendacao, 'go');
+});
+
+test('overlay normaliza fit 0,65 para 65 e não o deixa em 1', () => {
+  const over = overlayHabilitacao(
+    { fit_atividade: { score: 0.65, razao: 'reabilitação' } },
+    [],
+  ) as { fit_atividade: { score: number } };
+  assert.equal(over.fit_atividade.score, 65);
+});

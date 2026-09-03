@@ -38,6 +38,14 @@ export function sumUsage(...parts: TokenUsage[]): TokenUsage {
   );
 }
 
+/** Fit 0–100. Modelos por vezes devolvem 0–1 (0,65 → 65); 1 e 0 ficam 1 e 0. */
+export function normalizeFitScore(score: unknown): number {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  const scaled = n > 0 && n < 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
+}
+
 /**
  * Junta as três partes da análise (ficha, requisitos, decisão) num único
  * objecto no formato que o overlay de habilitação e a UI já conhecem.
@@ -49,7 +57,6 @@ export function compileAnalysisParts(fichaRaw: unknown, requisitosRaw: unknown, 
   const prazos = asObj(ficha.prazos);
   const go = asObj(decisao.go_no_go);
   const fit = asObj(decisao.fit_atividade);
-  const scoreNum = Number(fit.score);
   return {
     resumo: asStr(ficha.resumo),
     criterios_adjudicacao: asStr(ficha.criterios_adjudicacao, 'não especificado'),
@@ -67,7 +74,7 @@ export function compileAnalysisParts(fichaRaw: unknown, requisitosRaw: unknown, 
       justificacao: asStr(go.justificacao),
     },
     fit_atividade: {
-      score: Number.isFinite(scoreNum) ? Math.max(0, Math.min(100, Math.round(scoreNum))) : 0,
+      score: normalizeFitScore(fit.score),
       razao: asStr(fit.razao),
     },
   };
