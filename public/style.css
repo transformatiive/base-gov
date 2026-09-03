@@ -303,8 +303,6 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
   .map-table { max-width: 100%; }
   #help-fab { right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); padding: 11px 12px; }
   #help-fab span { display: none; }
-  .d-head h1 { font-size: 18px; }
-  .d-head .lead { font-size: 13px; }
 }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
 .dot.open { background: var(--brand); }
@@ -558,6 +556,10 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
       "card";
   }
   .d-grid.ficha-layout > .d-side { order: 0; }
+}
+@media (max-width: 600px) {
+  .d-head h1 { font-size: 18px; max-width: none; }
+  .d-head .lead { font-size: 13px; max-width: none; }
 }
 
 /* ---------- Concorrentes (tabela com barra de quota) ---------- */

@@ -101,6 +101,21 @@ test('escTitle limpa tofu nas listas', () => {
   assert.equal(out, 'Objeto · caixa');
 });
 
+test('contrato BASE #11009424 real (C1 0x94/0x96) parte o H1 e não duplica', () => {
+  const real = '2324000137 - "Transição Digital na Segurança Social\u0094 \u0096 Aquisição de serviços de testes e acreditação de software para o Projeto Portal Unificado da Segurança Social (SSD Nova Geração \u0096 Arquitetura da Informação e Design Visual), ao abrigo dos Acordos Quadro do I.I., IP. \u0096 Programas Informáticos \u0096 Lote 1 (Serviços de Testes e Acreditação de Software)';
+  const p = fichaTitleParts(real, real);
+  assert.equal(p.ref, '2324000137');
+  assert.equal(p.title, 'Transição Digital na Segurança Social');
+  assert.match(p.lead, /Lote 1/);
+  assert.equal(p.lead.includes('\u0094'), false);
+  assert.equal(p.lead.includes('\u0096'), false);
+  const html = fichaHeadHtml(real, real, 'Contrato #11009424');
+  assert.equal((html.match(/<h1>/g) || []).length, 1);
+  assert.equal(html.includes(p.title) && html.includes('<p class="lead">'), true);
+  assert.match(html, /<h1>Transição Digital na Segurança Social<\/h1>/);
+  assert.equal(html.includes('\u0094') || html.includes('\u0096'), false);
+});
+
 test('fallback quando o brief está vazio', () => {
   const html = fichaHeadHtml('', null, 'Contrato #9');
   assert.match(html, /<h1>Contrato #9<\/h1>/);
