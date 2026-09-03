@@ -214,37 +214,155 @@ function pipelineIdOf(o) {
   return o.announcement_id ?? o.contract_id ?? o.item_id ?? o.id;
 }
 
+function plTone(status) {
+  switch (status) {
+    case 'interessa': return { bg: '#e4efe8', fg: '#2c6353', bd: '#cfe2d6' };
+    case 'preparacao': return { bg: '#fdf6e8', fg: '#8a6a1e', bd: '#ecd9ac' };
+    case 'submetida': return { bg: '#e9f2ee', fg: '#173f35', bd: '#b7d4c4' };
+    case 'ganha': return { bg: '#2c6353', fg: '#e9f2ee', bd: '#2c6353' };
+    case 'perdida': return { bg: '#f7e9e4', fg: '#c2543a', bd: '#ecc9bf' };
+    case 'descartada': return { bg: '#eef1ef', fg: '#7d8681', bd: '#dfe3e0' };
+    case 'nova': return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
+    default: return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
+  }
+}
+
+function plChip(status) {
+  const t = plTone(status);
+  return `<span class="mini-chip" style="background:${t.bg};color:${t.fg};border:1px solid ${t.bd}">${esc(PL_LABELS[status] || status)}</span>`;
+}
+
+function plOptionButtons(cur) {
+  const opts = [...new Set([cur, ...(PL_NEXT[cur] || [])])];
+  return opts.map((s) => {
+    const tone = plTone(s);
+    const on = s === cur;
+    return `<button type="button" data-v="${s}"${on ? ' aria-current="true"' : ''} style="background:${tone.bg};color:${tone.fg};border-color:${tone.bd}">${esc(PL_LABELS[s] || s)}${on ? ` ${ico('check', 14)}` : ''}</button>`;
+  }).join('');
+}
+
+function fillPipelineDropdown(dd, status) {
+  const cur = status || 'nova';
+  const t = plTone(cur);
+  dd.dataset.cur = cur;
+  const btn = dd.querySelector('.pl-dd-btn');
+  if (btn) {
+    btn.style.background = t.bg;
+    btn.style.color = t.fg;
+    btn.style.borderColor = t.bd;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = `${esc(PL_LABELS[cur] || cur)} ${ico('chevron', 14)}`;
+  }
+  const menu = dd.querySelector('.pl-dd-menu');
+  if (menu) menu.innerHTML = plOptionButtons(cur);
+}
+
 function pipelineSelect(type, id, status) {
   const cur = status || 'nova';
-  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
-  return `<select class="pl-status" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}" onclick="event.stopPropagation()">
-    <option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}</select>`;
+  const t = plTone(cur);
+  return `<div class="pl-dd" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}" onclick="event.stopPropagation()">
+    <button type="button" class="pl-dd-btn" aria-haspopup="listbox" aria-expanded="false" style="background:${t.bg};color:${t.fg};border-color:${t.bd}">${esc(PL_LABELS[cur] || cur)} ${ico('chevron', 14)}</button>
+    <div class="pl-dd-menu" hidden>${plOptionButtons(cur)}</div>
+  </div>`;
 }
 
-function rebuildPipelineSelect(sel, status) {
-  const cur = status || 'nova';
-  const opts = (PL_NEXT[cur] || []).map((s) => `<option value="${s}">${PL_LABELS[s]}</option>`).join('');
-  sel.dataset.cur = cur;
-  sel.innerHTML = `<option value="${cur}" selected>${PL_LABELS[cur]}</option>${opts}`;
+function closePipelineMenus() {
+  document.querySelectorAll('.pl-dd-menu').forEach((m) => { m.hidden = true; });
+  document.querySelectorAll('.pl-dd-btn').forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
+function placePlDdMenu(btn, menu) {
+  const r = btn.getBoundingClientRect();
+  const w = Math.max(r.width, 188);
+  menu.hidden = false;
+  const mh = menu.offsetHeight || 168;
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+  let top = r.bottom + 4;
+  if (top + mh > window.innerHeight - 8 && r.top - 4 - mh > 8) top = r.top - 4 - mh;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.minWidth = `${w}px`;
+}
+
+let plDdDocBound = false;
 function bindPipelineChips(root) {
-  (root || document).querySelectorAll('select.pl-status').forEach((sel) => {
-    sel.onchange = async () => {
-      const prev = sel.dataset.cur;
-      const next = sel.value;
+  if (!plDdDocBound) {
+    plDdDocBound = true;
+    document.addEventListener('click', closePipelineMenus);
+    window.addEventListener('scroll', closePipelineMenus, true);
+    window.addEventListener('resize', closePipelineMenus);
+  }
+  (root || document).querySelectorAll('.pl-dd').forEach((dd) => {
+    if (dd.dataset.bound) return;
+    dd.dataset.bound = '1';
+    const btn = dd.querySelector('.pl-dd-btn');
+    const menu = dd.querySelector('.pl-dd-menu');
+    if (!btn || !menu) return;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      closePipelineMenus();
+      if (!willOpen) return;
+      placePlDdMenu(btn, menu);
+      btn.setAttribute('aria-expanded', 'true');
+    };
+    menu.onclick = async (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      const next = b.dataset.v;
+      const prev = dd.dataset.cur;
+      closePipelineMenus();
       if (next === prev) return;
       try {
-        await api(`/api/pipeline/${sel.dataset.type}/${sel.dataset.id}`, {
+        await api(`/api/pipeline/${dd.dataset.type}/${dd.dataset.id}`, {
           method: 'PUT', body: JSON.stringify({ status: next }),
         });
-        rebuildPipelineSelect(sel, next);
+        fillPipelineDropdown(dd, next);
       } catch (err) {
-        rebuildPipelineSelect(sel, prev);
+        fillPipelineDropdown(dd, prev);
         alert(err.message);
       }
     };
   });
+}
+
+function fichaTabsHtml(panes) {
+  const items = panes.filter((p) => p && p.html);
+  if (!items.length) return '';
+  const tabs = items.map((p, i) =>
+    `<button type="button" class="${i === 0 ? 'active' : ''}" data-pane="${esc(p.id)}">${esc(p.label)}</button>`).join('');
+  const bodies = items.map((p, i) =>
+    `<div class="ficha-pane" data-pane="${esc(p.id)}"${i === 0 ? '' : ' hidden'}>${p.html}</div>`).join('');
+  return `<div class="ficha-tabs-wrap">
+    <div class="tabs ficha-tabs">${tabs}</div>
+    <div class="d-card">${bodies}</div>
+  </div>`;
+}
+
+function bindFichaTabs(root) {
+  (root || document).querySelectorAll('.ficha-tabs-wrap').forEach((wrap) => {
+    wrap.querySelectorAll('.ficha-tabs button').forEach((btn) => {
+      btn.onclick = () => {
+        wrap.querySelectorAll('.ficha-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+        wrap.querySelectorAll('.ficha-pane').forEach((p) => { p.hidden = p.dataset.pane !== btn.dataset.pane; });
+      };
+    });
+  });
+}
+
+function carteiraPaneHtml(type, id, status) {
+  return `<div id="pl-ficha">
+    <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
+    <div>${pipelineSelect(type, id, status)}</div>
+    <label style="display:block;margin-top:.8rem">Nota</label>
+    <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
+    <label style="display:block;margin-top:.5rem">Responsável</label>
+    <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
+    <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+    <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
+  </div>`;
 }
 
 function fitCell(f, type, id) {
@@ -306,12 +424,10 @@ function platformName(url) {
   return 'plataforma eletrónica';
 }
 
-function formalidadesHtml(url) {
+function formalidadesPaneHtml(url) {
   const name = platformName(url);
   const link = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(name)} ↗</a>` : esc(name);
-  return `<div class="d-card"><div class="t">Formalidades</div>
-    <p style="font-size:12.5px;line-height:1.6;margin:0">Submissão na ${link}. Prepare o DEUCP (Documento Europeu Único de Contratação Pública) e a assinatura digital qualificada. Este texto é informativo — não constitui aconselhamento jurídico.</p>
-  </div>`;
+  return `<p style="font-size:12.5px;line-height:1.6;margin:0">Submissão na ${link}. Prepare o DEUCP (Documento Europeu Único de Contratação Pública) e a assinatura digital qualificada. Este texto é informativo — não constitui aconselhamento jurídico.</p>`;
 }
 
 function filterBarHtml(kind, facets) {
@@ -1480,10 +1596,11 @@ async function renderContract(id) {
       </div>
     </div>
     <div class="d-grid">
-      <div>
-        <div class="d-card">
-          <div class="t">Partes e enquadramento</div>
-          <div class="parts">
+      <div class="d-main">
+        ${fichaTabsHtml([
+          {
+            id: 'enq', label: 'Enquadramento',
+            html: `<div class="parts">
             <span class="lb">Adjudicante</span><span>${entLine('contracting')}</span>
             <span class="lb">Adjudicatário</span><span>${entLine('contracted')}</span>
             <span class="lb">Concorrentes</span><span>${concorrentes}</span>
@@ -1491,25 +1608,34 @@ async function renderContract(id) {
             <span class="lb">CPV</span><span>${esc(c.cpvs ?? '—')}${c.cpvs_designation ? ' · ' + esc(c.cpvs_designation) : ''}</span>
             <span class="lb">Fundamentação</span><span>${esc(c.contract_fundamentation ?? '—')}</span>
             <span class="lb">Regime</span><span>${esc(c.regime ?? '—')}</span>
-          </div>
-        </div>
-        ${(c.documents ?? []).length ? `<div class="d-card">
-          <div class="t">Documentos · ${(c.documents ?? []).length}</div>
-          <div>${docs}</div>
-        </div>` : ''}
-        ${(c.modifications ?? []).length ? `<div class="d-card">
-          <div class="t">Modificações ao contrato · ${c.modifications.length}</div>
-          <div class="crono">
+          </div>`,
+          },
+          { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('renovacao', c.id, c.pipeline_status) },
+          cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
+          (c.documents ?? []).length ? {
+            id: 'docs', label: `Documentos (${(c.documents ?? []).length})`,
+            html: `<div>${docs}</div>`,
+          } : null,
+          (c.modifications ?? []).length ? {
+            id: 'mods', label: `Modificações (${c.modifications.length})`,
+            html: `<div class="crono">
             ${c.modifications.map((mo, i) => `<div class="crono-row">
               <div class="crono-mark"><span class="crono-dot" style="background:#c99a3c"></span>${i < c.modifications.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
               <div class="body">${mo.date ? `<b>${fmtDate(mo.date)}</b> · ` : ''}${esc(mo.label)}${mo.price_text ? ` <span class="muted">(${esc(mo.price_text)})</span>` : ''}</div>
             </div>`).join('')}
           </div>
-          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de adjudicatário actual a defender a posição).</p>
-        </div>` : ''}
+          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de adjudicatário actual a defender a posição).</p>`,
+          } : null,
+          { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(c.contracting_procedure_url) },
+          adj ? {
+            id: 'ent', label: 'Entidade',
+            html: `<p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
+          ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}`,
+          } : null,
+        ])}
         <div id="ai-contract-result"></div>
       </div>
-      <div>
+      <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO CONTRATUAL</div>
           <div class="big">${fmtPrice(c.initial_contractual_price)}</div>
@@ -1528,27 +1654,10 @@ async function renderContract(id) {
               : '<p class="est">Sem data de celebração ou prazo no BASE — não é possível estimar.</p>'}
           </div>
         </div>
-        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
-        ${formalidadesHtml(c.contracting_procedure_url)}
-        <div class="d-card" id="pl-ficha">
-          <div class="t">Carteira</div>
-          <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
-          <div>${pipelineSelect('renovacao', c.id, c.pipeline_status)}</div>
-          <label style="display:block;margin-top:.6rem">Nota</label>
-          <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
-          <label style="display:block;margin-top:.5rem">Responsável</label>
-          <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
-          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
-          <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
-        </div>
-        ${adj ? `<div class="d-card">
-          <div class="t">A entidade compra</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
-          ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}
-        </div>` : ''}
       </div>
     </div>`;
 
+  bindFichaTabs(app);
   bindPipelineChips(app);
   wireFichaPipeline('renovacao', c.id);
 
@@ -2593,15 +2702,20 @@ async function renderHoje() {
   const pipeItems = pipe.items ?? [];
   const pipeDue = pipeItems.filter(hojePipelineDue);
   const mine = pipeDue.filter((it) => meId != null && Number(it.assigned_user_id) === Number(meId));
+  const pipeShow = pipeDue.slice(0, 6);
   const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
-    <div style="min-width:0"><div class="k"><span class="mini-chip">${esc(PL_LABELS[it.status] || it.status)}</span></div>
+    <div><div class="k">${plChip(it.status)}</div>
       <div class="ti">${esc(it.title ?? '')}</div>
       <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
   const pipeHtml = pipeDue.length ? `<div class="hoje-pipe">
       ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
         <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
-      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span><span class="sh">prazos próximos</span></div>
-      <div class="opp-cards">${pipeDue.map(pipeCard).join('')}</div>
+      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span>${
+        pipeDue.length > 6
+          ? `<a class="sh" href="#/pipeline">ver todas (${pipeDue.length}) →</a>`
+          : '<span class="sh">prazos próximos</span>'
+      }</div>
+      <div class="opp-cards">${pipeShow.map(pipeCard).join('')}</div>
     </div>` : '';
   const chipText = (o) => (o.type === 'anuncio_aberto' ? `CONCURSO · ${o.days_left}d` : 'RENOVAÇÃO');
   const chipCls = (o) => (o.type === 'anuncio_aberto' ? 'concurso' : 'renovacao');
@@ -2657,7 +2771,7 @@ async function renderHoje() {
         ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex:none">
-        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+        <select id="ctx-select" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
         <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>
@@ -2784,7 +2898,7 @@ async function renderRadar(tab = 'opportunities') {
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
         ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>` : ''}
-        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+        <select id="ctx-select" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
         </select>
@@ -2863,10 +2977,11 @@ async function renderAnnouncement(id) {
       </div>
     </div>
     <div class="d-grid">
-      <div>
-        <div class="d-card">
-          <div class="t">Partes e enquadramento</div>
-          <div class="parts">
+      <div class="d-main">
+        ${fichaTabsHtml([
+          {
+            id: 'enq', label: 'Enquadramento',
+            html: `<div class="parts">
             <span class="lb">Entidade adjudicante</span><span style="font-weight:600">${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</span>
             <span class="lb">Tipo de anúncio</span><span>${esc(a.announcement_type ?? '—')}</span>
             <span class="lb">Modelo / procedimento</span><span>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</span>
@@ -2874,11 +2989,19 @@ async function renderAnnouncement(id) {
             <span class="lb">CPV</span><span>${esc(a.cpvs ?? '—')}</span>
             <span class="lb">Peças do procedimento</span><span>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">abrir na plataforma ↗</a>` : '—'}</span>
             <span class="lb">Publicação DR (PDF)</span><span>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">ver no Diário da República ↗</a>` : '—'}${raw.dreNumber ? ` · DR n.º ${esc(raw.dreNumber)}, série ${esc(raw.dreSeries ?? '—')}` : ''}</span>
-          </div>
-        </div>
+          </div>`,
+          },
+          { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('anuncio_aberto', a.id, a.pipeline_status) },
+          cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
+          { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(a.contracting_procedure_url) },
+          {
+            id: 'ia', label: 'Análise IA',
+            html: `<p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação de avançar ou não. O resultado fica guardado. Use «Analisar com IA» no topo da ficha.</p>`,
+          },
+        ])}
         <div id="ai-result"></div>
       </div>
-      <div>
+      <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO BASE</div>
           <div class="big">${fmtPrice(a.base_price)}</div>
@@ -2888,26 +3011,10 @@ async function renderAnnouncement(id) {
             ${raw.proposalDeadline ? `<p class="est">No detalhe do BASE: ${esc(raw.proposalDeadline)}.</p>` : ''}
           </div>
         </div>
-        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
-        ${formalidadesHtml(a.contracting_procedure_url)}
-        <div class="d-card" id="pl-ficha">
-          <div class="t">Carteira</div>
-          <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
-          <div>${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</div>
-          <label style="display:block;margin-top:.6rem">Nota</label>
-          <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
-          <label style="display:block;margin-top:.5rem">Responsável</label>
-          <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
-          <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
-          <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
-        </div>
-        <div class="d-card">
-          <div class="t">Ficha de oportunidade (IA)</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação de avançar ou não. O resultado fica guardado.</p>
-        </div>
       </div>
     </div>`;
 
+  bindFichaTabs(app);
   bindPipelineChips(app);
   wireFichaPipeline('anuncio_aberto', a.id);
 
@@ -3049,6 +3156,8 @@ async function wireFichaPipeline(type, id) {
       ass.innerHTML = `<option value="">—</option>${(seats.members || []).map((m) =>
         `<option value="${m.id}" ${cur.assigned_user_id === m.id ? 'selected' : ''}>${esc([m.first_name, m.last_name].filter(Boolean).join(' ') || m.email || m.username)}</option>`).join('')}`;
     }
+    const dd = document.querySelector('#pl-ficha .pl-dd');
+    if (dd) fillPipelineDropdown(dd, cur.status || dd.dataset.cur);
     const histEl = document.getElementById('pl-hist');
     if (histEl) {
       histEl.innerHTML = (hist.items || []).map((h) =>
@@ -3057,12 +3166,12 @@ async function wireFichaPipeline(type, id) {
     }
     const save = document.getElementById('pl-save');
     if (save) save.onclick = async () => {
-      const sel = document.querySelector('#pl-ficha select.pl-status');
+      const dd = document.querySelector('#pl-ficha .pl-dd');
       try {
         await api(`/api/pipeline/${type}/${id}`, {
           method: 'PUT',
           body: JSON.stringify({
-            status: sel?.value || cur.status || 'interessa',
+            status: dd?.dataset.cur || cur.status || 'interessa',
             note: note?.value || '',
             assigned_user_id: ass?.value ? Number(ass.value) : null,
           }),
