@@ -25,7 +25,7 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-03 — Business é a oferta da equipa; Pro é o isco
 - **URL:** `/#preco`
 - **Passos:** Ler os três planos.
-- **Passa se:** Grátis 0 €, Pro 29 €, Business 99 €; o cartão **Business** está visualmente destacado (borda/ribbon «A MESA DA EQUIPA» ou equivalente) e o texto fala de **equipa de concursos** / até 10 utilizadores / gestão comercial; o Pro oferece 7 dias grátis e **não** tem ribbon «MAIS POPULAR».
+- **Passa se:** Grátis 0 €, Pro 29 €, Business 99 €; o cartão **Business** está visualmente destacado (borda/ribbon «PARA A EQUIPA» ou equivalente) e o texto fala de **equipa de concursos** / até 10 utilizadores / gestão comercial; o Pro oferece 7 dias grátis e **não** tem ribbon «MAIS POPULAR».
 - **Falha se:** o ribbon «MAIS POPULAR» está no Pro e o Business parece um extra irrelevante.
 
 ### GTM-04 — Funcionalidades sem pirotecnia
