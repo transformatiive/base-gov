@@ -209,6 +209,22 @@
     .foot .links a{color:var(--muted)}
     .foot .links a:hover{color:var(--brand)}
 
+    /* Depoimentos + FAQ (abaixo dos planos) */
+    .quotes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .quote{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 26px;display:flex;flex-direction:column;gap:14px}
+    .quote p{margin:0;font-size:14.5px;color:var(--ink);line-height:1.6}
+    .quote .who{font-size:12.5px;color:var(--ink2);line-height:1.45}
+    .quote .who b{color:var(--ink);font-weight:600}
+    .quote-note{font-size:12.5px;color:var(--muted);margin:0 0 22px;max-width:640px}
+    .faq{display:flex;flex-direction:column;gap:10px;max-width:760px}
+    .faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0}
+    .faq summary{list-style:none;cursor:pointer;font-weight:600;font-size:15px;padding:16px 20px;display:flex;justify-content:space-between;gap:16px;align-items:center}
+    .faq summary::-webkit-details-marker{display:none}
+    .faq summary::after{content:"+";color:var(--brand);font-weight:700;font-size:18px;line-height:1}
+    .faq details[open] summary::after{content:"–"}
+    .faq details[open] summary{border-bottom:1px solid var(--line2)}
+    .faq .a{padding:12px 20px 18px;font-size:14px;color:var(--ink2);line-height:1.65;margin:0}
+
     @media (max-width:960px){
       :root{ --pad-x: 24px; }
       .hero{grid-template-columns:minmax(0,1fr);gap:36px;padding-top:44px;padding-bottom:44px}
@@ -220,6 +236,7 @@
       .feat-cards{grid-template-columns:1fr;gap:16px}
       .pricing{position:static}
       .plans{grid-template-columns:1fr;gap:16px}
+      .quotes{grid-template-columns:1fr;gap:12px}
     }
     @media (max-width:640px){
       .nav-in{padding-top:12px;padding-bottom:12px}
@@ -272,6 +289,7 @@
         <a href="#como">Como funciona</a>
         <a href="#funcionalidades">Funcionalidades</a>
         <a href="#preco">Preço</a>
+        <a href="#faq">Perguntas</a>
       </div>
       <div class="nav-cta">
         <a class="enter" href="/app#/login">Entrar</a>
@@ -511,6 +529,61 @@
     </div>
   </div>
 
+  <div class="wrap quotes-sect" id="depoimentos" style="padding-top:56px;padding-bottom:24px">
+    <div class="sect-eyebrow">NA MESA DE CONCURSOS</div>
+    <h2 class="sect">O que a equipa passa a ver, todos os dias.</h2>
+    <p class="quote-note">Exemplos ilustrativos — perfis típicos de quem responde a concursos, não depoimentos de empresas nomeadas.</p>
+    <div class="quotes">
+      <figure class="quote">
+        <p>«Deixámos de abrir o BASE todas as manhãs à procura do concurso certo. O radar mostra os que se repetem e o prazo, com a análise do caderno no sítio onde já trabalhamos.»</p>
+        <figcaption class="who"><b>Directora de concursos</b><br>Construtora no Norte</figcaption>
+      </figure>
+      <figure class="quote">
+        <p>«O resumo de segunda-feira chega às 08:00: concursos novos e contratos a entrar na janela de contacto. A carteira fica partilhada com o comercial — sem folhas soltas.»</p>
+        <figcaption class="who"><b>Responsável por concursos</b><br>Instalações eléctricas no Centro</figcaption>
+      </figure>
+      <figure class="quote">
+        <p>«Antes íamos a concurso sem saber se estávamos habilitados. A análise aponta alvará, caução e se vale a pena avançar — a tempo de montar a proposta.»</p>
+        <figcaption class="who"><b>Gestor de propostas</b><br>Dispositivos médicos, sector da saúde</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="wrap faq-sect" id="faq" style="padding-top:32px;padding-bottom:64px">
+    <div class="sect-eyebrow">PERGUNTAS FREQUENTES</div>
+    <h2 class="sect">Antes de começar, as respostas curtas.</h2>
+    <div class="faq">
+      <details>
+        <summary>É preciso cartão para experimentar?</summary>
+        <p class="a">Não. O teste do Pro dura 7 dias e não pede cartão. No fim, a conta fica no plano Grátis se não subscrever. Cancele quando quiser.</p>
+      </details>
+      <details>
+        <summary>Qual a diferença entre Grátis, Pro e Business?</summary>
+        <p class="a">O Grátis vigia concursos abertos, mapa, sazonalidade, resumo semanal e a carteira — 1 utilizador. O Pro (29&nbsp;€/mês + IVA) acrescenta pontuação e adequação IA, radar de renovações, análise do caderno de encargos, dossier de resposta, concorrentes, entidades e 2 utilizadores. O Business (99&nbsp;€/mês + IVA) é o plano da equipa: até 10 lugares, uso elevado de IA e ligação à gestão comercial.</p>
+      </details>
+      <details>
+        <summary>De onde vêm os dados?</summary>
+        <p class="a">Do Portal BASE (IMPIC) e de dados.gov.pt — o histórico público de contratos e anúncios. O BaseRadar não substitui as peças na plataforma electrónica nem o Diário da República; cruza esse histórico com o perfil da empresa (CPV, distritos, valor).</p>
+      </details>
+      <details>
+        <summary>O que é a carteira?</summary>
+        <p class="a">A mesa de trabalho da empresa: Interessa, Em preparação, Submetida, e os estados fechados (Ganha, Perdida, Descartada). Os estados são partilhados pela equipa. Uma proposta submetida não volta a Interessa ou Em preparação — só pode passar a Ganha, Perdida ou Descartada.</p>
+      </details>
+      <details>
+        <summary>O que vem no resumo semanal?</summary>
+        <p class="a">À segunda-feira às 08:00, no email do responsável por concursos: contratos novos na sua área e os que entram na janela de contacto. Sem abrir o BASE.</p>
+      </details>
+      <details>
+        <summary>A análise IA usa o caderno de encargos?</summary>
+        <p class="a">Sim, quando as peças do procedimento estão acessíveis (caderno e programa na plataforma). Caso contrário, a análise usa o anúncio do Diário da República e os dados estruturados, e indica essa limitação. A análise fica em cache: reabrir a ficha não volta a cobrar.</p>
+      </details>
+      <details>
+        <summary>Posso cancelar ou descer de plano?</summary>
+        <p class="a">Sim. Na conta pode descer para o Grátis ou cancelar. O teste de 7 dias não exige cartão; depois da subscrição, cancele quando quiser.</p>
+      </details>
+    </div>
+  </div>
+
   <div class="wrap foot">
     <div class="c">
       <span class="logo-mark"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>
@@ -533,11 +606,13 @@
       var sel = '.hero .eyebrow,.hero h1,.hero p.lead,.hero-cta,.stats,.herocard,' +
         '.band .sect-eyebrow,.band h2.sect,.step,' +
         '.feat-sect .sect-eyebrow,.feat-sect h2.sect,.fcard,' +
-        '.plans-sect .sect-eyebrow,.plans-sect h2.sect,.plans-sect .sub,.plan';
+        '.plans-sect .sect-eyebrow,.plans-sect h2.sect,.plans-sect .sub,.plan,' +
+        '.quotes-sect .sect-eyebrow,.quotes-sect h2.sect,.quote,' +
+        '.faq-sect .sect-eyebrow,.faq-sect h2.sect,.faq details';
       var els = Array.prototype.slice.call(document.querySelectorAll(sel));
       els.forEach(function (el) { el.classList.add('reveal'); });
       // Escalonamento suave dentro de cada grupo de cartões.
-      ['.steps', '.feat-cards', '.plans'].forEach(function (g) {
+      ['.steps', '.feat-cards', '.plans', '.quotes'].forEach(function (g) {
         document.querySelectorAll(g).forEach(function (group) {
           Array.prototype.slice.call(group.children).forEach(function (child, i) {
             if (child.classList.contains('reveal')) child.style.transitionDelay = (i * 70) + 'ms';

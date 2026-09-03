@@ -352,6 +352,155 @@ function bindFichaTabs(root) {
   });
 }
 
+const AI_STEPS_ANN = [
+  'A recolher o anúncio do DR e as peças do procedimento em paralelo…',
+  'A extrair critérios, prazos e preço…',
+  'A levantar habilitação, cauções e alertas…',
+  'A avaliar o fit e a recomendação de avançar…',
+  'A juntar o resultado…',
+];
+const AI_STEPS_CONTRACT = [
+  'A abrir os documentos do contrato em paralelo…',
+  'A extrair o que foi contratado e os critérios…',
+  'A levantar requisitos e riscos da renovação…',
+  'A avaliar se vale a pena perseguir a renovação…',
+  'A juntar o plano de preparação…',
+];
+
+function aiProgressHtml(steps) {
+  return `<div class="ai-inline" role="status" aria-live="polite">
+    <p class="ai-inline-k">Análise IA em curso</p>
+    <div class="ai-progress"><div class="ai-progress-bar" id="ai-inline-bar"></div></div>
+    <p class="muted" id="ai-inline-step" style="min-height:1.6em;margin:0.7rem 0 0">${esc(steps[0])}</p>
+  </div>`;
+}
+
+function aiLockedHtml() {
+  return `<p style="margin:0 0 8px;line-height:1.55">A análise com IA do caderno de encargos está no plano Pro.</p>
+    <p class="muted" style="margin:0 0 12px">7 dias de teste, sem cartão. A análise já feita fica em cache e não volta a ser cobrada ao reabrir a ficha.</p>
+    <p style="margin:0"><a href="#/planos"><button type="button">Ver planos</button></a></p>`;
+}
+
+function aiTabPaneHtml(kind) {
+  const steps = kind === 'contract' ? AI_STEPS_CONTRACT : AI_STEPS_ANN;
+  const intro = kind === 'contract'
+    ? 'Ao abrir esta ficha a análise começa sozinha: o que foi contratado, o que preparar para a renovação, e se vale a pena perseguir. Se já existir, mostra-se de imediato.'
+    : 'Ao abrir esta ficha a análise começa sozinha: critérios, habilitação, riscos e se deve avançar. Se já existir, mostra-se de imediato.';
+  const body = can('analise_ia') ? aiProgressHtml(steps) : aiLockedHtml();
+  return `<p class="muted" style="margin:0 0 12px;line-height:1.55">${intro}</p>
+    <div id="ai-pane-body">${body}</div>`;
+}
+
+function activateFichaPane(root, paneId) {
+  (root || document).querySelectorAll('.ficha-tabs-wrap').forEach((wrap) => {
+    wrap.querySelectorAll('.ficha-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.pane === paneId));
+    wrap.querySelectorAll('.ficha-pane').forEach((p) => { p.hidden = p.dataset.pane !== paneId; });
+  });
+}
+
+let _aiInlineTimer = null;
+function aiInlineStart(steps) {
+  aiInlineStop();
+  let i = 0;
+  let pct = 6;
+  _aiInlineTimer = setInterval(() => {
+    pct = Math.min(92, pct + Math.max(0.6, (92 - pct) * 0.06));
+    const bar = document.getElementById('ai-inline-bar');
+    const stepEl = document.getElementById('ai-inline-step');
+    if (bar) bar.style.width = pct + '%';
+    if (Math.random() < 0.16 && i < steps.length - 1) {
+      i++;
+      if (stepEl) stepEl.textContent = steps[i];
+    }
+  }, 350);
+}
+function aiInlineStop() {
+  if (_aiInlineTimer) { clearInterval(_aiInlineTimer); _aiInlineTimer = null; }
+  const bar = document.getElementById('ai-inline-bar');
+  if (bar) bar.style.width = '100%';
+}
+
+let _fichaAiGen = 0;
+
+async function startFichaAi({ kind, id, force = false }) {
+  const gen = ++_fichaAiGen;
+  const expectedHash = kind === 'contract' ? `#/contracts/${id}` : `#/announcements/${id}`;
+  const stillHere = () => gen === _fichaAiGen && location.hash.split('?')[0] === expectedHash;
+  const body = document.getElementById('ai-pane-body');
+  if (!body || !stillHere()) return;
+  if (!can('analise_ia')) {
+    body.innerHTML = aiLockedHtml();
+    return;
+  }
+  const steps = kind === 'contract' ? AI_STEPS_CONTRACT : AI_STEPS_ANN;
+  activateFichaPane(app, 'ia');
+  if (force || !body.querySelector('.ai-inline')) body.innerHTML = aiProgressHtml(steps);
+  aiInlineStart(steps);
+  try {
+    const pid = Number(getCtx() || 0);
+    const path = kind === 'contract' ? `/api/contracts/${id}/analyze` : `/api/announcements/${id}/analyze`;
+    const payload = { profile_id: pid };
+    if (force) payload.force = true;
+    const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
+    if (!stillHere()) return;
+    const itemType = kind === 'contract' ? 'renovacao' : 'anuncio_aberto';
+    let docNote = '';
+    if (kind === 'contract' && r.docs_used === 0) {
+      docNote = '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, active «Descarregar documentos PDF» na pesquisa/perfil.</p>';
+    } else if (kind === 'announcement' && r.docs_used > 0) {
+      docNote = `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`;
+    } else if (kind === 'announcement' && r.docs_used === 0) {
+      docNote = '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga directa ou com registo) — análise com o anúncio do DR e dados estruturados.</p>';
+    }
+    const dossier = kind === 'announcement'
+      ? `<p style="margin-top:0.6rem"><button type="button" class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
+         <div id="ai-template-out"></div>`
+      : '';
+    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, r.model, itemType, id)}${docNote}
+      <p style="margin-top:0.8rem"><button type="button" class="btn-secondary" id="ai-rerun-btn">${ico('refresh')} Voltar a analisar</button></p>
+      ${dossier}`;
+    hydrateChecklist(body);
+    const rerun = document.getElementById('ai-rerun-btn');
+    if (rerun) rerun.onclick = () => startFichaAi({ kind, id, force: true });
+    const tbtn = document.getElementById('ai-template-btn');
+    if (tbtn) {
+      tbtn.onclick = async () => {
+        tbtn.disabled = true;
+        aiModalOpen([
+          'A reunir os critérios de adjudicação já extraídos…',
+          'A montar a lista de verificação de submissão na plataforma…',
+          'A redigir a declaração do Anexo I do CCP…',
+          'A estruturar a memória descritiva alinhada aos critérios…',
+          'A preparar os placeholders da sua empresa…',
+        ]);
+        try {
+          const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
+          const url = URL.createObjectURL(blob);
+          document.getElementById('ai-template-out').innerHTML = `
+            <div class="card" style="margin-top:0.6rem">
+              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
+                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
+              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
+            </div>`;
+        } catch (err) {
+          document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+          tbtn.disabled = false;
+        } finally { aiModalClose(); }
+      };
+    }
+  } catch (err) {
+    if (!stillHere()) return;
+    if (err.planRequired) { body.innerHTML = aiLockedHtml(); return; }
+    body.innerHTML = `<p class="error">${esc(err.message)}</p>
+      <p><button type="button" class="btn-secondary" id="ai-retry-btn">Tentar de novo</button></p>`;
+    const retry = document.getElementById('ai-retry-btn');
+    if (retry) retry.onclick = () => startFichaAi({ kind, id, force });
+  } finally {
+    if (stillHere()) aiInlineStop();
+  }
+}
+
 function carteiraPaneHtml(type, id, status) {
   return `<div id="pl-ficha">
     <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
@@ -1577,6 +1726,7 @@ async function renderContract(id) {
       : `<span class="fim-badge past">HÁ ${-diff} DIAS</span>`;
   }
   const adj = firstEnt('contracting');
+  if ((location.hash.split('?')[0]) !== `#/contracts/${id}`) return;
 
   app.innerHTML = `
     <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/renewals">Renovações</a> → <span class="cur">Contrato BASE #${c.basegov_id}</span></div>
@@ -1590,14 +1740,10 @@ async function renderContract(id) {
         <h1>${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h1>
         ${c.description ? `<p class="lead">${esc(c.description)}</p>` : ''}
       </div>
-      <div class="d-actions">
-        <button id="ai-contract-btn">${ico('search')} ${isRenewal ? 'Preparar renovação com IA' : 'Analisar com IA'}</button>
-        <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-      </div>
     </div>
-    <div class="d-grid">
-      <div class="d-main">
+    <div class="d-grid ficha-layout">
         ${fichaTabsHtml([
+          { id: 'ia', label: 'Análise IA', html: aiTabPaneHtml('contract') },
           {
             id: 'enq', label: 'Enquadramento',
             html: `<div class="parts">
@@ -1633,8 +1779,6 @@ async function renderContract(id) {
           ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}`,
           } : null,
         ])}
-        <div id="ai-contract-result"></div>
-      </div>
       <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO CONTRATUAL</div>
@@ -1660,30 +1804,7 @@ async function renderContract(id) {
   bindFichaTabs(app);
   bindPipelineChips(app);
   wireFichaPipeline('renovacao', c.id);
-
-  document.getElementById('ai-contract-btn').onclick = async () => {
-    const btn = document.getElementById('ai-contract-btn');
-    const out = document.getElementById('ai-contract-result');
-    btn.disabled = true;
-    aiModalOpen([
-      'A carregar o contrato e as entidades…',
-      'A abrir os documentos PDF guardados na base…',
-      'A extrair critérios e requisitos do caderno de encargos…',
-      'A estudar o fornecedor atual e o histórico da entidade…',
-      'A montar o plano de preparação da renovação…',
-    ]);
-    try {
-      const pid = Number(getCtx() || 0);
-      const r = await api(`/api/contracts/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model, 'renovacao', id)}${
-        r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : ''}</div>`;
-      hydrateChecklist(out);
-      out.scrollIntoView({ block: 'nearest' });
-    } catch (err) {
-      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-      btn.disabled = false;
-    } finally { aiModalClose(); }
-  };
+  startFichaAi({ kind: 'contract', id });
 }
 
 /* ---------- Perfis ---------- */
@@ -2837,7 +2958,7 @@ async function renderPipeline() {
     const tot = it.checklist?.total || 0;
     const done = it.checklist?.checked || 0;
     const pct = tot ? Math.round((done / tot) * 100) : 0;
-    return `<div class="pl-card${overdue ? ' overdue' : ''}" onclick="location.hash='${esc(href)}'">
+    return `<div class="pl-card${overdue ? ' overdue' : ''}" draggable="true" data-href="${esc(href)}" data-type="${esc(it.item_type)}" data-id="${it.item_id}" data-status="${esc(it.status)}">
       <div class="ti">${esc(it.title || '—')}</div>
       <div class="su">${esc(it.entity || '—')} · ${fmtEuro0(it.value)} · prazo ${fmtDateDMY(it.deadline)}</div>
       ${it.assignee?.name ? `<div class="su">Resp.: ${esc(it.assignee.name)}</div>` : ''}
@@ -2847,21 +2968,106 @@ async function renderPipeline() {
   }
 
   let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Carteira</h1>
-    <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — estados partilhados.</div></div></div>`;
+    <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — arraste as cartas entre colunas. Estados partilhados.</div></div></div>`;
   if (!(items || []).length) {
     html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
   } else {
     html += `<div class="pl-board">`;
     for (const col of cols) {
       const colItems = open.filter((i) => i.status === col.id);
-      html += `<div class="pl-col"><h3>${esc(col.label)} <span class="muted">(${colItems.length})</span></h3>
-        ${colItems.map(card).join('') || '<p class="muted">—</p>'}</div>`;
+      const tone = plTone(col.id);
+      html += `<div class="pl-col" data-status="${col.id}">
+        <h3 class="pl-col-h" style="background:${tone.bg};color:${tone.fg};border:1px solid ${tone.bd}">${esc(col.label)} <span class="pl-col-count">(${colItems.length})</span></h3>
+        <div class="pl-col-body">${colItems.map(card).join('') || '<p class="muted pl-empty">—</p>'}</div>
+      </div>`;
     }
     html += `</div>`;
     html += `<details class="pl-closed"><summary>Fechadas (${closed.length})</summary>
-      ${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</details>`;
+      <div class="pl-closed-body">${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</div></details>`;
   }
   app.innerHTML = html;
+  bindPipelineBoard(app);
+}
+
+function refreshPlColCounts() {
+  document.querySelectorAll('.pl-col').forEach((col) => {
+    const n = col.querySelectorAll('.pl-card').length;
+    const el = col.querySelector('.pl-col-count');
+    if (el) el.textContent = `(${n})`;
+    const body = col.querySelector('.pl-col-body');
+    if (!body) return;
+    const empty = body.querySelector('.pl-empty');
+    if (n === 0 && !empty) body.insertAdjacentHTML('beforeend', '<p class="muted pl-empty">—</p>');
+    if (n > 0 && empty) empty.remove();
+  });
+}
+
+function bindPipelineBoard(root) {
+  const board = (root || document).querySelector('.pl-board');
+  if (!board) return;
+  let dragging = null;
+
+  (root || document).querySelectorAll('.pl-card').forEach((el) => {
+    el.addEventListener('dragstart', (e) => {
+      dragging = el;
+      el.classList.add('dragging');
+      el.dataset.didDrag = '1';
+      const payload = JSON.stringify({ type: el.dataset.type, id: el.dataset.id, status: el.dataset.status });
+      e.dataTransfer.setData('application/x-baseradar-pipeline', payload);
+      e.dataTransfer.setData('text/plain', payload);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      document.querySelectorAll('.pl-col.drop-target').forEach((c) => c.classList.remove('drop-target'));
+      dragging = null;
+      setTimeout(() => { delete el.dataset.didDrag; }, 0);
+    });
+    el.addEventListener('click', (e) => {
+      if (el.dataset.didDrag) { e.preventDefault(); e.stopPropagation(); return; }
+      if (el.dataset.href) location.hash = el.dataset.href;
+    });
+  });
+
+  board.querySelectorAll('.pl-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('drop-target');
+    });
+    col.addEventListener('dragleave', (e) => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove('drop-target');
+    });
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drop-target');
+      let data = {};
+      try {
+        data = JSON.parse(e.dataTransfer.getData('application/x-baseradar-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
+      } catch { data = {}; }
+      const card = dragging || board.querySelector(`.pl-card[data-type="${CSS.escape(String(data.type || ''))}"][data-id="${CSS.escape(String(data.id || ''))}"]`);
+      if (!card) return;
+      const next = col.dataset.status;
+      const prev = card.dataset.status;
+      if (!next || next === prev) return;
+      const originCol = card.closest('.pl-col');
+      const originBody = originCol?.querySelector('.pl-col-body') || card.parentElement;
+      const destBody = col.querySelector('.pl-col-body') || col;
+      destBody.appendChild(card);
+      card.dataset.status = next;
+      refreshPlColCounts();
+      try {
+        await api(`/api/pipeline/${card.dataset.type}/${card.dataset.id}`, {
+          method: 'PUT', body: JSON.stringify({ status: next }),
+        });
+      } catch (err) {
+        if (originBody) originBody.appendChild(card);
+        card.dataset.status = prev;
+        refreshPlColCounts();
+        alert(err.message);
+      }
+    });
+  });
 }
 
 async function renderRadar(tab = 'opportunities') {
@@ -2958,6 +3164,7 @@ async function renderAnnouncement(id) {
   const cronoHtml = crono.map((r, i) => `<div class="crono-row">
     <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
     <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${fmtDatePt(r.d)}</b> · ${r.label}</div></div>`).join('');
+  if ((location.hash.split('?')[0]) !== `#/announcements/${id}`) return;
 
   app.innerHTML = `
     <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/announcements">Concursos</a> → <span class="cur">Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</span></div>
@@ -2971,14 +3178,10 @@ async function renderAnnouncement(id) {
         </div>
         <h1>${esc(a.contract_designation ?? `Anúncio #${a.basegov_id}`)}</h1>
       </div>
-      <div class="d-actions">
-        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button>
-        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
-      </div>
     </div>
-    <div class="d-grid">
-      <div class="d-main">
+    <div class="d-grid ficha-layout">
         ${fichaTabsHtml([
+          { id: 'ia', label: 'Análise IA', html: aiTabPaneHtml('announcement') },
           {
             id: 'enq', label: 'Enquadramento',
             html: `<div class="parts">
@@ -2994,13 +3197,7 @@ async function renderAnnouncement(id) {
           { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('anuncio_aberto', a.id, a.pipeline_status) },
           cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
           { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(a.contracting_procedure_url) },
-          {
-            id: 'ia', label: 'Análise IA',
-            html: `<p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação de avançar ou não. O resultado fica guardado. Use «Analisar com IA» no topo da ficha.</p>`,
-          },
         ])}
-        <div id="ai-result"></div>
-      </div>
       <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO BASE</div>
@@ -3017,63 +3214,7 @@ async function renderAnnouncement(id) {
   bindFichaTabs(app);
   bindPipelineChips(app);
   wireFichaPipeline('anuncio_aberto', a.id);
-
-  document.getElementById('ai-analyze-btn').onclick = async () => {
-    const btn = document.getElementById('ai-analyze-btn');
-    const out = document.getElementById('ai-result');
-    btn.disabled = true;
-    aiModalOpen([
-      'A descarregar o anúncio publicado em Diário da República…',
-      'A extrair o texto do documento oficial…',
-      'A identificar critérios de adjudicação e ponderações…',
-      'A levantar requisitos de habilitação, cauções e prazos…',
-      'A avaliar o fit com a tua atividade…',
-      'A procurar red flags no procedimento…',
-      'A compilar a lista de verificação e a recomendação de avançar ou não…',
-    ]);
-    try {
-      const pid = Number(getCtx() || 0);
-      const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      const docNote = r.docs_used > 0
-        ? `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`
-        : r.docs_used === 0
-          ? '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga direta ou com registo) — análise com o anúncio do DR e dados estruturados.</p>'
-          : '';
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model, 'anuncio_aberto', id)}${docNote}
-        <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
-        <div id="ai-template-out"></div></div>`;
-      hydrateChecklist(out);
-      out.scrollIntoView({ block: 'nearest' });
-      document.getElementById('ai-template-btn').onclick = async () => {
-        const tbtn = document.getElementById('ai-template-btn');
-        tbtn.disabled = true;
-        aiModalOpen([
-          'A reunir os critérios de adjudicação já extraídos…',
-          'A montar a lista de verificação de submissão na plataforma…',
-          'A redigir a declaração do Anexo I do CCP…',
-          'A estruturar a memória descritiva alinhada aos critérios…',
-          'A preparar os placeholders da tua empresa…',
-        ]);
-        try {
-          const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
-          const url = URL.createObjectURL(blob);
-          document.getElementById('ai-template-out').innerHTML = `
-            <div class="card" style="margin-top:0.6rem">
-              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
-                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
-              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
-            </div>`;
-        } catch (err) {
-          document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
-          tbtn.disabled = false;
-        } finally { aiModalClose(); }
-      };
-    } catch (err) {
-      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-      btn.disabled = false;
-    } finally { aiModalClose(); }
-  };
+  startFichaAi({ kind: 'announcement', id });
 }
 
 function renderAiFicha(an, cached, model, itemType, itemId) {
@@ -3739,6 +3880,7 @@ function openFeedbackModal() {
 async function route() {
   stopPolling();
   hideMatrixTip();
+  _fichaAiGen++;
   const hash = location.hash || '#/';
   const hashBase = hash.split('?')[0];
   document.body.classList.toggle('login-bg', hashBase === '#/login' || hashBase === '#/registo' || hashBase === '#/recuperar' || hashBase === '#/repor-password');
