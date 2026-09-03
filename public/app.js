@@ -3877,9 +3877,41 @@ function openFeedbackModal() {
   };
 }
 
+function setAppNavOpen(open) {
+  if (!topbar) return;
+  topbar.classList.toggle('nav-open', open);
+  document.body.classList.toggle('nav-open', open);
+  const btn = document.getElementById('nav-toggle');
+  const scrim = document.getElementById('nav-scrim');
+  if (btn) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+  }
+  if (scrim) scrim.hidden = !open;
+}
+
+function bindAppNav() {
+  const btn = document.getElementById('nav-toggle');
+  const scrim = document.getElementById('nav-scrim');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    setAppNavOpen(!topbar.classList.contains('nav-open'));
+  };
+  if (scrim) scrim.onclick = () => setAppNavOpen(false);
+  topbar.querySelector('nav')?.addEventListener('click', (e) => {
+    if (e.target.closest('a')) setAppNavOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setAppNavOpen(false);
+  });
+}
+
 async function route() {
   stopPolling();
   hideMatrixTip();
+  setAppNavOpen(false);
   _fichaAiGen++;
   const hash = location.hash || '#/';
   const hashBase = hash.split('?')[0];
@@ -3962,9 +3994,11 @@ async function route() {
 
 document.getElementById('logout-btn').onclick = async () => {
   window._me = null;
+  setAppNavOpen(false);
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   location.hash = '#/login';
 };
 
+bindAppNav();
 window.addEventListener('hashchange', route);
 route();
