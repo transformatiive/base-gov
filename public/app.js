@@ -5,6 +5,99 @@ const whoami = document.getElementById('whoami');
 let pollTimer = null;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** Títulos do Portal BASE: C1/tofu (Windows-1252) e aspas exteriores. */
+function unwrapDisplayQuotes(s) {
+  let t = String(s ?? '').trim();
+  for (let i = 0; i < 4 && t.length >= 2; i++) {
+    const a = t[0];
+    const b = t[t.length - 1];
+    const pair = { '"': '"', "'": "'", '\u00AB': '\u00BB', '\u201C': '\u201D', '\u2018': '\u2019' };
+    if (pair[a] === b) t = t.slice(1, -1).trim();
+    else break;
+  }
+  return t.replace(/^[\s"«“'\u2018]+/, '').replace(/[\s"»”'\u2019]+$/, '').trim();
+}
+
+function cleanDisplayText(s) {
+  if (s == null) return '';
+  let t = String(s);
+  if (!t) return '';
+  t = t.replace(/\uFFFD/g, ' · ');
+  t = t.replace(/[\t\n\r]+/g, ' ');
+  t = t.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' · ');
+  t = t.replace(/[\u007F-\u009F]/g, ' · ');
+  t = t.replace(/[\uE000-\uF8FF]/g, ' · ');
+  t = t.replace(/[\u25A0-\u25AF\u25B0-\u25B3\u25FB-\u25FE\u2610\u2B1B\u2B1C]/g, ' · ');
+  t = t.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, ' — ');
+  t = t.replace(/(\S) - (\S)/g, '$1 — $2');
+  t = t.replace(/[•●◦‣∙]/g, ' · ');
+  t = t.replace(/[ \u00A0\u202F\u2007\u2009]+/g, ' ');
+  t = t.replace(/(?:\s*·\s*)+/g, ' · ');
+  t = t.replace(/(?:\s*—\s*)+/g, ' — ');
+  t = t.replace(/\s*—\s*·\s*/g, ' · ').replace(/\s*·\s*—\s*/g, ' · ');
+  t = t.trim().replace(/^(?:·|—)\s*/, '').replace(/\s*(?:·|—)$/, '');
+  return unwrapDisplayQuotes(t);
+}
+
+function normalizeFichaCompare(s) {
+  return unwrapDisplayQuotes(cleanDisplayText(s))
+    .replace(/[«»“”"'\u2018\u2019]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function fichaTitleParts(brief, extra) {
+  const cleaned = cleanDisplayText(brief);
+  let ref = '';
+  let rest = cleaned;
+  const num = rest.match(/^(\d{6,})\b(?:\s*[—–-]\s*|\s+)([\s\S]*)$/);
+  if (num) {
+    ref = num[1];
+    rest = unwrapDisplayQuotes(num[2]);
+  } else {
+    rest = unwrapDisplayQuotes(rest);
+  }
+  const segs = rest.split(/\s*·\s*/)
+    .map((p) => unwrapDisplayQuotes(p).replace(/^(?:—)\s*/, '').replace(/\s*—$/, '').trim())
+    .filter(Boolean);
+  const isSubstantial = (p) => (p.match(/[\p{L}\p{N}]/gu) || []).length >= 3;
+  let idx = segs.findIndex(isSubstantial);
+  if (idx < 0) idx = 0;
+  const title = segs[idx] || rest;
+  let lead = segs.filter((_, i) => i !== idx).join(' · ');
+  const extraRaw = extra == null ? '' : String(extra);
+  if (extraRaw.trim()) {
+    const briefN = normalizeFichaCompare(brief);
+    const extraN = normalizeFichaCompare(extraRaw);
+    if (extraN && extraN !== briefN && !briefN.includes(extraN)) {
+      const extraClean = cleanDisplayText(extraRaw);
+      if (!lead) lead = extraClean;
+      else {
+        const leadN = normalizeFichaCompare(lead);
+        if (leadN !== extraN && !leadN.includes(extraN)) lead = `${lead} · ${extraClean}`;
+      }
+    }
+  }
+  return { ref, title, lead };
+}
+
+function fichaHeadHtml(brief, extra, fallback) {
+  const source = (brief != null && String(brief).trim()) ? brief : (fallback ?? '');
+  const { ref, title, lead } = fichaTitleParts(source, extra);
+  const h1 = title || fallback || '—';
+  return `${ref ? `<p class="d-ref">${esc(ref)}</p>` : ''}<h1>${esc(h1)}</h1>${lead ? `<p class="lead">${esc(lead)}</p>` : ''}`;
+}
+
+function escTitle(s) {
+  return esc(cleanDisplayText(s));
+}
+
+function escTitleMax(s, n) {
+  return esc(cleanDisplayText(s).slice(0, n));
+}
+
 const fmtPrice = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }));
 const fmtDate = (v) => (v ? String(v).slice(0, 10) : '—');
 const badge = (s) => `<span class="badge ${esc(s)}">${esc(s)}</span>`;
@@ -1622,7 +1715,7 @@ async function renderResults(searchId, page = 0) {
 
   const rows = data.items.map((c) => `
     <tr class="clickable" onclick="location.hash='#/contracts/${c.id}'">
-      <td>${esc(c.object_brief_description || c.description || '')}</td>
+      <td>${escTitle(c.object_brief_description || c.description || '')}</td>
       <td>${esc(c.contracting_procedure_type ?? '')}</td>
       <td>${fmtPrice(c.initial_contractual_price)}</td>
       <td>${fmtDate(c.publication_date)}</td>
@@ -1737,8 +1830,7 @@ async function renderContract(id) {
           ${c.contracting_procedure_type ? `<span class="d-tag">${esc(String(c.contracting_procedure_type).toUpperCase())}</span>` : ''}
           ${c.contract_types ? `<span class="d-tag">${esc(String(c.contract_types).toUpperCase())}</span>` : ''}
         </div>
-        <h1>${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h1>
-        ${c.description ? `<p class="lead">${esc(c.description)}</p>` : ''}
+        ${fichaHeadHtml(c.object_brief_description, c.description, `Contrato #${c.basegov_id}`)}
       </div>
     </div>
     <div class="d-grid ficha-layout">
@@ -1958,7 +2050,7 @@ async function renderInsightTab(el, q, tab, p) {
       return `<div class="opp-tr body" onclick="location.hash='${esc(o.internal_url ?? o.basegov_url)}'">
         <div class="opp-score"><b>${o.score}</b><div class="track"><div class="fill" style="width:${Math.min(100, o.score)}%;background:${scoreBarColor(o)}"></div></div></div>
         ${fitCell(f, plType, plId)}
-        <div><div class="ti">${esc(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
+        <div><div class="ti">${escTitle(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
         <span class="ent">${esc(o.entity ?? '—')}</span>
         <span class="val">${fmtEuro0(o.value)}</span>
         <span class="dat ${urgent ? 'urgent' : ''}">${o.key_date ? `${dPtShort(o.key_date)} · ${o.days_left}d` : '—'}</span>
@@ -2024,7 +2116,7 @@ async function renderInsightTab(el, q, tab, p) {
       ${d.items.map((r) => `<tr>
         <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
         <td><strong>${fmtDateDMY(r.suggested_contact_date)}</strong></td>
-        <td><a href="#/contracts/${r.id}">${esc(r.object_brief_description ?? '')}</a></td>
+        <td><a href="#/contracts/${r.id}">${escTitle(r.object_brief_description ?? '')}</a></td>
         <td>${esc(r.contracting ?? '—')}</td>
         <td>${esc(r.incumbent ?? '—')}</td>
         <td>${fmtPrice(r.initial_contractual_price)}</td>
@@ -2056,7 +2148,7 @@ async function renderInsightTab(el, q, tab, p) {
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
         <td>${fmtDate(a.dr_publication_date)}</td>
         <td><span class="dot ${open ? 'open' : 'closed'}"></span> ${fmtDate(a.proposal_deadline_date)}</td>
-        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
+        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${escTitle(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
         <td>${fmtPrice(a.base_price)}</td>
@@ -2340,13 +2432,13 @@ async function loadRegionPanel(district, q) {
     ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
         <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
-        <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${escTitleMax(r.object_brief_description ?? '', 90)}</a></td>
         <td>${esc(r.contracting ?? '—')}</td><td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sem renovações nos próximos 12 meses.</p>'}
     <h4>Contratos recentes (${d.contracts.length})</h4>
     <table><thead><tr><th>Publicação</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.contracts.map((c) => `<tr class="clickable" onclick="location.hash='#/contracts/${c.id}'">
         <td>${fmtDate(c.publication_date)}</td>
-        <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${esc((c.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${escTitleMax(c.object_brief_description ?? '', 90)}</a></td>
         <td>${esc(c.contracting ?? '—')}</td><td>${fmtPrice(c.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem contratos.</td></tr>'}
     </tbody></table>`;
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -2358,7 +2450,7 @@ function matrixTipHtml(o, fit) {
   const keyDate = o.key_date ? String(o.key_date).slice(0, 10) : '—';
   return `
     ${kind}
-    <div class="mt-title">${esc(o.title ?? '')}</div>
+    <div class="mt-title">${escTitle(o.title ?? '')}</div>
     <ul class="mt-list">
       <li><strong>${esc(o.entity ?? '—')}</strong></li>
       <li>Valor: <strong>${fmtPrice(o.value)}</strong></li>
@@ -2826,7 +2918,7 @@ async function renderHoje() {
   const pipeShow = pipeDue.slice(0, 6);
   const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
     <div><div class="k">${plChip(it.status)}</div>
-      <div class="ti">${esc(it.title ?? '')}</div>
+      <div class="ti">${escTitle(it.title ?? '')}</div>
       <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
   const pipeHtml = pipeDue.length ? `<div class="hoje-pipe">
       ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
@@ -2849,7 +2941,7 @@ async function renderHoje() {
       ${showScore ? scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c') : ''}
       <div style="min-width:0">
         <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">adequação IA ${fit.fit}/100</span>` : ''}</div>
-        <div class="ti">${esc(o.title ?? '')}</div>
+        <div class="ti">${escTitle(o.title ?? '')}</div>
         <div class="su">${esc(o.entity ?? '—')}${o.value != null ? ' · ' + fmtCompact(o.value) : ''}</div>
       </div>
       <div class="opp-actions">
@@ -2861,7 +2953,7 @@ async function renderHoje() {
   };
   const prepRow = (o) => `<div class="prep-row" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
     ${scoreDonut(o.score, '#c99a3c', 44)}
-    <div><div class="ti">${esc(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
+    <div><div class="ti">${escTitle(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
     <div class="cd">contactar até<br><b>${contactar(o.key_date)}</b></div>
     <div class="vl">${fmtCompact(o.value)}</div></div>`;
 
@@ -2911,7 +3003,7 @@ async function renderHoje() {
         </div>
         ${monitorizar.length ? `<div>
           <div class="sec-head"><span class="sd" style="background:#9aa6a0"></span><span class="st">Monitorizar</span><a class="sh" href="#/radar/opportunities">${monitorizar.length} oportunidade${monitorizar.length === 1 ? '' : 's'} a mais de 6 meses · ver todas →</a></div>
-          <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${esc((o.title ?? '').slice(0, 44))} · ${fmtCompact(o.value)}</span>`).join('')}</div>
+          <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${escTitleMax(o.title ?? '', 44)} · ${fmtCompact(o.value)}</span>`).join('')}</div>
         </div>` : ''}
       </div>
       <div class="hoje-col hoje-right" style="gap:14px">
@@ -2959,7 +3051,7 @@ async function renderPipeline() {
     const done = it.checklist?.checked || 0;
     const pct = tot ? Math.round((done / tot) * 100) : 0;
     return `<div class="pl-card${overdue ? ' overdue' : ''}" draggable="true" data-href="${esc(href)}" data-type="${esc(it.item_type)}" data-id="${it.item_id}" data-status="${esc(it.status)}">
-      <div class="ti">${esc(it.title || '—')}</div>
+      <div class="ti">${escTitle(it.title) || '—'}</div>
       <div class="su">${esc(it.entity || '—')} · ${fmtEuro0(it.value)} · prazo ${fmtDateDMY(it.deadline)}</div>
       ${it.assignee?.name ? `<div class="su">Resp.: ${esc(it.assignee.name)}</div>` : ''}
       ${tot ? `<div class="su">Checklist ${done}/${tot} · ${pct} %</div>` : ''}
@@ -3176,7 +3268,7 @@ async function renderAnnouncement(id) {
           ${a.contracting_procedure_type || a.model_type ? `<span class="d-tag">${esc(String(a.model_type ?? a.contracting_procedure_type).toUpperCase())}</span>` : ''}
           ${a.contract_type ? `<span class="d-tag">${esc(String(a.contract_type).toUpperCase())}</span>` : ''}
         </div>
-        <h1>${esc(a.contract_designation ?? `Anúncio #${a.basegov_id}`)}</h1>
+        ${fichaHeadHtml(a.contract_designation, null, `Anúncio #${a.basegov_id}`)}
       </div>
     </div>
     <div class="d-grid ficha-layout">
@@ -3515,7 +3607,7 @@ async function renderEntity(id) {
 
   const recent = (r.recent_contracts ?? []).slice(0, 8).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
     <span class="pub">${fmtDate(c.publication_date)}</span>
-    <span class="obj">${esc(c.object_brief_description ?? '—')}</span>
+    <span class="obj">${escTitle(c.object_brief_description) || '—'}</span>
     <span class="val">${fmtCompact(c.initial_contractual_price)}</span>
     <span class="ter">${c.end_date ? fmtDate(c.end_date) : '—'}</span>
   </div>`).join('') || '<div class="row"><span class="muted" style="grid-column:1/-1">Sem contratos.</span></div>';

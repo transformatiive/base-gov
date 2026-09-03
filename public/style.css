@@ -303,6 +303,8 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
   .map-table { max-width: 100%; }
   #help-fab { right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); padding: 11px 12px; }
   #help-fab span { display: none; }
+  .d-head h1 { font-size: 18px; }
+  .d-head .lead { font-size: 13px; }
 }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
 .dot.open { background: var(--brand); }
@@ -482,9 +484,10 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .d-tags { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 8px; }
 .d-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; border-radius: 5px; padding: 3px 8px; color: var(--ink-2); background: var(--row-line); }
 .d-tag.brand { color: var(--brand-text); background: var(--brand-tint-2); }
-.d-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.d-head h1 { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; margin: 0; max-width: 640px; line-height: 1.2; }
-.d-head .lead { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 620px; line-height: 1.6; }
+.d-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; min-width: 0; }
+.d-head h1 { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; margin: 0; max-width: 640px; line-height: 1.28; overflow-wrap: anywhere; word-break: break-word; }
+.d-head .lead { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 620px; line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }
+.d-ref { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--faint); margin: 0 0 6px; font-variant-numeric: tabular-nums; }
 .d-actions { display: flex; gap: 8px; flex: none; }
 .d-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; margin-top: 18px; }
 .d-grid > div { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -545,6 +548,7 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .d-grid { grid-template-columns: 1fr; }
   .d-side { order: -1; }
   .d-head { flex-direction: column; }
+  .d-head h1, .d-head .lead { max-width: none; }
   .aificha-cards { grid-template-columns: 1fr; }
   .d-grid.ficha-layout {
     grid-template-columns: 1fr;
