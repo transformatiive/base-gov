@@ -10,10 +10,10 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 
 ## GTM — Landing e copy (PR 1)
 
-### GTM-01 — Hero fala ao diretor de concursos
+### GTM-01 — Hero fala ao responsável por concursos
 - **URL:** `/` (sem login)
 - **Passos:** Ler o H1, o lead e o eyebrow.
-- **Passa se:** o eyebrow contém «diretor de concursos» ou «obras» / «reabilitação»; o H1 fala de obras municipais / concursos **antes de irem a concurso** (ou equivalente: a tempo de concorrer); o lead menciona alvará **ou** construtora **ou** reabilitação municipal.
+- **Passa se:** o eyebrow contém «responsável por concursos» ou «obras» / «reabilitação»; o H1 fala de obras municipais / concursos **antes de irem a concurso** (ou equivalente: a tempo de concorrer); o lead menciona alvará **ou** construtora **ou** reabilitação municipal.
 - **Falha se:** o H1 ou o lead vendem «a sua atividade» genérica sem sector, ou «festas».
 
 ### GTM-02 — Cartão do hero é uma obra municipal, não uma festa
@@ -25,13 +25,13 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-03 — Business é a oferta da equipa; Pro é o isco
 - **URL:** `/#preco`
 - **Passos:** Ler os três planos.
-- **Passa se:** Grátis 0 €, Pro 29 €, Business 99 €; o cartão **Business** está visualmente destacado (borda/ribbon «A MESA DA EQUIPA» ou equivalente) e o texto fala de **equipa de concursos** / até 10 utilizadores / CRM; o Pro oferece 7 dias grátis e **não** tem ribbon «MAIS POPULAR».
+- **Passa se:** Grátis 0 €, Pro 29 €, Business 99 €; o cartão **Business** está visualmente destacado (borda/ribbon «A MESA DA EQUIPA» ou equivalente) e o texto fala de **equipa de concursos** / até 10 utilizadores / gestão comercial; o Pro oferece 7 dias grátis e **não** tem ribbon «MAIS POPULAR».
 - **Falha se:** o ribbon «MAIS POPULAR» está no Pro e o Business parece um extra irrelevante.
 
 ### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
-- **Passos:** Percorrer os cartões (renovações, concorrentes, digest).
-- **Passa se:** as mini-visualizações usam nomes de **obras/câmaras/construtoras**; o digest promete email semanal; existe (ou o copy promete) pipeline ou mesa de trabalho.
+- **Passos:** Percorrer os cartões (renovações, concorrentes, resumo semanal).
+- **Passa se:** as mini-visualizações usam nomes de **obras/municípios/construtoras**; o resumo promete email semanal; existe (ou o copy promete) carteira de propostas ou mesa de trabalho.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas», «pirotecnia».
 
 ### GTM-05 — CTA e meta
@@ -180,7 +180,7 @@ Estados visíveis: **Nova** (omissão), **Interessa**, **Em preparação**, **Su
 ### NTF-01 — Preferências na conta
 - **URL:** `/app#/conta`
 - **Passos:** Procurar Notificações.
-- **Passa se:** interruptores «Digest semanal» e «Lembretes de prazo», ambos ligados por omissão; gravar desligar o digest persiste após recarregar.
+- **Passa se:** interruptores «Resumo semanal» e «Lembretes de prazo», ambos ligados por omissão; gravar desligar o resumo persiste após recarregar.
 
 ### NTF-02 — Digest na app continua a existir
 - **URL:** `/app#/digest`

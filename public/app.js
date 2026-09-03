@@ -591,18 +591,18 @@ async function renderRegister() {
         </div>
 
         <label style="margin-top:0.8rem">A sua atividade</label>
-        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, alvará, cobertura, fachadas) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
+        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, conservação de escolas, pavilhão, alvará) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
         <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
         <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
         <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
-          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção)" style="flex:1">
+          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, reabilitação, conservação)" style="flex:1">
           <button type="button" class="btn-secondary" id="reg-cpv-btn">${ico('search')} Procurar</button>
         </div>
         <div id="reg-cpv-results" style="margin-top:0.4rem"></div>
 
         <div class="error" id="reg-error" style="margin-top:0.6rem"></div>
         <p style="margin-top:0.9rem"><button type="submit" id="reg-submit">Criar conta e começar</button></p>
-        <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie score, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
+        <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie pontuação, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
         <p class="muted" style="font-size:0.78rem">Ao criar conta, aceita os <a href="/termos" target="_blank" rel="noopener">Termos e Condições</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
       </form>
       <p class="login-foot">Já tem conta? <a href="#/login">Entrar</a></p>
@@ -680,7 +680,7 @@ function renderTrialBanner(me) {
     cls = 'past-due'; title = 'Pagamento pendente'; sub = 'Regularize para manter o plano.'; cta = 'Regularizar';
   } else if (plan === 'free') {
     // Convite discreto a experimentar/upgrade — sem alarme (o free é um plano válido).
-    title = 'Plano Grátis'; sub = 'Desbloqueie score, IA e renovações.'; cta = 'Fazer upgrade';
+    title = 'Plano Grátis'; sub = 'Desbloqueie pontuação, IA e renovações.'; cta = 'Fazer upgrade';
   } else {
     host.hidden = true; host.innerHTML = ''; return;   // Pro/Business ativos: sem banner
   }
@@ -718,9 +718,9 @@ async function updateSidebar() {
 /* ---------- Planos (grátis / pro / business): trial, upgrade e pagamento ---------- */
 const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
 const PLAN_FEATURES = {
-  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal', 'Pipeline'],
-  pro: ['Tudo do Grátis', 'Oportunidades com score + fit IA', 'Radar de renovações', 'Concursos europeus (TED)', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação Excel', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Integração API (CRM / ERP)', 'Uso elevado de IA', 'Exportação avançada'],
+  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
+  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '2 utilizadores'],
+  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Ligação à gestão comercial e à obra', 'Uso elevado de IA', 'Exportação avançada'],
 };
 
 async function renderPlans() {
@@ -981,7 +981,7 @@ async function fillNotifyBlock() {
   try { n = await api('/api/me/notifications'); } catch { return; }
   host.innerHTML = `
     <h3 style="margin:0 0 .6rem">Notificações</h3>
-    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="nt-digest" ${n.notify_digest !== false ? 'checked' : ''}> Digest semanal (segunda-feira 08:00 Lisboa)</label>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="nt-digest" ${n.notify_digest !== false ? 'checked' : ''}> Resumo semanal (segunda-feira 08:00 Lisboa)</label>
     <label style="display:flex;gap:8px;align-items:center;margin-top:.4rem"><input type="checkbox" id="nt-rem" ${n.notify_reminders !== false ? 'checked' : ''}> Lembretes de prazo (7 e 2 dias)${can('lembretes') ? '' : ' <span class="muted">· Pro</span>'}</label>
     <p class="muted" style="font-size:.8rem;margin:.5rem 0 0">O digest está incluído em todos os planos, incluindo o trial Pro.</p>`;
   const save = async () => {
@@ -1261,7 +1261,7 @@ async function renderContract(id) {
               <div class="body">${mo.date ? `<b>${fmtDate(mo.date)}</b> · ` : ''}${esc(mo.label)}${mo.price_text ? ` <span class="muted">(${esc(mo.price_text)})</span>` : ''}</div>
             </div>`).join('')}
           </div>
-          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de incumbente a defender a posição).</p>
+          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de adjudicatário actual a defender a posição).</p>
         </div>` : ''}
         <div id="ai-contract-result"></div>
       </div>
@@ -1287,7 +1287,7 @@ async function renderContract(id) {
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
         ${formalidadesHtml(c.contracting_procedure_url)}
         <div class="d-card" id="pl-ficha">
-          <div class="t">Pipeline</div>
+          <div class="t">Carteira</div>
           <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
           <div>${pipelineSelect('renovacao', c.id, c.pipeline_status)}</div>
           <label style="display:block;margin-top:.6rem">Nota</label>
@@ -1999,7 +1999,7 @@ function renderPriorityMatrix(items, fits) {
 
   return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
     <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
-    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
+    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = adequação IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
       ${yGrid}${xGrid}
       <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
@@ -2330,7 +2330,7 @@ async function renderHoje() {
     return `<div class="opp-card" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
       ${scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c')}
       <div style="min-width:0">
-        <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">fit IA ${fit.fit}/100</span>` : ''}</div>
+        <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">adequação IA ${fit.fit}/100</span>` : ''}</div>
         <div class="ti">${esc(o.title ?? '')}</div>
         <div class="su">${esc(o.entity ?? '—')}${o.value != null ? ' · ' + fmtCompact(o.value) : ''}</div>
       </div>
@@ -2375,7 +2375,7 @@ async function renderHoje() {
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
-        <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>
+        <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>
       </div>
     </div>
     <div class="hoje-grid">
@@ -2447,10 +2447,10 @@ async function renderPipeline() {
     </div>`;
   }
 
-  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Pipeline</h1>
+  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Carteira</h1>
     <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — estados partilhados.</div></div></div>`;
   if (!(items || []).length) {
-    html += `<p class="empty-copy">Nada no pipeline. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
+    html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="#/radar/opportunities">Oportunidades</a>.</p>`;
   } else {
     html += `<div class="pl-board">`;
     for (const col of cols) {
@@ -2498,7 +2498,7 @@ async function renderRadar(tab = 'opportunities') {
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
-        ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>` : ''}
+        ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>` : ''}
         <select id="ctx-select" style="width:auto" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
@@ -2606,7 +2606,7 @@ async function renderAnnouncement(id) {
         ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
         ${formalidadesHtml(a.contracting_procedure_url)}
         <div class="d-card" id="pl-ficha">
-          <div class="t">Pipeline</div>
+          <div class="t">Carteira</div>
           <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
           <div>${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</div>
           <label style="display:block;margin-top:.6rem">Nota</label>
@@ -2618,7 +2618,7 @@ async function renderAnnouncement(id) {
         </div>
         <div class="d-card">
           <div class="t">Ficha de oportunidade (IA)</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado.</p>
+          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação de avançar ou não. O resultado fica guardado.</p>
         </div>
       </div>
     </div>`;
@@ -2637,7 +2637,7 @@ async function renderAnnouncement(id) {
       'A levantar requisitos de habilitação, cauções e prazos…',
       'A avaliar o fit com a tua atividade…',
       'A procurar red flags no procedimento…',
-      'A compilar a checklist e a recomendação go/no-go…',
+      'A compilar a lista de verificação e a recomendação de avançar ou não…',
     ]);
     try {
       const pid = Number(getCtx() || 0);
@@ -2657,7 +2657,7 @@ async function renderAnnouncement(id) {
         tbtn.disabled = true;
         aiModalOpen([
           'A reunir os critérios de adjudicação já extraídos…',
-          'A montar a checklist de submissão na plataforma…',
+          'A montar a lista de verificação de submissão na plataforma…',
           'A redigir a declaração do Anexo I do CCP…',
           'A estruturar a memória descritiva alinhada aos critérios…',
           'A preparar os placeholders da tua empresa…',
@@ -2686,7 +2686,7 @@ async function renderAnnouncement(id) {
 
 function renderAiFicha(an, cached, model, itemType, itemId) {
   const rec = an.go_no_go?.recomendacao;
-  const badgeGo = { go: ['GO', '#2c6353', 'go'], condicional: ['CONDICIONAL', '#b26a00', 'condicional'], 'no-go': ['NO-GO', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
+  const badgeGo = { go: ['AVANÇAR', '#2c6353', 'go'], condicional: ['COM RESERVAS', '#b26a00', 'condicional'], 'no-go': ['NÃO AVANÇAR', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
   const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
   const habHtml = hab
     ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${hab.map((i) => `<li>${esc(i.text)} — <strong>${esc(i.label || i.status)}</strong></li>`).join('')}</ul>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
@@ -2696,12 +2696,12 @@ function renderAiFicha(an, cached, model, itemType, itemId) {
   const checkHtml = itemType && itemId
     ? (checks.length
       ? `<div class="check-list" data-type="${esc(itemType)}" data-id="${itemId}">${checks.map((t) => `<label><input type="checkbox" data-text="${esc(t)}"> ${esc(t)}</label>`).join('')}<p class="muted" id="ck-prog"></p></div>`
-      : '<p class="muted">Gere a análise de IA para obter a checklist de preparação</p>')
+      : '<p class="muted">Gere a análise de IA para obter a lista de verificação de preparação</p>')
     : list(an.checklist);
   return `
     <div class="ai-verdict">
       <span class="ai-badge" style="background:${badgeGo[1]}">${badgeGo[0]}</span>
-      ${an.fit_atividade ? `<span>Fit com a atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
+      ${an.fit_atividade ? `<span>Adequação à atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
     </div>
     ${an.go_no_go?.justificacao ? `<div class="ai-callout ${badgeGo[2]}">${esc(an.go_no_go.justificacao)}</div>` : ''}
     <dl class="detail">
@@ -2713,7 +2713,7 @@ function renderAiFicha(an, cached, model, itemType, itemId) {
       <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
     </dl>
     <h3>Requisitos de habilitação</h3>${habHtml}
-    <h3>Red flags</h3>${list(an.red_flags)}
+    <h3>Alertas</h3>${list(an.red_flags)}
     <h3>Checklist para a proposta</h3>${checkHtml}
     <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}${model ? ` · ${esc(model)}` : ''}</p>`;
 }
@@ -2805,7 +2805,7 @@ async function renderDigest() {
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <h2 style="margin:0">Digest semanal — ${esc(d.profile.name)}</h2>
+        <h2 style="margin:0">Resumo semanal — ${esc(d.profile.name)}</h2>
         <div class="muted">Gerado a ${new Date(d.generated_at).toLocaleString('pt-PT')}</div>
       </div>
       <div>

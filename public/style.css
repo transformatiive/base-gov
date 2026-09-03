@@ -503,7 +503,7 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
 /* ---------- AI ficha: destaque da recomendação (go/condicional/no-go) ---------- */
 .ai-verdict { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.ai-badge { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; color: #fff; border-radius: 6px; padding: 4px 12px; }
+.ai-badge { font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: #fff; border-radius: 6px; padding: 4px 10px; }
 .ai-callout { border-radius: 12px; padding: 14px 16px; font-size: 13.5px; line-height: 1.6; margin: 0 0 14px; border: 1px solid; }
 .ai-callout.go { background: var(--ok-bg); border-color: var(--ok-border); color: #1f3d33; }
 .ai-callout.condicional { background: var(--warn-bg); border-color: var(--warn-badge-border); color: #6b520f; }
