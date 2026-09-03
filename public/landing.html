@@ -46,9 +46,12 @@
     .nav-links a{color:var(--ink2)}
     .nav-links a:hover{color:var(--brand)}
     .nav-cta{display:flex;gap:10px;align-items:center;flex:none}
-    .nav-cta .enter{font-size:13px;font-weight:600;color:var(--brand);padding:9px 14px}
+    .nav-cta .enter{font-size:13px;font-weight:600;color:var(--brand);padding:9px 14px;border-radius:10px}
     .nav-cta .enter:hover{color:var(--brand-dark)}
     .nav-cta .start{font-size:13px;padding:9px 16px}
+    .nav-toggle{display:none;align-items:center;justify-content:center;width:42px;height:42px;padding:0;background:#fff;color:var(--brand);border:1px solid var(--line);border-radius:10px;cursor:pointer;flex:none}
+    .nav-toggle:hover{background:var(--line2)}
+    .nav-toggle .ico-close{display:none}
 
     /* Hero */
     .hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,540px);gap:56px;align-items:center;padding-top:72px;padding-bottom:60px;min-width:0}
@@ -229,7 +232,18 @@
       :root{ --pad-x: 24px; }
       .hero{grid-template-columns:minmax(0,1fr);gap:36px;padding-top:44px;padding-bottom:44px}
       h1.hero-h{font-size:34px;max-width:none}
-      .nav-links{display:none}
+      .nav-toggle{display:inline-flex}
+      .nav.nav-open .nav-toggle .ico-menu{display:none}
+      .nav.nav-open .nav-toggle .ico-close{display:block}
+      .nav-links{
+        display:none;position:absolute;top:100%;left:0;right:0;z-index:90;
+        flex-direction:column;gap:0;background:var(--panel);border-bottom:1px solid var(--line);
+        padding:8px max(var(--pad-x), env(safe-area-inset-left, 0px)) 16px max(var(--pad-x), env(safe-area-inset-right, 0px));
+        box-shadow:0 12px 28px rgba(20,30,25,.1);
+      }
+      .nav.nav-open .nav-links{display:flex}
+      .nav-links a{padding:12px 4px;font-size:15px;color:var(--ink);border-bottom:1px solid var(--line2)}
+      .nav-links a:last-child{border-bottom:0}
       .steps{grid-template-columns:1fr}
       .feat-grid{grid-template-columns:1fr;gap:32px}
       .feat-only{grid-template-columns:1fr;gap:20px}
@@ -239,13 +253,15 @@
       .quotes{grid-template-columns:1fr;gap:12px}
     }
     @media (max-width:640px){
-      .nav-in{padding-top:12px;padding-bottom:12px}
-      .nav-cta .enter{display:none}
-      .nav-cta .start{padding:8px 14px;font-size:12.5px;white-space:nowrap}
-      .brand .tag{font-size:9px;letter-spacing:0.04em}
+      :root{ --pad-x: 16px; }
+      .nav-in{padding-top:10px;padding-bottom:10px;gap:8px}
+      .nav-cta{gap:6px}
+      .nav-cta .enter{display:inline-flex;padding:8px 12px;border:1px solid var(--line);background:#fff;white-space:nowrap}
+      .nav-cta .start{padding:8px 12px;font-size:12.5px;white-space:nowrap}
+      .brand .tag{display:none}
       .eyebrow{font-size:11px;padding:6px 12px;white-space:normal;line-height:1.35;max-width:100%}
       h1.hero-h{font-size:28px;line-height:1.18;margin-bottom:14px}
-      .hero{padding-top:32px;padding-bottom:36px;gap:28px}
+      .hero{padding-top:28px;padding-bottom:32px;gap:24px}
       .hero p.lead{font-size:15px;margin-bottom:22px;max-width:none}
       .hero-cta{flex-direction:column;align-items:stretch;gap:10px}
       .hero-cta .btn{width:100%;padding:14px 18px}
@@ -258,10 +274,13 @@
       .opp{grid-template-columns:40px minmax(0,1fr);gap:10px;padding:10px 12px}
       .opp .ti{font-size:12.5px}
       .injogo{align-items:flex-start;gap:10px}
-      .band{padding:48px 0}
-      .feat-sect{padding-top:48px;padding-bottom:48px}
+      .band{padding:40px 0}
+      .feat-sect{padding-top:40px;padding-bottom:40px}
       h2.sect{font-size:24px;margin-bottom:24px}
-      .step,.plan{padding:22px 20px}
+      .step,.plan{padding:22px 18px}
+      .quote{padding:20px 18px}
+      .faq summary{padding:14px 16px;font-size:14.5px}
+      .faq .a{padding:10px 16px 16px}
       .fcard .viz{padding:16px;min-height:0}
       .fcard .fbody{padding:16px 18px 18px}
       .foot{padding-top:20px;padding-bottom:28px;align-items:flex-start}
@@ -285,7 +304,7 @@
         <span class="logo-mark"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>
         <span><span class="name">BaseRadar</span><span class="tag" style="display:block">CONTRATOS PÚBLICOS</span></span>
       </a>
-      <div class="nav-links">
+      <div class="nav-links" id="land-nav-links">
         <a href="#como">Como funciona</a>
         <a href="#funcionalidades">Funcionalidades</a>
         <a href="#preco">Preço</a>
@@ -294,6 +313,10 @@
       <div class="nav-cta">
         <a class="enter" href="/app#/login">Entrar</a>
         <a class="btn btn-primary start" href="/app#/registo">Começar grátis</a>
+        <button type="button" class="nav-toggle" id="land-nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="land-nav-links">
+          <svg class="ico-menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+          <svg class="ico-close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -598,6 +621,24 @@
   </div>
 
   <script>
+    (function () {
+      var nav = document.querySelector('.nav');
+      var toggle = document.getElementById('land-nav-toggle');
+      var links = document.getElementById('land-nav-links');
+      function setOpen(open) {
+        if (!nav || !toggle) return;
+        nav.classList.toggle('nav-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+      }
+      if (toggle) {
+        toggle.addEventListener('click', function () { setOpen(!nav.classList.contains('nav-open')); });
+      }
+      if (links) {
+        links.addEventListener('click', function (e) { if (e.target.closest('a')) setOpen(false); });
+      }
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+    })();
     (function () {
       // Anima elementos ao entrar na viewport. Não faz nada com reduced-motion
       // (o conteúdo fica sempre visível). Revela também o que já ficou acima do
