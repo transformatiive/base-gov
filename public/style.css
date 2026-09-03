@@ -132,7 +132,25 @@ button:hover { background: var(--brand-dark); }
 button.btn-secondary { background: #fff; color: var(--brand); border-color: var(--border-btn); }
 button.btn-secondary:hover { background: var(--row-line); }
 button:disabled { opacity: 0.45; cursor: default; }
-form.inline { display: flex; gap: 0.6rem; }
+.inline,
+form.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+.inline > input,
+.inline > select,
+form.inline > input,
+form.inline > select {
+  width: auto;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.inline > button,
+form.inline > button {
+  flex: none;
+}
 label { font-size: 0.9rem; }
 
 /* ---------- Badges e score ---------- */
