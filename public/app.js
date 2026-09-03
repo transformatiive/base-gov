@@ -483,14 +483,14 @@ const AI_STEPS_ANN = [
   'A extrair critérios, prazos e preço…',
   'A levantar habilitação, cauções e alertas…',
   'A avaliar o fit e a recomendação de avançar…',
-  'A juntar o resultado…',
+  'Ainda a sintetizar o parecer — sem caderno pode levar cerca de um minuto…',
 ];
 const AI_STEPS_CONTRACT = [
   'A abrir os documentos do contrato em paralelo…',
   'A extrair o que foi contratado e os critérios…',
   'A levantar requisitos e riscos da renovação…',
   'A avaliar se vale a pena perseguir a renovação…',
-  'A juntar o plano de preparação…',
+  'Ainda a sintetizar o plano — pode levar cerca de um minuto…',
 ];
 
 function aiProgressHtml(steps) {
@@ -524,21 +524,32 @@ function activateFichaPane(root, paneId) {
   });
 }
 
+function aiProgressStepIndex(elapsedSec, nSteps) {
+  if (nSteps <= 1) return 0;
+  const last = nSteps - 1;
+  if (elapsedSec < 4) return 0;
+  if (elapsedSec < 9) return Math.min(1, last);
+  if (elapsedSec < 16) return Math.min(2, last);
+  if (elapsedSec < 24) return Math.min(3, last);
+  return last;
+}
+function aiProgressPct(elapsedSec) {
+  return Math.min(88, 8 + elapsedSec * 2.1);
+}
+
 let _aiInlineTimer = null;
 function aiInlineStart(steps) {
   aiInlineStop();
-  let i = 0;
-  let pct = 6;
+  const t0 = Date.now();
   _aiInlineTimer = setInterval(() => {
-    pct = Math.min(92, pct + Math.max(0.6, (92 - pct) * 0.06));
+    const s = (Date.now() - t0) / 1000;
+    const pct = aiProgressPct(s);
+    const i = aiProgressStepIndex(s, steps.length);
     const bar = document.getElementById('ai-inline-bar');
     const stepEl = document.getElementById('ai-inline-step');
     if (bar) bar.style.width = pct + '%';
-    if (Math.random() < 0.16 && i < steps.length - 1) {
-      i++;
-      if (stepEl) stepEl.textContent = steps[i];
-    }
-  }, 350);
+    if (stepEl) stepEl.textContent = steps[i];
+  }, 400);
 }
 function aiInlineStop() {
   if (_aiInlineTimer) { clearInterval(_aiInlineTimer); _aiInlineTimer = null; }

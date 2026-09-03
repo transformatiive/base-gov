@@ -13,6 +13,7 @@ import { digestData as loadDigest, digestStatsText, digestIsEmpty } from './dige
 import { fmtDatePT } from './mail.js';
 import { loadCompanyProfile } from './company-profile.js';
 import { overlayHabilitacao } from './habilitacao.js';
+import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
 import { announcementDistrictSql } from './districts.js';
 import { Plan } from './plans.js';
 
@@ -139,9 +140,11 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       name?: string; terms?: string[]; cpv_codes?: string[]; schedule?: string;
       include_announcements?: boolean; fetch_documents?: boolean; run_now?: boolean;
     };
-    const cpvCodes = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
+    const rawCpvs = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
     const name = body.name?.trim();
-    const terms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const rawTerms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const terms = refineActivityTerms(rawTerms);
+    const cpvCodes = mergeCpvHints(rawTerms, rawCpvs);
     const schedule = ['manual', 'daily', 'weekly'].includes(body.schedule ?? '') ? body.schedule : 'manual';
     if (!name || terms.length === 0) {
       return reply.code(400).send({ error: { code: 'invalid_profile', message: 'name e terms[] são obrigatórios' } });

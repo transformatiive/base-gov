@@ -13,6 +13,7 @@ import {
 import { parseBaseDate, parseBasePrice } from './parse.js';
 import { reconcileProfileRuns, scheduleDueProfiles } from '../profiles.js';
 import { LOCAL_MATCH_LIMIT, pendingSearchOrderSql, searchOrigin, shouldLiveScrape } from '../profile-run-policy.js';
+import { localTextMatchMode, medicalDeviceMatchSql, notWorksNoiseSql } from '../activity-match.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -275,23 +276,68 @@ async function processAnnouncementSearch(
  */
 export async function matchLocalCorpus(searchId: number, term: string, cpvCodes: string[] = []): Promise<number> {
   const q = term.trim() || 'x';
+  const desc = `(coalesce(c.object_brief_description,'') || ' ' || coalesce(c.description,''))`;
   let textMatches = 0;
   try {
-    const { rowCount } = await pool.query(
-      `INSERT INTO search_results (search_id, contract_id, position)
-       SELECT $1, x.id, 500000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
-       FROM (
-         SELECT c.id, c.publication_date
-         FROM contracts c
-         WHERE to_tsvector('portuguese', coalesce(c.object_brief_description,'') || ' ' || coalesce(c.description,''))
-               @@ plainto_tsquery('portuguese', $2)
-         ORDER BY c.publication_date DESC NULLS LAST
-         LIMIT $3
-       ) x
-       ON CONFLICT DO NOTHING`,
-      [searchId, q, LOCAL_MATCH_LIMIT]
-    );
-    textMatches = rowCount ?? 0;
+    const mode = localTextMatchMode(term);
+    switch (mode) {
+      case 'medical_devices': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_results (search_id, contract_id, position)
+           SELECT $1, x.id, 500000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
+           FROM (
+             SELECT c.id, c.publication_date
+             FROM contracts c
+             WHERE ${medicalDeviceMatchSql(desc, 'coalesce(c.cpvs,\'\')')}
+             ORDER BY c.publication_date DESC NULLS LAST
+             LIMIT $2
+           ) x
+           ON CONFLICT DO NOTHING`,
+          [searchId, LOCAL_MATCH_LIMIT]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      case 'generic_health': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_results (search_id, contract_id, position)
+           SELECT $1, x.id, 500000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
+           FROM (
+             SELECT c.id, c.publication_date
+             FROM contracts c
+             WHERE to_tsvector('portuguese', ${desc}) @@ plainto_tsquery('portuguese', $2)
+               AND ${notWorksNoiseSql(desc)}
+             ORDER BY c.publication_date DESC NULLS LAST
+             LIMIT $3
+           ) x
+           ON CONFLICT DO NOTHING`,
+          [searchId, q, LOCAL_MATCH_LIMIT]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      case 'default': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_results (search_id, contract_id, position)
+           SELECT $1, x.id, 500000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
+           FROM (
+             SELECT c.id, c.publication_date
+             FROM contracts c
+             WHERE to_tsvector('portuguese', ${desc}) @@ plainto_tsquery('portuguese', $2)
+             ORDER BY c.publication_date DESC NULLS LAST
+             LIMIT $3
+           ) x
+           ON CONFLICT DO NOTHING`,
+          [searchId, q, LOCAL_MATCH_LIMIT]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      default: {
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
   } catch (err) {
     console.warn(`[worker] FTS contratos falhou para "${term}": ${String(err).slice(0, 180)}`);
   }
@@ -299,12 +345,13 @@ export async function matchLocalCorpus(searchId: number, term: string, cpvCodes:
   for (const code of cpvCodes) {
     const clean = code.trim().split('-')[0];
     if (!/^\d{4,8}$/.test(clean)) continue;
+    const worksGuard = clean.startsWith('331') ? ` AND ${notWorksNoiseSql(desc)}` : '';
     const { rowCount: n } = await pool.query(
       `INSERT INTO search_results (search_id, contract_id, position)
        SELECT $1, x.id, 700000 + row_number() OVER (ORDER BY x.publication_date DESC NULLS LAST)
        FROM (
          SELECT c.id, c.publication_date
-         FROM contracts c WHERE c.cpvs LIKE $2 OR c.cpvs LIKE $3
+         FROM contracts c WHERE (c.cpvs LIKE $2 OR c.cpvs LIKE $3)${worksGuard}
          ORDER BY c.publication_date DESC NULLS LAST
          LIMIT $4
        ) x
@@ -320,41 +367,88 @@ export async function matchLocalCorpus(searchId: number, term: string, cpvCodes:
 export async function matchLocalAnnouncements(searchId: number, term: string, cpvCodes: string[] = []): Promise<number> {
   const like = `%${term}%`;
   const q = term.trim() || 'x';
+  const desig = 'a.contract_designation';
   let textMatches = 0;
   try {
-    const { rowCount } = await pool.query(
-      `INSERT INTO search_announcements (search_id, announcement_id, position)
-       SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
-       FROM announcements a
-       WHERE a.contract_designation ILIKE $2
-          OR a.contracting_entity ILIKE $2
-          OR coalesce(a.cpvs,'') ILIKE $2
-          OR to_tsvector('portuguese', coalesce(a.contract_designation,'') || ' ' || coalesce(a.contracting_entity,''))
-             @@ plainto_tsquery('portuguese', $3)
-       ON CONFLICT DO NOTHING`,
-      [searchId, like, q]
-    );
-    textMatches = rowCount ?? 0;
+    const mode = localTextMatchMode(term);
+    switch (mode) {
+      case 'medical_devices': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_announcements (search_id, announcement_id, position)
+           SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+           FROM announcements a
+           WHERE ${medicalDeviceMatchSql(desig, 'coalesce(a.cpvs,\'\')')}
+           ON CONFLICT DO NOTHING`,
+          [searchId]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      case 'generic_health': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_announcements (search_id, announcement_id, position)
+           SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+           FROM announcements a
+           WHERE (
+              a.contract_designation ILIKE $2
+              OR coalesce(a.cpvs,'') ILIKE $2
+              OR to_tsvector('portuguese', coalesce(a.contract_designation,''))
+                 @@ plainto_tsquery('portuguese', $3)
+           ) AND ${notWorksNoiseSql(desig)}
+           ON CONFLICT DO NOTHING`,
+          [searchId, like, q]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      case 'default': {
+        const { rowCount } = await pool.query(
+          `INSERT INTO search_announcements (search_id, announcement_id, position)
+           SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+           FROM announcements a
+           WHERE a.contract_designation ILIKE $2
+              OR a.contracting_entity ILIKE $2
+              OR coalesce(a.cpvs,'') ILIKE $2
+              OR to_tsvector('portuguese', coalesce(a.contract_designation,'') || ' ' || coalesce(a.contracting_entity,''))
+                 @@ plainto_tsquery('portuguese', $3)
+           ON CONFLICT DO NOTHING`,
+          [searchId, like, q]
+        );
+        textMatches = rowCount ?? 0;
+        break;
+      }
+      default: {
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
   } catch (err) {
     console.warn(`[worker] match anúncios falhou para "${term}": ${String(err).slice(0, 180)}`);
-    const { rowCount } = await pool.query(
-      `INSERT INTO search_announcements (search_id, announcement_id, position)
-       SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
-       FROM announcements a
-       WHERE a.contract_designation ILIKE $2 OR a.contracting_entity ILIKE $2 OR coalesce(a.cpvs,'') ILIKE $2
-       ON CONFLICT DO NOTHING`,
-      [searchId, like]
-    );
-    textMatches = rowCount ?? 0;
+    const mode = localTextMatchMode(term);
+    if (mode === 'medical_devices') {
+      textMatches = 0;
+    } else {
+      const extra = mode === 'generic_health' ? ` AND ${notWorksNoiseSql(desig)}` : '';
+      const { rowCount } = await pool.query(
+        `INSERT INTO search_announcements (search_id, announcement_id, position)
+         SELECT $1, a.id, 500000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
+         FROM announcements a
+         WHERE (a.contract_designation ILIKE $2 OR coalesce(a.cpvs,'') ILIKE $2)${extra}
+         ON CONFLICT DO NOTHING`,
+        [searchId, like]
+      );
+      textMatches = rowCount ?? 0;
+    }
   }
   let cpvMatches = 0;
   for (const code of cpvCodes) {
     const clean = code.trim().split('-')[0];
     if (!/^\d{4,8}$/.test(clean)) continue;
+    const worksGuard = clean.startsWith('331') ? ` AND ${notWorksNoiseSql(desig)}` : '';
     const { rowCount: n } = await pool.query(
       `INSERT INTO search_announcements (search_id, announcement_id, position)
        SELECT $1, a.id, 700000 + row_number() OVER (ORDER BY a.proposal_deadline_date DESC NULLS LAST)
-       FROM announcements a WHERE a.cpvs LIKE $2 OR a.cpvs LIKE $3
+       FROM announcements a WHERE (a.cpvs LIKE $2 OR a.cpvs LIKE $3)${worksGuard}
        ON CONFLICT DO NOTHING`,
       [searchId, `${clean}%`, `%; ${clean}%`]
     );
