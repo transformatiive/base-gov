@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { Plan } from './plans.js';
+import { moloniDocumentLabel, moloniPdfUrlFromResponse } from './billing.js';
 
 /**
  * Faturação certificada via Moloni. Emite uma fatura por cada pagamento Stripe
@@ -103,13 +104,68 @@ async function findOrCreateCustomer(company: { name: string; nif: string | null 
   return Number(created.customer_id);
 }
 
+export class MoloniPdfError extends Error {
+  constructor(
+    public code: 'skipped' | 'no_pdf' | 'fetch_failed',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'MoloniPdfError';
+  }
+}
+
+function isPdfBytes(buf: Buffer): boolean {
+  return buf.length >= 5 && buf.subarray(0, 5).toString('latin1') === '%PDF-';
+}
+
+/**
+ * Obtém o PDF de uma fatura Moloni já emitida (status ≠ rascunho).
+ * documents/getPDFLink só funciona em documentos finalizados.
+ */
+export async function getMoloniInvoicePdf(documentId: number): Promise<{ bytes: Buffer }> {
+  if (!moloniConfigured()) {
+    throw new MoloniPdfError('skipped', 'A faturação não está configurada.');
+  }
+  const companyId = config.moloni.companyId;
+  const requestLink = async (signed?: number) => {
+    const data: Record<string, unknown> = { company_id: companyId, document_id: documentId };
+    if (signed != null) data.signed = signed;
+    return moloniPost('documents/getPDFLink', data);
+  };
+  let raw: unknown;
+  try {
+    raw = await requestLink(1);
+  } catch {
+    raw = await requestLink();
+  }
+  const url = moloniPdfUrlFromResponse(raw);
+  if (!url) {
+    throw new MoloniPdfError(
+      'no_pdf',
+      'O PDF desta fatura ainda não está disponível. Só faturas já emitidas (não rascunho) podem ser descarregadas.',
+    );
+  }
+  const pdfRes = await fetch(url, { signal: AbortSignal.timeout(25_000), redirect: 'follow' });
+  if (!pdfRes.ok) {
+    throw new MoloniPdfError('fetch_failed', 'Não foi possível obter o PDF da fatura.');
+  }
+  const bytes = Buffer.from(await pdfRes.arrayBuffer());
+  if (!isPdfBytes(bytes)) {
+    throw new MoloniPdfError('no_pdf', 'O documento devolvido pelo Moloni não é um PDF válido.');
+  }
+  return { bytes };
+}
+
 /** Emite (ou cria em rascunho) uma fatura no Moloni para um pagamento. */
 export async function createMoloniInvoice(input: {
   company: { name: string; nif: string | null };
   plan: Plan;
   netCents: number;    // preço unitário SEM IVA (o Moloni adiciona o imposto)
-}): Promise<{ documentId?: number; status: 'ok' | 'draft' | 'skipped' | 'error' }> {
-  if (!moloniConfigured()) return { status: 'skipped' };
+}): Promise<{ documentId?: number; status: 'ok' | 'draft' | 'skipped' | 'error'; number?: string | null }> {
+  if (!moloniConfigured()) {
+    console.error('[moloni] pagamento sem fatura: Moloni não configurado');
+    return { status: 'skipped' };
+  }
 
   const companyId = config.moloni.companyId;
   const customerId = await findOrCreateCustomer(input.company);
@@ -137,7 +193,16 @@ export async function createMoloniInvoice(input: {
 
   const documentId = doc?.document_id ? Number(doc.document_id) : undefined;
   if (!documentId) throw new Error(`invoices/insert sem document_id: ${JSON.stringify(doc).slice(0, 160)}`);
-  return { documentId, status: finalize ? 'ok' : 'draft' };
+  let number = moloniDocumentLabel(doc);
+  if (!number) {
+    try {
+      const one = (await moloniPost('invoices/getOne', {
+        company_id: companyId, document_id: documentId,
+      })) as Record<string, unknown>;
+      number = moloniDocumentLabel(one);
+    } catch { /* o número só existe depois de finalizar */ }
+  }
+  return { documentId, status: finalize ? 'ok' : 'draft', number };
 }
 
 /**

@@ -8,6 +8,8 @@ import {
   handleStripeEvent,
   newIntegrationIdentifier,
   buildCheckoutSessionParams,
+  buildPortalSessionParams,
+  classifyPortalError,
   mapStripeSubscriptionStatus,
   type SqlQuery,
 } from './stripe.js';
@@ -195,6 +197,121 @@ test('Checkout session params: subscription, dynamic PMs, no tax, integration_id
     config.appBaseUrl = prevUrl;
     config.stripe.pricePro = prevPro;
   }
+});
+
+test('Portal session volta sempre para a área de conta', () => {
+  const params = buildPortalSessionParams('cus_abc', 'https://app.baseradar.test/app#/conta');
+  assert.equal(params.customer, 'cus_abc');
+  assert.equal(params.return_url, 'https://app.baseradar.test/app#/conta');
+});
+
+test('classifyPortalError distingue portal por configurar de falha genérica', () => {
+  const unconf = classifyPortalError(new Error('No configuration provided'));
+  assert.equal(unconf.code, 'portal_unconfigured');
+  assert.equal(unconf.http, 503);
+  const other = classifyPortalError(new Error('timeout'));
+  assert.equal(other.code, 'portal_failed');
+  assert.equal(other.http, 502);
+});
+
+test('checkout.session.completed (pagamento pontual) regista pagamento para fatura Moloni', async () => {
+  const calls: { sql: string; params: unknown[] }[] = [];
+  const query: SqlQuery = async (sql, params = []) => {
+    calls.push({ sql, params });
+    if (sql.includes('INSERT INTO stripe_events')) return { rows: [{ id: params[0] as string }], rowCount: 1 };
+    if (sql.includes('UPDATE companies')) return { rows: [], rowCount: 1 };
+    if (sql.includes('INSERT INTO payments')) return { rows: [{ id: 21 }], rowCount: 1 };
+    if (sql.includes('SELECT id, name, nif')) return { rows: [{ id: 5, name: 'Obra Lda', nif: '500000000' }], rowCount: 1 };
+    if (sql.includes('SELECT email, first_name')) return { rows: [], rowCount: 0 };
+    if (sql.includes('UPDATE payments SET moloni')) return { rows: [], rowCount: 1 };
+    return { rows: [], rowCount: 0 };
+  };
+  const event = {
+    id: 'evt_pay_once',
+    object: 'event',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_pay',
+        object: 'checkout.session',
+        mode: 'payment',
+        payment_status: 'paid',
+        amount_total: 12177,
+        customer: 'cus_pay',
+        metadata: { company_id: '5', plan: 'business' },
+      },
+    },
+  } as Stripe.Event;
+  const result = await handleStripeEvent(event, query);
+  assert.equal(result.ok, true);
+  const pay = calls.find((c) => c.sql.includes('INSERT INTO payments'));
+  assert.ok(pay);
+  assert.equal(pay!.params[0], 5);
+  assert.equal(pay!.params[3], 'business');
+  assert.equal(pay!.params[4], 12177);
+});
+
+test('invoice.paid regista o pagamento para emitir fatura Moloni', async () => {
+  const calls: { sql: string; params: unknown[] }[] = [];
+  const query: SqlQuery = async (sql, params = []) => {
+    calls.push({ sql, params });
+    if (sql.includes('INSERT INTO stripe_events')) return { rows: [{ id: params[0] as string }], rowCount: 1 };
+    if (sql.includes('UPDATE companies')) return { rows: [], rowCount: 1 };
+    if (sql.includes('SELECT plan FROM companies')) return { rows: [{ plan: 'pro' }], rowCount: 1 };
+    if (sql.includes('INSERT INTO payments')) return { rows: [{ id: 88 }], rowCount: 1 };
+    if (sql.includes('SELECT id, name, nif')) return { rows: [{ id: 42, name: 'Acme', nif: '509000000' }], rowCount: 1 };
+    if (sql.includes('SELECT email, first_name')) return { rows: [], rowCount: 0 };
+    if (sql.includes('UPDATE payments SET moloni')) return { rows: [], rowCount: 1 };
+    return { rows: [], rowCount: 0 };
+  };
+  const event = {
+    id: 'evt_inv_paid',
+    object: 'event',
+    type: 'invoice.paid',
+    data: {
+      object: {
+        id: 'in_1',
+        object: 'invoice',
+        amount_paid: 3567,
+        period_end: 1_757_000_000,
+        metadata: { company_id: '42', plan: 'pro' },
+        customer: 'cus_x',
+      },
+    },
+  } as Stripe.Event;
+
+  const result = await handleStripeEvent(event, query);
+  assert.equal(result.ok, true);
+  assert.equal(result.companyId, 42);
+  const pay = calls.find((c) => c.sql.includes('INSERT INTO payments'));
+  assert.ok(pay, 'pagamento tem de ser registado para originar fatura Moloni');
+  assert.equal(pay!.params[0], 42);
+  assert.equal(pay!.params[4], 3567);
+});
+
+test('invoice.paid com valor 0 não cria pagamento nem fatura', async () => {
+  const query: SqlQuery = async (sql, params = []) => {
+    if (sql.includes('INSERT INTO stripe_events')) return { rows: [{ id: params[0] as string }], rowCount: 1 };
+    if (sql.includes('UPDATE companies')) return { rows: [], rowCount: 1 };
+    if (sql.includes('SELECT plan FROM companies')) return { rows: [{ plan: 'pro' }], rowCount: 1 };
+    if (sql.includes('INSERT INTO payments')) throw new Error('não deve inserir pagamento a 0');
+    return { rows: [], rowCount: 0 };
+  };
+  const event = {
+    id: 'evt_inv_zero',
+    object: 'event',
+    type: 'invoice.paid',
+    data: {
+      object: {
+        id: 'in_0',
+        object: 'invoice',
+        amount_paid: 0,
+        metadata: { company_id: '7' },
+      },
+    },
+  } as Stripe.Event;
+  const result = await handleStripeEvent(event, query);
+  assert.equal(result.ok, true);
 });
 
 test('Free plan has no Checkout price id and buildCheckout rejects it', () => {

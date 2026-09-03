@@ -5,12 +5,17 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { stripeConfigured, createCheckout, constructStripeEvent, handleStripeEvent, grossCents,
+import { stripeConfigured, createCheckout, createBillingPortal, classifyPortalError,
+         constructStripeEvent, handleStripeEvent, grossCents,
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
-import { discoverMoloniConfig, moloniStatus } from './moloni.js';
+import { discoverMoloniConfig, getMoloniInvoicePdf, moloniStatus, MoloniPdfError } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
 import { sendMail, layout, esc, mailEnabled } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
+import {
+  billingSnapshot, invoiceDownloadable, invoicePdfUnavailableMessage,
+  mapPaymentToInvoice, pdfFilename,
+} from './billing.js';
 
 /** IP do cliente, respeitando o proxy à frente da aplicação. */
 function clientIp(req: { headers: Record<string, unknown>; ip?: string }): string {
@@ -150,10 +155,17 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     if (companyId != null) {
       const { rows } = await pool.query(
         `SELECT name, nif, plan, subscription_status, trial_ends_at, renewal_at, access_until,
+           (stripe_customer_id IS NOT NULL) AS has_stripe_customer,
+           (stripe_subscription_id IS NOT NULL) AS has_stripe_subscription,
            CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
                 THEN GREATEST(0, ceil(extract(epoch FROM (trial_ends_at - now())) / 86400)::int) END AS trial_days_left
          FROM companies WHERE id = $1`, [companyId]);
       company = rows[0] ?? null;
+    }
+    const billing = billingSnapshot(company, { billingEnabled: stripeConfigured() });
+    if (company) {
+      delete company.has_stripe_customer;
+      delete company.has_stripe_subscription;
     }
     return {
       plan,   // plano efetivo
@@ -161,7 +173,82 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       price: `${priceEur} € (c/ IVA) / mês`,
       billing_enabled: stripeConfigured(),
       company,
+      billing,
     };
+  });
+
+  // Faturas Moloni da empresa (uma por pagamento Stripe).
+  app.get('/api/billing/invoices', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const { rows } = await pool.query(
+      `SELECT id, created_at, kind, plan, amount_cents, currency,
+              moloni_document_id, moloni_status, moloni_number
+         FROM payments WHERE company_id = $1
+         ORDER BY created_at DESC LIMIT 100`,
+      [companyId]);
+    return { items: rows.map(mapPaymentToInvoice) };
+  });
+
+  app.get('/api/billing/invoices/:id/pdf', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return reply.code(400).send({ error: { code: 'invalid', message: 'Fatura inválida.' } });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, moloni_document_id, moloni_status, moloni_number
+         FROM payments WHERE id = $1 AND company_id = $2`,
+      [id, companyId]);
+    const row = rows[0] as {
+      id: number; moloni_document_id: number | string | null; moloni_status: string | null; moloni_number: string | null;
+    } | undefined;
+    if (!row) return reply.code(404).send({ error: { code: 'not_found', message: 'Fatura não encontrada.' } });
+    const docId = row.moloni_document_id == null ? null : Number(row.moloni_document_id);
+    if (docId == null || !invoiceDownloadable(row.moloni_status, docId)) {
+      return reply.code(409).send({
+        error: { code: 'pdf_unavailable', message: invoicePdfUnavailableMessage(row.moloni_status) },
+      });
+    }
+    try {
+      const { bytes } = await getMoloniInvoicePdf(docId);
+      const filename = pdfFilename(row.moloni_number, row.id);
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .header('Cache-Control', 'private, no-store')
+        .send(bytes);
+    } catch (err) {
+      if (err instanceof MoloniPdfError) {
+        const http = err.code === 'skipped' ? 503 : err.code === 'fetch_failed' ? 502 : 409;
+        return reply.code(http).send({ error: { code: err.code, message: err.message } });
+      }
+      console.error('[billing] pdf:', err);
+      return reply.code(502).send({ error: { code: 'pdf_failed', message: 'Não foi possível descarregar a fatura.' } });
+    }
+  });
+
+  // Customer Portal Stripe: cartão, cancelar, método de pagamento.
+  app.post('/api/billing/portal', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    if (!stripeConfigured()) {
+      return reply.code(503).send({ error: { code: 'billing_disabled', message: 'Pagamentos ainda não configurados. Contacte o suporte.' } });
+    }
+    const { rows } = await pool.query('SELECT stripe_customer_id FROM companies WHERE id = $1', [companyId]);
+    const customerId = rows[0]?.stripe_customer_id as string | null | undefined;
+    if (!customerId) {
+      return reply.code(409).send({
+        error: { code: 'no_customer', message: 'Ainda não há um método de pagamento associado a esta conta.' },
+      });
+    }
+    try {
+      return { ok: true, ...(await createBillingPortal(customerId)) };
+    } catch (err) {
+      const mapped = classifyPortalError(err);
+      return reply.code(mapped.http).send({ error: { code: mapped.code, message: mapped.message } });
+    }
   });
 
   // Inicia o trial Pro de 7 dias, sem cartão (R6). Só a partir do free e uma vez.
