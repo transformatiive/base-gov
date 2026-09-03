@@ -13,7 +13,7 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-01 — Hero fala ao diretor de concursos
 - **URL:** `/` (sem login)
 - **Passos:** Ler o H1, o lead e o eyebrow.
-- **Passa se:** o eyebrow contém «diretor de concursos» ou «obras» / «reabilitação»; o H1 fala de concursos de obras / reabilitação municipal **antes de abrirem**; o lead menciona alvará **ou** construtora **ou** reabilitação municipal.
+- **Passa se:** o eyebrow contém «diretor de concursos» ou «obras» / «reabilitação»; o H1 fala de obras municipais / concursos **antes de irem a concurso** (ou equivalente: a tempo de concorrer); o lead menciona alvará **ou** construtora **ou** reabilitação municipal.
 - **Falha se:** o H1 ou o lead vendem «a sua atividade» genérica sem sector, ou «festas».
 
 ### GTM-02 — Cartão do hero é uma obra municipal, não uma festa
