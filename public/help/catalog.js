@@ -39,8 +39,8 @@
       hoje: {
         lockedFallback: null,
         steps: [
-          { sel: 'hoje-head', title: 'O seu dia', body: 'Cumprimento, prazos a agir e a actividade seleccionada. Se a primeira recolha ainda corre, os números vão aparecendo.', placement: 'bottom' },
-          { sel: 'hoje-ctx', title: 'Actividade', body: 'Troque o perfil (termos e CPV) sem sair do Hoje. Cada perfil tem o seu radar.', placement: 'bottom' },
+          { sel: 'hoje-head', title: 'O seu dia', body: 'Cumprimento, prazos a agir e a atividade selecionada. Se a primeira recolha ainda corre, os números vão aparecendo.', placement: 'bottom' },
+          { sel: 'hoje-ctx', title: 'Atividade', body: 'Troque o perfil (termos e CPV) sem sair do Hoje. Cada perfil tem o seu radar.', placement: 'bottom' },
           { sel: 'hoje-agir', title: 'Agir esta semana', body: 'Concursos e renovações com prazo até 30 dias. Abra a ficha ou as peças do procedimento.', placement: 'right' },
           { sel: 'hoje-injogo', title: 'Em jogo', body: 'Valor dos procedimentos nos próximos 90 dias. O mapa ao lado mostra onde está o dinheiro.', placement: 'left' },
           { sel: 'hoje-pipe', title: 'No pipeline', body: 'Itens da carteira com prazo próximo. Só aparece quando há cartas a acompanhar.', placement: 'top' },
