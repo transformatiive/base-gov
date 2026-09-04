@@ -343,7 +343,7 @@ files that Task 6 already lists in the TOC — they can exist before the rendere
 
 ---
 
-### Task 1: Freeze the catalog contract and failing completeness test
+### Task 1: Freeze the catalog contract and completeness tests
 
 **Files:**
 - Create: `public/help/catalog.js`
