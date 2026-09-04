@@ -1477,8 +1477,7 @@ async function renderAccount() {
   const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
-  const seatMax = caps.seats?.max ?? 1;
-  const seatUsed = caps.seats?.used ?? 1;
+  const { used: seatUsed, max: seatMax } = seatOccupancy(seats, caps);
   const memberCount = (seats?.members || []).length || Number(summary.members) || 1;
   const upgradeLabel = plan === 'business' ? 'Ver planos' : plan === 'free' ? 'Fazer upgrade' : 'Mudar de plano';
 
@@ -1523,6 +1522,16 @@ async function renderAccount() {
   wireAccountLifecycle({ companyName: c.name, memberCount });
   fillCompanyProfileBlock();
   fillNotifyBlock();
+}
+
+/** Lugares = membros + convites pendentes (igual ao POST /api/seats/invite). */
+function seatOccupancy(seats, caps) {
+  const max = Number(seats?.seats?.max ?? caps?.seats?.max ?? 1) || 1;
+  const listed = (seats?.members?.length || 0) + (seats?.invites?.length || 0);
+  const used = seats?.seats?.used != null
+    ? Number(seats.seats.used)
+    : (listed > 0 ? listed : Number(caps?.seats?.used ?? 1));
+  return { used, max };
 }
 
 function renderSeatsBlock(seats, used, max, plan) {
