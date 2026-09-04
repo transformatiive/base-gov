@@ -246,6 +246,25 @@ function can(feature) {
   if (window._me?.is_admin) return true;
   return Array.isArray(c.capabilities) && c.capabilities.includes(feature);
 }
+window.can = can;
+
+const RADAR_GUIDE = {
+  opportunities: 'oportunidades',
+  renewals: 'renovacoes',
+  announcements: 'concursos',
+  map: 'mapa',
+  seasonality: 'sazonalidade',
+  competitors: 'concorrentes',
+};
+function radarGuideId(tab) { return RADAR_GUIDE[tab] || 'oportunidades'; }
+function notifyGuide(id) {
+  const g = window.BRGuide;
+  if (!g) return;
+  try { g._viewReady?.(); } catch { /* ignore */ }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { try { g.afterView?.(id); } catch { /* ignore */ } });
+  });
+}
 /** Cumprimento do Hoje — manter alinhado com src/display-name.ts */
 function greetingName(me) {
   const first = (me?.first_name ?? '').trim().split(/\s+/)[0];
@@ -462,7 +481,7 @@ function fichaTabsHtml(panes) {
   const bodies = items.map((p, i) =>
     `<div class="ficha-pane" data-pane="${esc(p.id)}"${i === 0 ? '' : ' hidden'}>${p.html}</div>`).join('');
   return `<div class="ficha-tabs-wrap">
-    <div class="tabs ficha-tabs">${tabs}</div>
+    <div class="tabs ficha-tabs" data-guide="ficha-tabs">${tabs}</div>
     <div class="d-card">${bodies}</div>
   </div>`;
 }
@@ -514,7 +533,7 @@ function aiTabPaneHtml(kind) {
     : 'Ao abrir esta ficha a análise começa sozinha: critérios, habilitação, riscos e se deve avançar. Se já existir, mostra-se de imediato.';
   const body = can('analise_ia') ? aiProgressHtml(steps) : aiLockedHtml();
   return `<p class="muted" style="margin:0 0 12px;line-height:1.55">${intro}</p>
-    <div id="ai-pane-body">${body}</div>`;
+    <div id="ai-pane-body" data-guide="ficha-ia">${body}</div>`;
 }
 
 function activateFichaPane(root, paneId) {
@@ -639,7 +658,7 @@ async function startFichaAi({ kind, id, force = false }) {
 }
 
 function carteiraPaneHtml(type, id, status) {
-  return `<div id="pl-ficha">
+  return `<div id="pl-ficha" data-guide="ficha-carteira">
     <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
     <div>${pipelineSelect(type, id, status)}</div>
     <label style="display:block;margin-top:.8rem">Nota</label>
@@ -739,7 +758,7 @@ function filterBarHtml(kind, facets) {
   const procSel = kind === 'announcements'
     ? `<label>Procedimento<select data-f="procedure" ${pro ? '' : 'disabled'}>${procOpts}</select></label>`
     : '';
-  return `<div class="filter-bar" data-kind="${kind}">
+  return `<div class="filter-bar" data-kind="${kind}" data-guide="${kind === 'opportunities' ? 'opp-filters' : kind === 'renewals' ? 'ren-filters' : 'ann-filters'}">
     <label>Texto<input type="search" data-f="q" value="${esc(p.get('q') || '')}" placeholder="Objeto ou entidade"></label>
     <label>Distrito<select data-f="district">${distOpts.join('')}</select></label>
     <label>Prazo<select data-f="deadline">${deadOpts}</select></label>
@@ -1489,7 +1508,7 @@ async function renderAccount() {
       <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
 
       <div class="inline" style="gap:1rem;flex-wrap:wrap;align-items:stretch">
-        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
+        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem" data-guide="acct-plan">
           <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Plano</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${PLAN_LABEL[plan]}</div>
           <div class="muted" style="font-size:.85rem">${esc(period)}</div>
@@ -1511,7 +1530,7 @@ async function renderAccount() {
 
       ${renderInvoicesBlock(invoices)}
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
-      <div id="company-profile-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      <div id="company-profile-block" data-guide="acct-profile" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
       <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
       ${renderCancelAccountBlock()}
     </div>`;
@@ -1520,8 +1539,9 @@ async function renderAccount() {
   wireInvoices();
   wireBillingPortal();
   wireAccountLifecycle({ companyName: c.name, memberCount });
-  fillCompanyProfileBlock();
+  await fillCompanyProfileBlock();
   fillNotifyBlock();
+  notifyGuide('conta');
 }
 
 /** Lugares = membros + convites pendentes (igual ao POST /api/seats/invite). */
@@ -1545,7 +1565,7 @@ function renderSeatsBlock(seats, used, max, plan) {
     <tr><td colspan="2" class="muted">${esc(i.email)} <span class="chip">convite pendente</span></td><td></td>
         <td style="text-align:right"><button class="lnk seat-inv-rm" data-id="${i.id}" style="color:#e11d48">Cancelar</button></td></tr>`).join('');
   return `
-    <div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    <div data-guide="acct-seats" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
       <div class="inline" style="justify-content:space-between;align-items:baseline">
         <h3 style="margin:0">Equipa <span class="muted" style="font-size:.85rem;font-weight:400">(${used}/${max} lugares)</span></h3>
       </div>
@@ -1974,6 +1994,7 @@ async function renderContract(id) {
   bindPipelineChips(app);
   wireFichaPipeline('renovacao', c.id);
   startFichaAi({ kind: 'contract', id });
+  notifyGuide('ficha');
 }
 
 /* ---------- Perfis ---------- */
@@ -1996,7 +2017,7 @@ async function renderProfiles() {
 
   app.innerHTML = `
     ${configTabs('profiles')}
-    <div class="card">
+    <div class="card" data-guide="cfg-profiles">
       <h2>Novo perfil de atividade</h2>
       <p class="muted">Vários termos em conjunto (ex.: reabilitação, cobertura, fachadas, conservação de edifícios) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
       <form id="new-profile-form">
@@ -2092,6 +2113,7 @@ async function renderProfiles() {
   await load();
   stopPolling();
   pollTimer = setInterval(load, 4000);
+  notifyGuide('config');
 }
 
 /* ---------- Dashboard de perfil ---------- */
@@ -2134,7 +2156,7 @@ async function renderInsightTab(el, q, tab, p) {
         <span onclick="event.stopPropagation()">${pipelineSelect(plType, plId, o.pipeline_status)}</span>
       </div>`;
     };
-    el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Oportunidades</h1>
+    el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0" data-guide="opp-title">Oportunidades</h1>
         <div class="muted" style="margin-top:3px">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência, recorrência da entidade).</div></div>
       <form class="opp-search" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
         ${ico('search', 14)}<input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por objeto ou entidade">
@@ -2143,7 +2165,7 @@ async function renderInsightTab(el, q, tab, p) {
       ${d.excluded_no_value && d.items?.length >= 0 ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : ''}
       ${matrix}
       ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.2rem 0 0.6rem" id="fit-status"></p>` : ''}
-      <div class="opp-t">
+      <div class="opp-t" data-guide="opp-table">
         <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span><span>ESTADO</span></div>
         ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split(\'?\')[0]">Limpar filtros</button></div>'}
       </div>`;
@@ -2185,11 +2207,11 @@ async function renderInsightTab(el, q, tab, p) {
   } else if (tab === 'renewals') {
     const extraR = filterQueryString();
     const d = await api(`/api/insights/renewals${q}&months=12${extraR ? `&${extraR}` : ''}`);
-    el.innerHTML = `<h2>Radar de renovações (próximos 12 meses)</h2>
+    el.innerHTML = `<h2 data-guide="ren-title">Radar de renovações (próximos 12 meses)</h2>
       <p class="muted">Contratos em curso cuja execução termina em breve — a entidade irá provavelmente lançar novo procedimento; contactar na data sugerida.</p>
       ${filterBarHtml('renewals')}
       <div class="hint">"Termina" é o fim previsto, estimado a partir dos dados do BASE: data de celebração + prazo de execução (o BASE não publica a data de fim explícita). A mesma regra é usada na matriz, no mapa e no digest; a data exata pode desviar-se se o contrato tiver sido suspenso ou prorrogado.</div>
-      <table><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th><th>Estado</th></tr></thead><tbody>
+      <table data-guide="ren-table"><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((r) => `<tr>
         <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
         <td><strong>${fmtDateDMY(r.suggested_contact_date)}</strong></td>
@@ -2213,13 +2235,13 @@ async function renderInsightTab(el, q, tab, p) {
       ? `<p class="filter-note">${esc(facets.unknown.label)}</p>` : '';
     const exclNote = d.excluded_no_value
       ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : '';
-    el.innerHTML = `<div class="toolbar"><h2>Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
+    el.innerHTML = `<div class="toolbar"><h2 data-guide="ann-title">Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
       <label class="muted"><input type="checkbox" ${showAll ? 'checked' : ''}
         onchange="window._annShowAll=this.checked; window._annReload()"> mostrar expirados</label></div>
       <p class="muted">Por omissão só se mostram concursos com prazo de propostas ainda a decorrer — os expirados já não são acionáveis.</p>
       ${filterBarHtml('announcements', facets)}
       ${facetNote}${exclNote}
-      <table><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th><th>Estado</th></tr></thead><tbody>
+      <table data-guide="ann-table"><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((a) => {
         const open = a.proposal_deadline_date && a.proposal_deadline_date >= new Date().toISOString().slice(0, 10);
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
@@ -2286,7 +2308,7 @@ async function renderInsightTab(el, q, tab, p) {
           <b>${metric === 'total_value' ? fmtCompact(m[metric]) : m[metric]}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
       </div></div>`;
     };
-    el.innerHTML = `<h2>Sazonalidade</h2>
+    el.innerHTML = `<h2 data-guide="sea-chart">Sazonalidade</h2>
       <p class="muted">Em que meses do ano se publicam contratos e anúncios nesta área — recuar 4-6 meses para planear o contacto comercial.</p>
       ${chart(d.contracts, 'count', 'Contratos por mês (nº)')}
       ${chart(d.contracts, 'total_value', 'Contratos por mês (valor)')}
@@ -2334,7 +2356,7 @@ async function renderInsightTab(el, q, tab, p) {
         ? 'A timeline começa hoje e avança pelo fim previsto dos contratos em execução — desliza para veres onde se concentram as renovações em cada período.'
         : 'Histórico por data de publicação — desliza para veres a evolução do mercado.'}
         Clica num círculo ou numa linha para o detalhe do distrito.</p>
-      <div class="map-controls">
+      <div class="map-controls" data-guide="map-legend">
         <select id="map-period" style="width:auto" aria-label="Âmbito temporal">
           <option value="end" ${basis === 'end' ? 'selected' : ''}>Renovações futuras (fim de contrato)</option>
           <option value="publication" ${basis === 'publication' ? 'selected' : ''}>Histórico (publicação)</option>
@@ -2349,7 +2371,7 @@ async function renderInsightTab(el, q, tab, p) {
         <span class="month-label" id="map-month-label">Todo o período</span>
       </div>
       <div class="map-wrap">
-        <div id="osm-map"></div>
+        <div id="osm-map" data-guide="map-canvas"></div>
         <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody id="map-district-tbody"></tbody></table></div>
       </div>
       <div class="legend">
@@ -2406,7 +2428,7 @@ async function renderInsightTab(el, q, tab, p) {
     };
     el.innerHTML = `<h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Concorrentes</h1>
       <div class="muted" style="margin:3px 0 18px">Adjudicatários com contratos na sua atividade — quota, valores médios e clientes.</div>
-      <div class="comp-table">
+      <div class="comp-table" data-guide="cmp-table">
         <div class="comp-row head"><span>CONCORRENTE</span><span class="r">CONTRATOS</span><span class="r">TOTAL</span><span class="r mh">MÉDIO</span><span class="qh">QUOTA</span><span class="ch">PRINCIPAIS CLIENTES</span></div>
         ${d.items.map(row).join('') || '<div class="comp-row"><span class="muted">Sem dados.</span></div>'}
       </div>`;
@@ -2654,7 +2676,7 @@ function renderPriorityMatrix(items, fits) {
       fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
   };
 
-  return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
+  return `<div class="card" data-guide="opp-matrix" style="overflow-x:auto;margin:0.6rem 0">
     <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
     <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = adequação IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
@@ -2862,6 +2884,7 @@ async function maybeOnboarding() {
     });
   } catch { /* continua */ }
   const labels = ['Onde executa?', 'Que certificações e alvarás tem?', 'Em que intervalo de valor concorre?', 'O que nunca faz?'];
+  return new Promise((resolve) => {
   const draw = () => {
     wrap.querySelector('#ob-step-lbl').textContent = `Passo ${step + 1} de 4 — ${labels[step]}`;
     const body = wrap.querySelector('#ob-body');
@@ -2882,20 +2905,22 @@ async function maybeOnboarding() {
   const picked = (name) => [...wrap.querySelectorAll(`.chip-pick[data-name="${name}"] button.on`)].map((b) => b.dataset.v);
   const finish = async (save) => {
     wrap.remove();
-    try { sessionStorage.removeItem('br_onboard'); localStorage.setItem('br_onboard_done', '1'); } catch { /* ignore */ }
-    if (!save) return;
-    try {
-      await api('/api/company/profile', {
-        method: 'PUT',
-        body: JSON.stringify({
-          districts: state.districts,
-          certifications: state.certifications,
-          value_min: state.value_min || null,
-          value_max: state.value_max || null,
-          excluded_terms: String(state.excluded_terms || '').split(',').map((s) => s.trim()).filter(Boolean),
-        }),
-      });
-    } catch (e) { alert(e.message); }
+    try { localStorage.setItem('br_onboard_done', '1'); } catch { /* ignore */ }
+    if (save) {
+      try {
+        await api('/api/company/profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            districts: state.districts,
+            certifications: state.certifications,
+            value_min: state.value_min || null,
+            value_max: state.value_max || null,
+            excluded_terms: String(state.excluded_terms || '').split(',').map((s) => s.trim()).filter(Boolean),
+          }),
+        });
+      } catch (e) { alert(e.message); }
+    }
+    resolve();
   };
   wrap.querySelector('.modal-x').onclick = () => finish(false);
   wrap.querySelector('#ob-skip').onclick = () => finish(false);
@@ -2916,6 +2941,7 @@ async function maybeOnboarding() {
     draw();
   };
   draw();
+  });
 }
 
 /* ---------- Hoje: painel diário de ação (agrega os insights existentes) ---------- */
@@ -3005,7 +3031,7 @@ async function renderHoje(opts = {}) {
     <div><div class="k">${plChip(it.status)}</div>
       <div class="ti">${escTitle(it.title ?? '')}</div>
       <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
-  const pipeHtml = pipeDue.length ? `<div class="hoje-pipe">
+  const pipeHtml = pipeDue.length ? `<div class="hoje-pipe" data-guide="hoje-pipe">
       ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
         <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
       <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span>${
@@ -3062,7 +3088,7 @@ async function renderHoje(opts = {}) {
       </div>`;
 
   app.innerHTML = `
-    <div class="hoje-head">
+    <div class="hoje-head" data-guide="hoje-head">
       <div>
         <div class="day">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
         <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : recolhaPendente ? 'A primeira recolha ainda está a decorrer.' : 'Sem prazos urgentes esta semana.'}</h1>
@@ -3070,7 +3096,7 @@ async function renderHoje(opts = {}) {
         ${recolhaPendente ? '<p class="hint" style="margin:.5rem 0 0">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>' : ''}
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex:none">
-        <select id="ctx-select" aria-label="Atividade">
+        <select id="ctx-select" data-guide="hoje-ctx" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
         <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>
@@ -3081,7 +3107,7 @@ async function renderHoje(opts = {}) {
         ${pipeHtml}
         <div>
           <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
-          <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem prazos nos próximos 30 dias.</p></div>'}</div>
+          <div class="opp-cards" data-guide="hoje-agir">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem prazos nos próximos 30 dias.</p></div>'}</div>
         </div>
         <div>
           <div class="sec-head"><span class="sd" style="background:#c99a3c"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
@@ -3093,7 +3119,7 @@ async function renderHoje(opts = {}) {
         </div>` : ''}
       </div>
       <div class="hoje-col hoje-right" style="gap:14px">
-        <div class="injogo-card">
+        <div class="injogo-card" data-guide="hoje-injogo">
           <div class="k">EM JOGO · PRÓXIMOS 90 DIAS</div>
           <div class="big">${fmtCompact(jogoTotal)}</div>
           <div class="sub">${jogo.length} procedimento${jogo.length === 1 ? '' : 's'} · ${jogoConc} concurso${jogoConc === 1 ? '' : 's'} + ${jogoRenov} renovaç${jogoRenov === 1 ? 'ão' : 'ões'}</div>
@@ -3103,7 +3129,7 @@ async function renderHoje(opts = {}) {
             <div><div class="n">${formatKpiCount(totals.n_contracts ?? active.n_contracts ?? 0, totals.contracts_truncated || active.contracts_truncated)}</div><div class="l">contratos</div></div>
           </div>
         </div>
-        ${money ? `<div class="mini-card">
+        ${money ? `<div class="mini-card" data-guide="hoje-mapa">
           <div class="head"><span class="t">Onde está o dinheiro</span><a href="#/radar/map">ver mapa →</a></div>
           ${money}
         </div>` : ''}
@@ -3113,10 +3139,14 @@ async function renderHoje(opts = {}) {
 
   const sel = document.getElementById('ctx-select');
   if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
-  maybeOnboarding();
+  if (!opts.silent) {
+    await maybeOnboarding();
+    if (window.BRGuide?.maybeSplash) await window.BRGuide.maybeSplash();
+    if (onHojeHash()) notifyGuide('hoje');
+  }
 
   const stillRunning = recolhaPendente;
-  if (stillRunning) {
+  if (stillRunning && !(window.BRGuide && window.BRGuide.isRunning && window.BRGuide.isRunning())) {
     stopPolling();
     pollTimer = setInterval(async () => {
       if (!onHojeHash()) { stopPolling(); return; }
@@ -3166,26 +3196,27 @@ async function renderPipeline() {
     </div>`;
   }
 
-  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Carteira</h1>
+  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0" data-guide="pl-title">Carteira</h1>
     <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — arraste as cartas entre colunas. Estados partilhados.</div></div></div>`;
   if (!(items || []).length) {
     html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="${can('score_fit') ? '#/radar/opportunities' : '#/radar/announcements'}">${can('score_fit') ? 'Oportunidades' : 'Concursos'}</a>.</p>`;
   } else {
-    html += `<div class="pl-board">`;
+    html += `<div class="pl-board" data-guide="pl-board">`;
     for (const col of cols) {
       const colItems = open.filter((i) => i.status === col.id);
       const tone = plTone(col.id);
-      html += `<div class="pl-col" data-status="${col.id}">
+      html += `<div class="pl-col" data-status="${col.id}"${col.id === 'interessa' ? ' data-guide="pl-col-interessa"' : ''}>
         <h3 class="pl-col-h" style="background:${tone.bg};color:${tone.fg};border:1px solid ${tone.bd}">${esc(col.label)} <span class="pl-col-count">(${colItems.length})</span></h3>
         <div class="pl-col-body">${colItems.map(card).join('') || '<p class="muted pl-empty">—</p>'}</div>
       </div>`;
     }
     html += `</div>`;
-    html += `<details class="pl-closed"><summary>Fechadas (${closed.length})</summary>
+    html += `<details class="pl-closed" data-guide="pl-closed"><summary>Fechadas (${closed.length})</summary>
       <div class="pl-closed-body">${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</div></details>`;
   }
   app.innerHTML = html;
   bindPipelineBoard(app);
+  notifyGuide('carteira');
 }
 
 function refreshPlColCounts() {
@@ -3338,12 +3369,13 @@ async function renderRadar(tab = 'opportunities') {
   }
 
   await renderInsightTab(document.getElementById('tab-content'), `?profile_id=${ctx}`, tab, null);
+  notifyGuide(radarGuideId(tab));
 }
 
 /* ---------- Configuração: perfis, recolhas e dados abertos ---------- */
 const CONFIG_SECTIONS = [['profiles', 'Perfis de atividade'], ['searches', 'Recolhas do site'], ['opendata', 'Dados abertos']];
 function configTabs(active) {
-  return `<div class="tabs">${CONFIG_SECTIONS.map(([k, l]) =>
+  return `<div class="tabs" data-guide="cfg-tabs">${CONFIG_SECTIONS.map(([k, l]) =>
     `<button class="${k === active ? 'active' : ''}" onclick="location.hash='#/config/${k}'">${l}</button>`).join('')}</div>`;
 }
 
@@ -3416,6 +3448,7 @@ async function renderAnnouncement(id) {
   bindPipelineChips(app);
   wireFichaPipeline('anuncio_aberto', a.id);
   startFichaAi({ kind: 'announcement', id });
+  notifyGuide('ficha');
 }
 
 function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
@@ -3664,15 +3697,15 @@ async function renderEntities(role = 'contracting', q = '') {
     <div class="toolbar">
       <div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Entidades</h1>
         <div class="muted" style="margin-top:3px">Compradores públicos e fornecedores com histórico na base.</div></div>
-      <div class="ent-toggle">
+      <div class="ent-toggle" data-guide="ent-tabs">
         <button class="${role === 'contracting' ? 'on' : ''}" onclick="renderEntities('contracting')">Adjudicantes</button>
         <button class="${role === 'contracted' ? 'on' : ''}" onclick="renderEntities('contracted')">Adjudicatárias</button>
       </div>
     </div>
-    <form class="opp-search" id="ent-search" style="margin:0 0 12px">
+    <form class="opp-search" id="ent-search" data-guide="ent-search" style="margin:0 0 12px">
       ${ico('search', 14)}<input type="text" name="q" placeholder="Pesquisar por nome ou NIF" value="${esc(q)}">
     </form>
-    <div class="ent-list">
+    <div class="ent-list" data-guide="ent-table">
       <div class="ent-row head"><span>NOME</span><span class="nifh">NIF</span><span class="r">CONTRATOS</span><span class="r th">VALOR TOTAL</span><span class="r uh">ÚLTIMO CONTRATO</span></div>
       ${d.items.map((e) => `<div class="ent-row body" onclick="location.hash='#/entities/${e.id}'">
         <span class="nm">${esc(e.name)}</span>
@@ -3686,6 +3719,7 @@ async function renderEntities(role = 'contracting', q = '') {
     e.preventDefault();
     renderEntities(role, new FormData(e.target).get('q'));
   };
+  notifyGuide('entidades');
 }
 window.renderEntities = renderEntities;
 
@@ -4052,10 +4086,20 @@ function openFeedbackModal() {
       <h3 style="margin:0 0 .3rem">Como podemos ajudar?</h3>
       <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o BaseRadar.</p>
       <div class="fb-tabs">
-        <button class="fb-tab active" data-kind="help">Pedir ajuda</button>
+        <button class="fb-tab active" data-kind="manual">Manual</button>
+        <button class="fb-tab" data-kind="help">Pedir ajuda</button>
         <button class="fb-tab" data-kind="feedback">Sugestão / feedback</button>
       </div>
-      <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem"></textarea>
+      <div id="fb-manual">
+        <p class="muted" style="margin:.6rem 0 .5rem;font-size:.88rem">Capítulos do manual e a demonstração dos menus.</p>
+        <div class="help-actions">
+          <button type="button" id="fb-tour">Ver demonstração dos menus</button>
+          <button type="button" class="btn-secondary" id="fb-screen">Explicar este ecrã</button>
+          <a class="btn-secondary" href="#/ajuda" id="fb-full">Abrir o manual</a>
+        </div>
+        <ul id="fb-toc" style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.88rem"></ul>
+      </div>
+      <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem;display:none"></textarea>
       <div class="error" id="fb-error" style="margin-top:.4rem"></div>
       <div id="fb-ok" class="hint" style="margin-top:.4rem;display:none">Obrigado! A sua mensagem foi registada.</div>
       <div class="inline" style="justify-content:flex-end;gap:.5rem;margin-top:.8rem">
@@ -4064,15 +4108,47 @@ function openFeedbackModal() {
       </div>
     </div>`;
   document.body.appendChild(wrap);
-  let kind = 'help';
+  let kind = 'manual';
   const close = () => wrap.remove();
+  const syncKind = () => {
+    const isMail = kind === 'help' || kind === 'feedback';
+    wrap.querySelector('#fb-manual').style.display = isMail ? 'none' : 'block';
+    wrap.querySelector('#fb-msg').style.display = isMail ? 'block' : 'none';
+    wrap.querySelector('#fb-send').style.display = isMail ? '' : 'none';
+  };
   wrap.querySelector('.modal-x').onclick = close;
   wrap.querySelector('#fb-cancel').onclick = close;
   wrap.onclick = (e) => { if (e.target === wrap) close(); };
+  const toc = window.BRHelpManualToc?.chapters || [];
+  wrap.querySelector('#fb-toc').innerHTML = toc.map((c) =>
+    `<li><a href="#/ajuda/${esc(c.slug)}">${esc(c.title)}</a></li>`).join('');
+  wrap.querySelector('#fb-full').onclick = close;
+  wrap.querySelector('#fb-toc').onclick = (e) => { if (e.target.closest('a')) close(); };
+  wrap.querySelector('#fb-tour').onclick = () => {
+    close();
+    window.BRGuide?.replayMenuTour?.();
+  };
+  wrap.querySelector('#fb-screen').onclick = () => {
+    close();
+    const hash = (location.hash.split('?')[0] || '#/hoje');
+    let id = 'hoje';
+    if (hash === '#/pipeline') id = 'carteira';
+    else if (hash.startsWith('#/announcements/') || hash.startsWith('#/contracts/')) id = 'ficha';
+    else if (hash.startsWith('#/conta')) id = 'conta';
+    else if (hash.startsWith('#/config') || hash.startsWith('#/profiles')) id = 'config';
+    else if (hash.startsWith('#/entities')) id = 'entidades';
+    else {
+      const m = hash.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+      if (m) id = radarGuideId(m[1] || 'opportunities');
+    }
+    window.BRGuide?.replayScreen?.(id);
+  };
   wrap.querySelectorAll('.fb-tab').forEach((tb) => tb.onclick = () => {
     kind = tb.dataset.kind;
     wrap.querySelectorAll('.fb-tab').forEach((x) => x.classList.toggle('active', x === tb));
+    syncKind();
   });
+  syncKind();
   wrap.querySelector('#fb-send').onclick = async () => {
     const message = wrap.querySelector('#fb-msg').value.trim();
     const err = wrap.querySelector('#fb-error');
@@ -4114,14 +4190,124 @@ function bindAppNav() {
     if (e.target.closest('a')) setAppNavOpen(false);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') setAppNavOpen(false);
+    if (e.key !== 'Escape') return;
+    if (window.BRGuide && window.BRGuide.isRunning && window.BRGuide.isRunning()) return;
+    setAppNavOpen(false);
+  });
+}
+
+window.setAppNavOpen = setAppNavOpen;
+
+async function renderAjuda(slug) {
+  const toc = window.BRHelpManualToc || { title: 'Manual', intro: '', chapters: [] };
+  const groups = [];
+  for (const ch of toc.chapters || []) {
+    const last = groups[groups.length - 1];
+    if (!last || last.name !== ch.group) groups.push({ name: ch.group, items: [ch] });
+    else last.items.push(ch);
+  }
+  const current = slug ? (toc.chapters || []).find((c) => c.slug === slug) : null;
+  const tocHtml = groups.map((g) =>
+    `<div class="g">${esc(g.name)}</div>` + g.items.map((c) =>
+      `<a href="#/ajuda/${esc(c.slug)}" class="${current && current.slug === c.slug ? 'active' : ''}">${esc(c.title)}${c.pro ? ' <span class="muted">Pro</span>' : ''}</a>`
+    ).join('')
+  ).join('');
+  app.innerHTML = `<div class="help-layout">
+    <aside class="help-toc">
+      <a href="#/ajuda"><strong>${esc(toc.title)}</strong></a>
+      ${tocHtml}
+      ${window._me?.is_admin ? `<div class="g">Validação</div>
+      <a href="#/qa">Checklist clicável</a>` : ''}
+    </aside>
+    <div class="card" id="help-main"><p class="muted">A carregar…</p></div>
+  </div>`;
+  const main = document.getElementById('help-main');
+  const actions = `<div class="help-actions">
+      <button type="button" id="help-tour">Ver demonstração dos menus</button>
+      <button type="button" class="btn-secondary" id="help-replay">Explicar este ecrã</button>
+      <button type="button" class="btn-secondary" id="help-optout">Não voltar a mostrar guias</button>
+      <button type="button" class="btn-secondary" id="help-reset">Repor guias</button>
+    </div>`;
+  if (!slug) {
+    main.innerHTML = `<h1 style="margin:0 0 .4rem">${esc(toc.title)}</h1>
+      <p class="lead">${esc(toc.intro)}</p>${actions}
+      <p>Escolha um capítulo à esquerda.${window._me?.is_admin ? ' A <a href="#/qa">checklist de validação</a> confirma o produto ecrã a ecrã.' : ''}</p>`;
+  } else if (!current) {
+    main.innerHTML = `<p>Capítulo não encontrado.</p><p><a href="#/ajuda">Voltar ao índice</a></p>`;
+  } else {
+    try {
+      const html = await fetch(current.html).then((r) => { if (!r.ok) throw new Error('em falta'); return r.text(); });
+      main.innerHTML = actions + html;
+    } catch {
+      main.innerHTML = `${actions}<p class="error">Não foi possível carregar este capítulo.</p>`;
+    }
+  }
+  document.getElementById('help-tour')?.addEventListener('click', () => window.BRGuide?.replayMenuTour?.());
+  document.getElementById('help-replay')?.addEventListener('click', () => window.BRGuide?.replayScreen?.(current?.slug || 'hoje'));
+  document.getElementById('help-optout')?.addEventListener('click', () => {
+    window.BRGuide?.setOptOut?.(true);
+    alert('Os guias ficam desligados neste browser.');
+  });
+  document.getElementById('help-reset')?.addEventListener('click', () => {
+    window.BRGuide?.resetGuides?.();
+    alert('Os guias voltam a aparecer na próxima visita a cada ecrã.');
+  });
+}
+
+function qaStorageKey() {
+  return 'br_qa:' + (window._me?.user_id ?? 'anon');
+}
+function loadQaChecks() {
+  try { return JSON.parse(localStorage.getItem(qaStorageKey()) || '{}') || {}; } catch { return {}; }
+}
+function saveQaChecks(map) {
+  try { localStorage.setItem(qaStorageKey(), JSON.stringify(map)); } catch { /* ignore */ }
+}
+
+function renderQaChecklist() {
+  if (!window._me?.is_admin) {
+    app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>';
+    return;
+  }
+  const data = window.BRQaChecklist || { title: 'Checklist', intro: '', groups: [] };
+  const done = loadQaChecks();
+  const groups = (data.groups || []).map((g) => {
+    const items = (g.items || []).map((it) => `
+      <div class="qa-item">
+        <input type="checkbox" id="qa-${esc(it.id)}" data-qa="${esc(it.id)}" ${done[it.id] ? 'checked' : ''}>
+        <div>
+          <label for="qa-${esc(it.id)}">${esc(it.label)}</label>
+          <div class="expect">${esc(it.expect || '')}</div>
+          <div><a href="${esc(it.href)}">Abrir ecrã →</a></div>
+        </div>
+      </div>`).join('');
+    return `<section class="qa-group"><h2>${esc(g.title)}</h2>${items}</section>`;
+  }).join('');
+  app.innerHTML = `<div class="toolbar"><div>
+      <div class="eyebrow">Validação</div>
+      <h1 style="margin:0">${esc(data.title)}</h1>
+      <p class="muted" style="max-width:640px">${esc(data.intro)}</p>
+    </div>
+    <a class="btn-secondary" href="#/ajuda">Manual</a></div>
+    ${groups}`;
+  app.querySelectorAll('input[data-qa]').forEach((cb) => {
+    cb.onchange = () => {
+      const map = loadQaChecks();
+      if (cb.checked) map[cb.dataset.qa] = true;
+      else delete map[cb.dataset.qa];
+      saveQaChecks(map);
+    };
   });
 }
 
 async function route() {
   stopPolling();
   hideMatrixTip();
-  setAppNavOpen(false);
+  const guideNav = window.BRGuide && window.BRGuide.isNavigating && window.BRGuide.isNavigating();
+  if (!guideNav) {
+    setAppNavOpen(false);
+    window.BRGuide?.stop?.({ navigated: true });
+  }
   _viewGen++;
   _fichaAiGen++;
   const hash = location.hash || '#/';
@@ -4157,6 +4343,7 @@ async function route() {
   await loadCaps();
   applyNavGating();
   topbar.hidden = false;
+  window.BRGuide?.bind?.({ can, getUserId: () => window._me?.user_id });
   const planPill = window._me.plan && window._me.plan !== 'free'
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
   whoami.innerHTML = `<a href="#/conta"><span class="nm">${esc(window._me.username)}</span><span class="co"><span class="co-nm">${esc(window._me.company?.name ?? '')}</span>${planPill}</span></a>`;
@@ -4167,6 +4354,9 @@ async function route() {
   if (hashBase === '#/subscrever' || hashBase === '#/planos') return renderPlans();
   if (hashBase === '#/conta') return renderAccount();
   if (hashBase === '#/admin') return renderAdmin();
+  const ajuda = hashBase.match(/^#\/ajuda(?:\/([\w-]+))?$/);
+  if (ajuda) return renderAjuda(ajuda[1] || '');
+  if (hashBase === '#/qa') return renderQaChecklist();
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
 
   const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
@@ -4198,7 +4388,16 @@ async function route() {
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
     return await renderHoje();
   } catch (err) {
-    if (err.planRequired) { app.innerHTML = upgradePanel(err.planRequired); return; }
+    if (err.planRequired) {
+      app.innerHTML = upgradePanel(err.planRequired);
+      if (hashBase === '#/pipeline') notifyGuide('carteira');
+      else if (hashBase.startsWith('#/entities')) notifyGuide('entidades');
+      else {
+        const r = hashBase.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+        if (r) notifyGuide(radarGuideId(r[1] || 'opportunities'));
+      }
+      return;
+    }
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   }
 }
