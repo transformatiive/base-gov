@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } from './auth.js';
 import { capabilitiesFor, seatLimit, aiCap, requirePlan } from './plans.js';
+import { seatsUsed } from './seats.js';
 import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
 import { getDocument } from './storage.js';
@@ -270,15 +271,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { companyId, isAdmin, plan } = auth(req);
     // Admin/acesso global: plano efetivo business (tudo desbloqueado).
     const effPlan = isAdmin ? 'business' : plan;
-    const [seatUsed] = companyId != null
-      ? (await pool.query('SELECT count(*)::int AS n FROM users WHERE company_id = $1', [companyId])).rows
-      : [{ n: 0 }];
+    const seatUsed = companyId != null ? await seatsUsed(companyId) : 0;
     const ai = await aiUsageSummary(companyId, effPlan);
     return {
       plan: effPlan,
       capabilities: capabilitiesFor(effPlan),
       ai_usage: ai,
-      seats: { used: seatUsed.n, max: seatLimit(effPlan) },
+      seats: { used: seatUsed, max: seatLimit(effPlan) },
       caps: { ai_cap: aiCap(effPlan) },
     };
   });

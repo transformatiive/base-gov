@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { seatLimit, effectivePlan } from './plans.js';
+import { occupiedSeatCount } from './seat-occupancy.js';
 import { config } from './config.js';
 import { sendMail, layout, esc } from './mail.js';
 
@@ -21,7 +22,7 @@ import { sendMail, layout, esc } from './mail.js';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Lugares ocupados = utilizadores + convites pendentes. */
-async function seatsUsed(companyId: number): Promise<number> {
+export async function seatsUsed(companyId: number): Promise<number> {
   const { rows } = await pool.query(
     `SELECT (SELECT count(*) FROM users WHERE company_id = $1)
           + (SELECT count(*) FROM company_invites WHERE company_id = $1 AND accepted_at IS NULL) AS n`,
@@ -44,7 +45,7 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
     return {
       members,
       invites,
-      seats: { used: members.length + invites.length, max: seatLimit(plan) },
+      seats: { used: occupiedSeatCount(members.length, invites.length), max: seatLimit(plan) },
     };
   });
 
