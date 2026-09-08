@@ -1,6 +1,7 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { config } from './config.js';
+import { GUIDE_SEED, markdownToHtml, parseGuidePayload } from './guides.js';
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
@@ -532,6 +533,46 @@ CREATE INDEX IF NOT EXISTS idx_contracts_price ON contracts (initial_contractual
 CREATE INDEX IF NOT EXISTS idx_contracts_district ON contracts (
   (NULLIF(btrim(split_part(split_part(execution_place,'|',1),',',2)),''))
 );
+
+-- Guias públicos (SEO / LLMs). Fonte de verdade: Postgres, não ficheiros estáticos.
+CREATE TABLE IF NOT EXISTS guide_articles (
+  slug          TEXT PRIMARY KEY,
+  title         TEXT NOT NULL,
+  description   TEXT NOT NULL,
+  lede          TEXT NOT NULL,
+  intent        TEXT NOT NULL CHECK (intent IN ('informativa','comercial')),
+  markdown      TEXT NOT NULL,
+  body_html     TEXT NOT NULL,
+  faq           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
+  published_at  TIMESTAMPTZ,
+  author_agent  TEXT NOT NULL DEFAULT 'human' CHECK (author_agent IN ('claude','grok','grok-bot','human')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_guide_articles_status ON guide_articles (status, published_at DESC);
+
+-- Utilização do produto (páginas, módulos, acções, origem). Sem IP.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id            BIGSERIAL PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN ('page_view','action')),
+  path          TEXT NOT NULL,
+  module        TEXT NOT NULL,
+  action        TEXT,
+  origin        TEXT NOT NULL,
+  referrer_host TEXT,
+  utm_source    TEXT,
+  utm_medium    TEXT,
+  utm_campaign  TEXT,
+  visitor_id    TEXT,
+  landing       TEXT,
+  user_id       INT REFERENCES users(id) ON DELETE SET NULL,
+  company_id    INT REFERENCES companies(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_module ON usage_events (created_at DESC, module);
+CREATE INDEX IF NOT EXISTS idx_usage_origin ON usage_events (created_at DESC, origin);
 `;
 
 export async function migrateAndSeed(): Promise<void> {
@@ -592,5 +633,36 @@ export async function migrateAndSeed(): Promise<void> {
   );
   if (dropped.rowCount) {
     console.log(`[seed] perfil GTM removido: ${dropped.rows.map((r: { name: string }) => r.name).join(', ')}`);
+  }
+
+  await seedGuides();
+}
+
+/** Insere os guias iniciais. ON CONFLICT DO NOTHING para não sobrescrever edições do agente. */
+export async function seedGuides(): Promise<void> {
+  for (const seed of GUIDE_SEED) {
+    const parsed = parseGuidePayload(seed.slug, seed);
+    if (!parsed.ok) {
+      throw new Error(`[seed] guia inválido ${seed.slug}: ${parsed.error}`);
+    }
+    const html = markdownToHtml(parsed.value.markdown);
+    const ins = await pool.query(
+      `INSERT INTO guide_articles
+         (slug, title, description, lede, intent, markdown, body_html, faq, status, published_at, author_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'published', now(), 'human')
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING slug`,
+      [
+        parsed.value.slug,
+        parsed.value.title,
+        parsed.value.description,
+        parsed.value.lede,
+        parsed.value.intent,
+        parsed.value.markdown,
+        html,
+        JSON.stringify(parsed.value.faq),
+      ],
+    );
+    if (ins.rowCount) console.log(`[seed] guia publicado: ${parsed.value.slug}`);
   }
 }
