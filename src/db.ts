@@ -551,6 +551,28 @@ CREATE TABLE IF NOT EXISTS guide_articles (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_guide_articles_status ON guide_articles (status, published_at DESC);
+
+-- Utilização do produto (páginas, módulos, acções, origem). Sem IP.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id            BIGSERIAL PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN ('page_view','action')),
+  path          TEXT NOT NULL,
+  module        TEXT NOT NULL,
+  action        TEXT,
+  origin        TEXT NOT NULL,
+  referrer_host TEXT,
+  utm_source    TEXT,
+  utm_medium    TEXT,
+  utm_campaign  TEXT,
+  visitor_id    TEXT,
+  landing       TEXT,
+  user_id       INT REFERENCES users(id) ON DELETE SET NULL,
+  company_id    INT REFERENCES companies(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_module ON usage_events (created_at DESC, module);
+CREATE INDEX IF NOT EXISTS idx_usage_origin ON usage_events (created_at DESC, origin);
 `;
 
 export async function migrateAndSeed(): Promise<void> {

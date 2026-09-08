@@ -15,6 +15,7 @@ import { registerCompanyProfileRoutes } from './company-profile.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerAiFeedbackRoutes } from './ai-feedback.js';
 import { registerGuideAgentRoutes, registerPublicGuideRoutes } from './routes-guides.js';
+import { ingestPublicPage, registerUsageRoutes } from './routes-usage.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
 import { startScheduler } from './scheduler.js';
@@ -40,10 +41,19 @@ async function main(): Promise<void> {
   });
 
   // Landing comercial na raiz do domínio.
-  app.get('/', (_req, reply) => reply.sendFile('landing.html'));
+  app.get('/', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/');
+    return reply.sendFile('landing.html');
+  });
   // Páginas legais (públicas) e guias indexáveis (SEO / LLMs).
-  app.get('/privacidade', (_req, reply) => reply.sendFile('privacidade.html'));
-  app.get('/termos', (_req, reply) => reply.sendFile('termos.html'));
+  app.get('/privacidade', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/privacidade');
+    return reply.sendFile('privacidade.html');
+  });
+  app.get('/termos', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/termos');
+    return reply.sendFile('termos.html');
+  });
   await registerPublicGuideRoutes(app);
   // Aplicação (SPA com routing por hash) servida em /app.
   const sendApp = (_req: unknown, reply: import('fastify').FastifyReply) => reply.sendFile('index.html');
@@ -71,6 +81,7 @@ async function main(): Promise<void> {
   await registerNotificationRoutes(app);
   await registerAiFeedbackRoutes(app);
   await registerGuideAgentRoutes(app);
+  await registerUsageRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
 

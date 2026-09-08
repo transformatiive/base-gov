@@ -210,6 +210,7 @@ const scoreDonut = (score, color, size = 52) => {
 };
 
 async function api(path, opts = {}) {
+  const method = String(opts.method || 'GET').toUpperCase();
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   if (res.status === 401) {
     if (location.hash !== '#/login') location.hash = '#/login';
@@ -230,7 +231,88 @@ async function api(path, opts = {}) {
     }
     throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
   }
+  const act = usageActionFromApi(method, path);
+  if (act) trackUsage('action', { action: act });
   return res.json();
+}
+
+function usageActionFromApi(method, apiPath) {
+  const m = String(method || 'GET').toUpperCase();
+  if (m === 'GET' || m === 'HEAD') return null;
+  const p = String(apiPath || '').split('?')[0];
+  if (p === '/api/usage' || p.startsWith('/api/admin')) return null;
+  if (m === 'POST' && /\/api\/announcements\/\d+\/analyze$/.test(p)) return 'analise_anuncio';
+  if (m === 'POST' && /\/api\/contracts\/\d+\/analyze$/.test(p)) return 'analise_contrato';
+  if (m === 'POST' && /\/api\/announcements\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
+  if (m === 'POST' && /\/api\/announcements\/\d+\/close-forecast/.test(p)) return 'previsao_fecho';
+  if (m === 'PUT' && p.startsWith('/api/pipeline/')) return 'carteira';
+  if (m === 'POST' && p === '/api/billing/checkout') return 'checkout';
+  if (m === 'POST' && p === '/api/billing/trial') return 'activar_trial';
+  if (m === 'POST' && p === '/api/profiles') return 'criar_perfil';
+  if (m === 'POST' && p === '/api/searches') return 'pesquisa';
+  if (m === 'POST' && p === '/api/feedback') return 'feedback';
+  if (m === 'POST' && /\/api\/profiles\/\d+\/run$/.test(p)) return 'recolha';
+  return null;
+}
+
+function brVisitorId() {
+  try {
+    let id = localStorage.getItem('br_vid');
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+      localStorage.setItem('br_vid', id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+function brFirstTouch() {
+  try {
+    const existing = JSON.parse(localStorage.getItem('br_acq') || 'null');
+    if (existing && existing.landing) return existing;
+    const q = new URLSearchParams(location.search);
+    const hashQ = location.hash.includes('?') ? new URLSearchParams(location.hash.split('?')[1]) : new URLSearchParams();
+    const pick = (k) => q.get(k) || hashQ.get(k) || '';
+    const acq = {
+      utm_source: pick('utm_source'),
+      utm_medium: pick('utm_medium'),
+      utm_campaign: pick('utm_campaign'),
+      landing: `${location.pathname}${location.hash.split('?')[0] || ''}`,
+    };
+    localStorage.setItem('br_acq', JSON.stringify(acq));
+    return acq;
+  } catch {
+    return {};
+  }
+}
+
+function trackUsage(kind, extra = {}) {
+  const path = extra.path || (location.hash.split('?')[0] || '#/');
+  if (!path || path === '#/admin' || path.startsWith('#/admin/') || path === '#/qa') return;
+  const acq = brFirstTouch();
+  const body = JSON.stringify({
+    kind,
+    path,
+    action: extra.action || undefined,
+    visitor_id: brVisitorId(),
+    referrer: document.referrer || '',
+    utm_source: acq.utm_source || undefined,
+    utm_medium: acq.utm_medium || undefined,
+    utm_campaign: acq.utm_campaign || undefined,
+    landing: acq.landing || undefined,
+  });
+  try {
+    if (kind === 'page_view' && navigator.sendBeacon) {
+      const ok = navigator.sendBeacon('/api/usage', new Blob([body], { type: 'application/json' }));
+      if (ok) return;
+    }
+  } catch { /* fallback fetch */ }
+  fetch('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
 }
 
 /* Capabilities do plano (espelho do backend). O backend é sempre a verdade;
@@ -4256,7 +4338,8 @@ async function renderAdmin() {
   app.innerHTML = `
     <div class="admin-wrap">
       <div class="eyebrow" style="color:var(--brand)">Administração</div>
-      <h2 style="margin:.3rem 0 1rem">Utilização do BaseRadar</h2>
+      <h2 style="margin:.3rem 0 .6rem">Operação do BaseRadar</h2>
+      ${adminTabs('ops')}
 
       <div class="admin-stats">
         ${stat('Empresas', t.companies ?? 0, `${stats.signups?.last7 ?? 0} novas (7d)`)}
@@ -4442,18 +4525,134 @@ async function renderAdmin() {
     } catch (e) { alert(e.message); }
   };
 }
+function adminTabs(active) {
+  return `<div class="admin-tabs">
+    <a href="#/admin" class="${active === 'ops' ? 'on' : ''}">Operação</a>
+    <a href="#/admin/uso" class="${active === 'uso' ? 'on' : ''}">Utilização</a>
+  </div>`;
+}
+
+async function renderUsageAdmin() {
+  topbar.hidden = false;
+  if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
+  const daysRaw = new URLSearchParams((location.hash.split('?')[1] || '')).get('d') || '30';
+  const days = daysRaw === '7' || daysRaw === '90' ? daysRaw : '30';
+  app.innerHTML = '<div class="card"><p class="muted">A carregar utilização…</p></div>';
+  let data;
+  try { data = await api(`/api/admin/usage?days=${days}`); }
+  catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
+
+  const k = data.kpis || {};
+  const stat = (label, value, note) => `<div class="admin-stat">
+    <div class="asv">${value ?? 0}</div><div class="asl">${esc(label)}</div>${note ? `<div class="asn">${esc(note)}</div>` : ''}</div>`;
+  const period = (d, label) => `<a class="admin-period-btn${d === days ? ' on' : ''}" href="#/admin/uso?d=${d}">${label}</a>`;
+  const maxMod = Math.max(1, ...(data.modules || []).map((r) => r.n));
+  const bars = (data.modules || []).slice(0, 12).map((r) => `
+    <div class="usage-hbar">
+      <span class="lbl" title="${esc(r.label)}">${esc(r.label)}</span>
+      <span class="track"><i style="width:${Math.round((r.n / maxMod) * 100)}%"></i></span>
+      <span class="n">${r.n}</span>
+    </div>`).join('') || '<p class="muted">Ainda não há páginas vistas neste período.</p>';
+
+  const table = (headers, rows, empty) => `<div style="overflow-x:auto"><table class="admin-table">
+    <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="${headers.length}" class="muted">${empty}</td></tr>`}</tbody>
+  </table></div>`;
+
+  const modRows = (data.modules || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td><td>${r.users}</td></tr>`).join('');
+  const actRows = (data.actions || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td></tr>`).join('');
+  const oriRows = (data.origins || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td><td>${r.visitors}</td></tr>`).join('');
+  const coRows = (data.companies || []).map((c) => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(PLAN_LABEL[c.plan] || c.plan)}</td><td>${c.n}</td>
+    <td class="muted">${c.last_at ? new Date(c.last_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+  </tr>`).join('');
+  const recRows = (data.recent || []).map((e) => `<tr>
+    <td class="muted" style="white-space:nowrap">${e.created_at ? new Date(e.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+    <td>${e.kind === 'action' ? 'Acção' : 'Página'}</td>
+    <td>${esc(e.module)}</td>
+    <td class="muted">${esc(e.action || e.path || '')}</td>
+    <td>${esc(e.origin || '—')}</td>
+    <td>${esc(e.company || '—')}${e.username ? `<div class="muted" style="font-size:.8rem">${esc(e.username)}</div>` : ''}</td>
+  </tr>`).join('');
+
+  app.innerHTML = `
+    <div class="admin-wrap wide">
+      <div class="eyebrow" style="color:var(--brand)">Administração</div>
+      <h2 style="margin:.3rem 0 .6rem">Utilização</h2>
+      ${adminTabs('uso')}
+      <div class="admin-period">${period('7', '7 dias')}${period('30', '30 dias')}${period('90', '90 dias')}</div>
+      <p class="muted" style="margin:.4rem 0 1rem;font-size:.85rem">Páginas, módulos, o que fazem, e de onde chegam (referrer / UTM). A tua navegação em Admin não entra aqui.</p>
+
+      <div class="admin-stats admin-stats-5">
+        ${stat('Páginas', k.pageviews ?? 0, `${days} dias`)}
+        ${stat('Visitantes', k.visitors ?? 0, 'únicos (cookie)')}
+        ${stat('Utilizadores', k.users ?? 0, 'com sessão')}
+        ${stat('Empresas', k.companies ?? 0, 'com actividade')}
+        ${stat('Acções', k.actions ?? 0, 'análises, carteira…')}
+      </div>
+
+      <div class="usage-trend card">
+        <h3 style="margin:0 0 .4rem">Actividade por dia</h3>
+        ${data.trend_svg || '<p class="muted">Sem série.</p>'}
+      </div>
+
+      <div class="admin-grid2">
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">Módulos / páginas</h3>
+          ${bars}
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">De onde vêm</h3>
+          ${table(['Origem', 'Eventos', 'Visitantes'], oriRows, 'Sem origem registada ainda.')}
+        </div>
+      </div>
+
+      <div class="admin-grid2" style="margin-top:1.2rem">
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">Módulos (tabela)</h3>
+          ${table(['Módulo', 'Vistas', 'Pessoas'], modRows, 'Sem páginas.')}
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">O que fazem</h3>
+          ${table(['Acção', 'Vezes'], actRows, 'Ainda sem acções (análise, proposta, carteira, checkout…).')}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Empresas mais activas</h3>
+        ${table(['Empresa', 'Plano', 'Eventos', 'Última'], coRows, 'Nenhuma empresa autenticada neste período.')}
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Últimos eventos</h3>
+        ${table(['Quando', 'Tipo', 'Módulo', 'Detalhe', 'Origem', 'Quem'], recRows, 'Sem eventos.')}
+      </div>
+    </div>`;
+}
+
 function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
 
 /* Liga "Admin" à navegação lateral (só para administradores). */
 function ensureAdminNav() {
   const nav = document.querySelector('#topbar nav');
   if (!nav) return;
-  const existing = nav.querySelector('a[href="#/admin"]');
-  if (!window._me?.is_admin) { existing?.remove(); return; }
-  if (existing) return;
-  const a = document.createElement('a');
-  a.href = '#/admin'; a.textContent = 'Admin';
-  nav.appendChild(a);
+  const existingAdmin = nav.querySelector('a[href="#/admin"]');
+  const existingUso = nav.querySelector('a[href="#/admin/uso"]');
+  if (!window._me?.is_admin) {
+    existingAdmin?.remove();
+    existingUso?.remove();
+    return;
+  }
+  if (!existingAdmin) {
+    const a = document.createElement('a');
+    a.href = '#/admin'; a.textContent = 'Admin';
+    nav.appendChild(a);
+  }
+  if (!existingUso) {
+    const a = document.createElement('a');
+    a.href = '#/admin/uso'; a.textContent = 'Utilização';
+    nav.appendChild(a);
+  }
 }
 
 /* ---------- Feedback / ajuda: botão flutuante + modal ---------- */
@@ -4711,12 +4910,13 @@ async function route() {
     else if (href.startsWith('#/radar/')) on = navHash === href || navHash.startsWith(href + '/');
     else if (href === '#/entities') on = navHash.startsWith('#/entities');
     else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
+    else if (href === navHash) on = true;
     a.classList.toggle('active', on);
   });
-  if (hashBase === '#/login') { clearClientSession(); return renderLogin(); }
-  if (hashBase === '#/recuperar') { clearClientSession(); return renderForgot(); }
-  if (hashBase === '#/repor-password') { clearClientSession(); return renderReset(); }
-  if (hashBase === '#/registo') { clearClientSession(); return renderRegister(); }
+  if (hashBase === '#/login') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderLogin(); }
+  if (hashBase === '#/recuperar') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderForgot(); }
+  if (hashBase === '#/repor-password') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderReset(); }
+  if (hashBase === '#/registo') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderRegister(); }
   const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
   if (invite) { clearClientSession(); return renderAcceptInvite(decodeURIComponent(invite[1])); }
 
@@ -4740,9 +4940,11 @@ async function route() {
   updateSidebar();
   ensureHelpButton();
   ensureAdminNav();
+  trackUsage('page_view', { path: hashBase });
   if (hashBase === '#/subscrever' || hashBase === '#/planos') return renderPlans();
   if (hashBase === '#/conta') return renderAccount();
   if (hashBase === '#/admin') return renderAdmin();
+  if (hashBase === '#/admin/uso') return renderUsageAdmin();
   const ajuda = hashBase.match(/^#\/ajuda(?:\/([\w-]+))?$/);
   if (ajuda) return renderAjuda(ajuda[1] || '');
   if (hashBase === '#/qa') return renderQaChecklist();
