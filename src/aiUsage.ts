@@ -12,7 +12,7 @@ import { aiCap, Plan } from './plans.js';
  *    quando a flag AI_SOFT_CAP_ENABLED estiver ligada (desligada por defeito).
  */
 
-export type AiKind = 'fit' | 'analise_anuncio' | 'analise_contrato' | 'dossier';
+export type AiKind = 'fit' | 'analise_anuncio' | 'analise_contrato' | 'dossier' | 'requisitos' | 'proposta' | 'reeavaliacao' | 'previsao_fecho';
 
 // Estimativa de custo (USD por 1M tokens) por modelo. Aproximada — serve para
 // dar visibilidade de custo, não para faturar. Ajustável sem migração.

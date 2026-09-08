@@ -370,6 +370,57 @@ CREATE TABLE IF NOT EXISTS contract_history_agg (
 );
 CREATE INDEX IF NOT EXISTS idx_history_agg_entity ON contract_history_agg (entity_id, role);
 
+-- Propostas assistidas e previsão de valor de fecho
+CREATE TABLE IF NOT EXISTS proposal_company_profiles (
+  company_id              INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  legal_name              TEXT,
+  nif                     TEXT,
+  cae                     TEXT,
+  certifications          TEXT[] NOT NULL DEFAULT '{}',
+  technical_capabilities  TEXT,
+  portfolio               TEXT,
+  references              JSONB NOT NULL DEFAULT '[]',
+  key_team                JSONB NOT NULL DEFAULT '[]',
+  min_margin_pct          NUMERIC(5,2),
+  notes                   TEXT,
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by              INT REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS announcement_requirements (
+  announcement_id INT PRIMARY KEY REFERENCES announcements(id) ON DELETE CASCADE,
+  extraction      JSONB NOT NULL,
+  model           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS proposal_versions (
+  id              SERIAL PRIMARY KEY,
+  company_id      INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  announcement_id INT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  version         INT NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN ('generated','uploaded')),
+  file_name       TEXT NOT NULL,
+  content_type    TEXT NOT NULL DEFAULT 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  content         BYTEA NOT NULL,
+  extracted_text  TEXT,
+  gap_report      JSONB,
+  created_by      INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, announcement_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_proposal_versions_ann ON proposal_versions (company_id, announcement_id, version DESC);
+
+CREATE TABLE IF NOT EXISTS close_forecasts (
+  announcement_id INT PRIMARY KEY REFERENCES announcements(id) ON DELETE CASCADE,
+  fingerprint     TEXT NOT NULL,
+  llm             JSONB,
+  model           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
 CREATE INDEX IF NOT EXISTS idx_announcements_text ON announcements USING gin (to_tsvector('portuguese', coalesce(contract_designation,'') || ' ' || coalesce(contracting_entity,'')));
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));

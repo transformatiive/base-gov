@@ -8,6 +8,7 @@ import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { registerAccountRoutes } from './routes-account.js';
+import { registerProposalRoutes } from './routes-proposals.js';
 import { registerSeatRoutes } from './seats.js';
 import { registerPipelineRoutes } from './pipeline.js';
 import { registerCompanyProfileRoutes } from './company-profile.js';
@@ -23,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 async function main(): Promise<void> {
   await migrateAndSeed();
 
-  const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+  const app = Fastify({ logger: true, bodyLimit: 16 * 1024 * 1024 });
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   // Sem cache agressiva: garante que o browser recebe sempre a versão atual da SPA.
   // index:false → a raiz não serve automaticamente o index.html da SPA; a landing
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
   await registerRoutes(app);
   await registerRoutesV2(app);
   await registerAccountRoutes(app);
+  await registerProposalRoutes(app);
   await registerSeatRoutes(app);
   await registerPipelineRoutes(app);
   await registerCompanyProfileRoutes(app);

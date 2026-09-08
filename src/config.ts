@@ -32,6 +32,9 @@ export const config = {
       score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
       analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
       filtros_avancados: 'pro', lembretes: 'pro', feedback_ia: 'pro',
+      // Previsão de fecho e geração de propostas: Pro (a restrição a Business
+      // fica em aberto para validação de mercado — o gating sobe-se aqui).
+      previsao_fecho: 'pro', geracao_propostas: 'pro',
       // business
       seats: 'business', export_avancada: 'business', ia_elevada: 'business', api_integration: 'business',
     } as Record<string, 'free' | 'pro' | 'business'>,
