@@ -686,7 +686,25 @@ button.lnk { background: none; border: 0; padding: 0; cursor: pointer; font: inh
 .admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--line2, #eef1ef); vertical-align: middle; }
 .admin-table select { padding: 4px 6px; font-size: 0.82rem; border: 1px solid var(--line, #e2e8f0); border-radius: 6px; background: #fff; }
 .admin-table tr.fb-done { opacity: 0.5; }
-.admin-msg { font-size: 0.8rem; color: var(--brand, #173f35); }
+.admin-tabs { display:inline-flex; gap:4px; background:var(--panel-2, #eef2f7); border-radius:10px; padding:4px; margin:0 0 1rem }
+.admin-tabs a { padding:7px 14px; border-radius:8px; font-size:0.85rem; font-weight:600; color:var(--ink2, #4c5551) }
+.admin-tabs a:hover { text-decoration:none; color:var(--brand) }
+.admin-tabs a.on { background:#fff; color:var(--brand); box-shadow:0 1px 2px rgba(20,30,25,.08) }
+.admin-period { display:flex; gap:6px; flex-wrap:wrap }
+.admin-period-btn { font-size:0.82rem; font-weight:600; padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--ink2) }
+.admin-period-btn.on { background:var(--brand); color:#fff; border-color:var(--brand) }
+.admin-wrap.wide { max-width:1140px }
+.admin-stats-5 { grid-template-columns: repeat(5, 1fr) }
+.usage-trend { padding:14px 16px 10px; margin-bottom:1.2rem }
+.usage-trend svg { display:block }
+.usage-hbar { display:grid; grid-template-columns: minmax(92px,140px) 1fr 40px; gap:8px; align-items:center; font-size:0.84rem; margin:7px 0 }
+.usage-hbar .lbl { color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.usage-hbar .track { background:var(--line2, #eef1ef); border-radius:6px; height:10px; overflow:hidden }
+.usage-hbar .track i { display:block; height:100%; background:var(--brand); border-radius:6px }
+.usage-hbar .n { text-align:right; font-variant-numeric:tabular-nums; color:var(--ink2) }
+@media (max-width: 900px) {
+  .admin-stats-5 { grid-template-columns: repeat(2, 1fr) }
+}
 @media (max-width: 900px) {
   .admin-stats { grid-template-columns: repeat(2, 1fr); }
   .admin-grid2 { grid-template-columns: 1fr; }
