@@ -48,6 +48,9 @@ a:hover{text-decoration:underline}
 .guide-cta .btn{display:inline-flex;align-items:center;justify-content:center;background:#fff;color:var(--brand);font-weight:700;border-radius:10px;padding:10px 16px;text-decoration:none}
 .guide-cta .btn:hover{text-decoration:none;background:var(--on)}
 .guide-cta .fine{display:block;margin-top:10px;font-size:12px;color:#8fb3a4}
+.guide-faq{margin:8px 0 0}
+.guide-faq dt{font-weight:700;margin:14px 0 4px;color:var(--ink)}
+.guide-faq dd{margin:0;color:var(--ink2)}
 .legal-nav .start{font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:10px;background:var(--brand);color:#fff}
 .legal-nav .start:hover{text-decoration:none;background:var(--brand-dark);color:#fff}
 @media (max-width:640px){
