@@ -58,7 +58,7 @@ function rowToProfile(row: Record<string, unknown> | undefined, company: { name?
     certifications: (row.certifications as string[]) ?? [],
     technical_capabilities: (row.technical_capabilities as string | null) ?? null,
     portfolio: (row.portfolio as string | null) ?? null,
-    references: (row.references as ProposalCompanyProfile['references']) ?? [],
+    references: (row.project_references as ProposalCompanyProfile['references']) ?? [],
     key_team: (row.key_team as ProposalCompanyProfile['key_team']) ?? [],
     min_margin_pct: row.min_margin_pct != null ? Number(row.min_margin_pct) : null,
     notes: (row.notes as string | null) ?? null,
@@ -80,12 +80,12 @@ async function saveProfile(companyId: number, userId: number | null, profile: Pr
   await pool.query(
     `INSERT INTO proposal_company_profiles (
        company_id, legal_name, nif, cae, certifications, technical_capabilities,
-       portfolio, references, key_team, min_margin_pct, notes, updated_by, updated_at)
+       portfolio, project_references, key_team, min_margin_pct, notes, updated_by, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
      ON CONFLICT (company_id) DO UPDATE SET
        legal_name = EXCLUDED.legal_name, nif = EXCLUDED.nif, cae = EXCLUDED.cae,
        certifications = EXCLUDED.certifications, technical_capabilities = EXCLUDED.technical_capabilities,
-       portfolio = EXCLUDED.portfolio, references = EXCLUDED.references, key_team = EXCLUDED.key_team,
+       portfolio = EXCLUDED.portfolio, project_references = EXCLUDED.project_references, key_team = EXCLUDED.key_team,
        min_margin_pct = EXCLUDED.min_margin_pct, notes = EXCLUDED.notes,
        updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [

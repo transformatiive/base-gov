@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS contract_history_agg (
 CREATE INDEX IF NOT EXISTS idx_history_agg_entity ON contract_history_agg (entity_id, role);
 
 -- Propostas assistidas e previsão de valor de fecho
+-- project_references: não usar o identificador "references" (palavra reservada no PostgreSQL).
 CREATE TABLE IF NOT EXISTS proposal_company_profiles (
   company_id              INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
   legal_name              TEXT,
@@ -379,7 +380,7 @@ CREATE TABLE IF NOT EXISTS proposal_company_profiles (
   certifications          TEXT[] NOT NULL DEFAULT '{}',
   technical_capabilities  TEXT,
   portfolio               TEXT,
-  references              JSONB NOT NULL DEFAULT '[]',
+  project_references      JSONB NOT NULL DEFAULT '[]',
   key_team                JSONB NOT NULL DEFAULT '[]',
   min_margin_pct          NUMERIC(5,2),
   notes                   TEXT,
