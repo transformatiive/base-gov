@@ -31,11 +31,11 @@ export interface ChatResult { content: string; usage: AiUsage }
 // seguintes com o MESMO prefixo. Marcamos os blocos grandes e ESTÁVEIS entre
 // pedidos (instruções fixas, documentos de um anúncio) para poupar tokens.
 type Part = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
-type Content = string | Part[];
+export type Content = string | Part[];
 const cached = (text: string): Part => ({ type: 'text', text, cache_control: { type: 'ephemeral' } });
 const plain = (text: string): Part => ({ type: 'text', text });
 
-async function chat(model: string, system: Content, user: Content, maxTokens = 3000): Promise<ChatResult> {
+export async function chat(model: string, system: Content, user: Content, maxTokens = 3000): Promise<ChatResult> {
   if (!aiEnabled()) throw new Error('IA não configurada (OPENROUTER_API_KEY em falta)');
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -73,7 +73,7 @@ async function chat(model: string, system: Content, user: Content, maxTokens = 3
 }
 
 /** Extrai o primeiro objeto JSON da resposta (tolerante a cercas de código). */
-function parseJson(text: string): unknown {
+export function parseJson(text: string): unknown {
   const cleaned = text.replace(/```(?:json)?/g, '').trim();
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
@@ -282,6 +282,19 @@ async function companyExtras(profileId: number): Promise<{ ctx: string; fewShot:
   return { ctx: companyProfileContext(p), fewShot: negativeExamplesBlock(ex) };
 }
 
+export async function gatherAnnouncementDocs(a: {
+  reference_url?: string | null;
+  contracting_procedure_url?: string | null;
+}): Promise<{ pdfText: string | null; procText: string; docsCount: number }> {
+  const [pdfText, proc] = await Promise.all([
+    a.reference_url ? fetchPdfText(a.reference_url) : Promise.resolve(null),
+    a.contracting_procedure_url
+      ? fetchProcedureDocsText(a.contracting_procedure_url)
+      : Promise.resolve({ text: '', count: 0 }),
+  ]);
+  return { pdfText, procText: proc.text, docsCount: proc.count };
+}
+
 async function profileContext(profileId: number): Promise<string> {
   if (!profileId) return 'Sem contexto de atividade específico.';
   const { rows } = await pool.query('SELECT name, terms, cpv_codes FROM profiles WHERE id = $1', [profileId]);
@@ -316,9 +329,8 @@ export async function analyzeAnnouncement(
   if (rows.length === 0) throw new Error('Anúncio não encontrado');
   const a = rows[0];
 
-  const [pdfText, proc, ctx, extra] = await Promise.all([
-    a.reference_url ? fetchPdfText(a.reference_url) : Promise.resolve(null),
-    a.contracting_procedure_url ? fetchProcedureDocsText(a.contracting_procedure_url) : Promise.resolve({ text: '', count: 0 }),
+  const [{ pdfText, procText, docsCount }, ctx, extra] = await Promise.all([
+    gatherAnnouncementDocs(a),
     profileContext(profileId),
     companyExtras(profileId),
   ]);
@@ -336,7 +348,7 @@ Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / program
 - CPV: ${a.cpvs ?? 'n/d'}
 - Peças do procedimento: ${a.contracting_procedure_url ?? 'n/d'}
 
-${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${proc.text ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${proc.count} documento(s) da plataforma):\n${proc.text}` : ''}${!pdfText && !proc.text ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
+${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${procText ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${docsCount} documento(s) da plataforma):\n${procText}` : ''}${!pdfText && !procText ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
 
   const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}${extra.ctx ? `\n${extra.ctx}` : ''}${extra.fewShot ? `\n${extra.fewShot}` : ''}`;
 
@@ -347,7 +359,7 @@ ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n
      ON CONFLICT (announcement_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
     [announcementId, profileId, model, JSON.stringify(analysis)]
   );
-  return { analysis, cached: false, model, docs_used: proc.count, usage };
+  return { analysis, cached: false, model, docs_used: docsCount, usage };
 }
 
 export interface FitItem {

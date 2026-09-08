@@ -1483,13 +1483,15 @@ async function renderAccount() {
   const paid = /[?&]pago=1/.test(location.hash);
   if (paid) { window._me = null; window._caps = null; }   // força releitura do plano após pagamento
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let caps, summary, seats, invoices = { items: [] };
+  let caps, summary, seats, invoices = { items: [] }, propProfile;
   try {
     [caps, summary] = await Promise.all([api('/api/me/capabilities'), api('/api/billing/summary')]);
   } catch { return; }
   window._caps = caps;
   try { seats = await api('/api/seats'); } catch { seats = null; }
   try { invoices = await api('/api/billing/invoices'); } catch { invoices = { items: [] }; }
+  try { propProfile = await api('/api/company/proposal-profile'); }
+  catch (err) { propProfile = err.planRequired ? 'locked' : null; }
   const c = summary.company || {};
   const b = summary.billing || {};
   const plan = summary.plan || 'free';
@@ -1531,6 +1533,7 @@ async function renderAccount() {
       ${renderInvoicesBlock(invoices)}
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
       <div id="company-profile-block" data-guide="acct-profile" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      ${renderProposalProfileBlock(propProfile, plan)}
       <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
       ${renderCancelAccountBlock()}
     </div>`;
@@ -1540,6 +1543,7 @@ async function renderAccount() {
   wireBillingPortal();
   wireAccountLifecycle({ companyName: c.name, memberCount });
   await fillCompanyProfileBlock();
+  wireProposalProfile();
   fillNotifyBlock();
   notifyGuide('conta');
 }
@@ -1552,6 +1556,108 @@ function seatOccupancy(seats, caps) {
     ? Number(seats.seats.used)
     : (listed > 0 ? listed : Number(caps?.seats?.used ?? 1));
   return { used, max };
+}
+
+function renderProposalProfileBlock(profile, plan) {
+  if (profile === 'locked' || (profile == null && !can('geracao_propostas'))) {
+    return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+      <h3 style="margin:0 0 .4rem">Perfil para propostas</h3>
+      <p class="muted">Disponível no plano Pro: habilitações, referências e margem mínima reutilizados em todos os concursos.</p>
+    </div>`;
+  }
+  const p = profile || { legal_name: '', nif: '', cae: '', certifications: [], technical_capabilities: '', portfolio: '', references: [], key_team: [], min_margin_pct: '', notes: '', missing: [] };
+  const refs = (p.references || []).map((r) => `${r.project || ''} | ${r.client || ''} | ${r.year || ''} | ${r.value || ''}`).join('\n');
+  const team = (p.key_team || []).map((t) => `${t.name || ''} | ${t.role || ''} | ${t.cv_summary || ''}`).join('\n');
+  return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    <h3 style="margin:0 0 .3rem">Perfil para propostas</h3>
+    <p class="muted" style="margin:0 0 .8rem">Preenchido uma vez e reutilizado em todos os rascunhos. O que faltar é marcado no .docx, nunca inventado.</p>
+    ${(p.missing || []).length ? `<p class="hint">Ainda em falta: ${esc(p.missing.join(', '))}</p>` : ''}
+    <form id="prop-profile-form" class="prop-profile-form">
+      <div class="reg-grid">
+        <div><label>Denominação social</label><input name="legal_name" value="${esc(p.legal_name || '')}"></div>
+        <div><label>NIF</label><input name="nif" value="${esc(p.nif || '')}" maxlength="9"></div>
+      </div>
+      <label>CAE</label><input name="cae" value="${esc(p.cae || '')}">
+      <label>Habilitações / certidões (uma por linha)</label>
+      <textarea name="certifications" rows="3">${esc((p.certifications || []).join('\n'))}</textarea>
+      <label>Capacidades técnicas</label>
+      <textarea name="technical_capabilities" rows="3">${esc(p.technical_capabilities || '')}</textarea>
+      <label>Portefólio de serviços</label>
+      <textarea name="portfolio" rows="3">${esc(p.portfolio || '')}</textarea>
+      <label>Referências (projeto | cliente | ano | valor)</label>
+      <textarea name="references" rows="4" placeholder="Requalificação do parque | CM Sintra | 2024 | 85000">${esc(refs)}</textarea>
+      <p class="muted" style="margin:.2rem 0 .6rem"><button type="button" class="lnk" id="prop-suggest-refs">Sugerir referências a partir de contratos ganhos no BASE</button></p>
+      <label>Equipa-chave (nome | função | CV resumido)</label>
+      <textarea name="key_team" rows="3">${esc(team)}</textarea>
+      <label>Margem mínima aceitável (%)</label>
+      <input type="number" name="min_margin_pct" min="0" max="100" step="0.1" value="${p.min_margin_pct ?? ''}" placeholder="para cruzar com a previsão de fecho">
+      <label>Notas</label>
+      <textarea name="notes" rows="2">${esc(p.notes || '')}</textarea>
+      <p style="margin:.8rem 0 0"><button type="submit">Guardar perfil</button></p>
+      <div id="prop-profile-out"></div>
+    </form>
+  </div>`;
+}
+
+function parsePipeRows(text, keys) {
+  return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split('|').map((s) => s.trim());
+    const o = {};
+    keys.forEach((k, i) => { o[k] = parts[i] || ''; });
+    return o;
+  });
+}
+
+function wireProposalProfile() {
+  const form = document.getElementById('prop-profile-form');
+  if (!form) return;
+  const out = document.getElementById('prop-profile-out');
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const refs = parsePipeRows(fd.get('references'), ['project', 'client', 'year', 'value']).map((r) => ({
+      project: r.project, client: r.client,
+      year: r.year ? Number(r.year) : null,
+      value: r.value ? Number(String(r.value).replace(/\s/g, '').replace(',', '.')) : null,
+    }));
+    const team = parsePipeRows(fd.get('key_team'), ['name', 'role', 'cv_summary']);
+    const margin = String(fd.get('min_margin_pct') || '').trim();
+    out.innerHTML = '<span class="muted">A guardar…</span>';
+    try {
+      await api('/api/company/proposal-profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          legal_name: fd.get('legal_name'),
+          nif: fd.get('nif'),
+          cae: fd.get('cae'),
+          certifications: String(fd.get('certifications') || '').split('\n').map((s) => s.trim()).filter(Boolean),
+          technical_capabilities: fd.get('technical_capabilities'),
+          portfolio: fd.get('portfolio'),
+          references: refs,
+          key_team: team,
+          min_margin_pct: margin === '' ? null : Number(margin),
+          notes: fd.get('notes'),
+        }),
+      });
+      out.innerHTML = '<p class="hint">Perfil guardado. Os próximos rascunhos de proposta usam estes dados.</p>';
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  };
+  const suggest = document.getElementById('prop-suggest-refs');
+  if (suggest) suggest.onclick = async () => {
+    suggest.disabled = true;
+    try {
+      const r = await api('/api/company/proposal-profile/suggested-references');
+      const ta = form.querySelector('[name="references"]');
+      const extra = (r.items || []).map((i) => [i.project, i.client, i.year || '', i.value || ''].join(' | ')).join('\n');
+      if (!extra) { out.innerHTML = '<p class="muted">Não encontrámos contratos adjudicados ao NIF desta conta.</p>'; return; }
+      ta.value = [ta.value.trim(), extra].filter(Boolean).join('\n');
+      out.innerHTML = `<p class="hint">${r.items.length} referência(s) sugerida(s) a partir do histórico BASE. Revisa e guarda.</p>`;
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally { suggest.disabled = false; }
+  };
 }
 
 function renderSeatsBlock(seats, used, max, plan) {
@@ -3379,6 +3485,276 @@ function configTabs(active) {
     `<button class="${k === active ? 'active' : ''}" onclick="location.hash='#/config/${k}'">${l}</button>`).join('')}</div>`;
 }
 
+function fmtPctRange(low, high) {
+  if (low == null || high == null) return '—';
+  return `${Math.round(low * 100)}%–${Math.round(high * 100)}%`;
+}
+function gapChip(status) {
+  const map = { conforme: ['Conforme', 'gap-ok'], incompleto: ['Incompleto', 'gap-mid'], em_falta: ['Em falta', 'gap-bad'] };
+  const [label, cls] = map[status] || [status || '—', ''];
+  return `<span class="gap-chip ${cls}">${esc(label)}</span>`;
+}
+async function fileToB64(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+async function downloadBlob(url, filename) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'proposta.docx';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function renderGapReport(report) {
+  if (!report) return '';
+  const items = report.items || [];
+  return `<div class="gap-report">
+    <p style="margin:0 0 .6rem">${gapChip(report.overall)} <span>${esc(report.summary || '')}</span></p>
+    ${items.length ? `<table class="gap-table"><thead><tr><th>Requisito</th><th>Estado</th><th>Nota</th></tr></thead><tbody>
+      ${items.map((i) => `<tr><td>${esc(i.title)}${i.legal ? ' <span class="chip">legal</span>' : ''}</td>
+        <td>${gapChip(i.status)}</td><td class="muted">${esc(i.note || '')}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+  </div>`;
+}
+
+function renderForecastCard(id, payload) {
+  const f = payload.forecast || {};
+  const confLabel = { alta: 'Alta', media: 'Média', baixa: 'Baixa', insuficiente: 'Insuficiente' }[f.confidence] || f.confidence;
+  const llm = f.llm;
+  const range = f.available
+    ? `<div class="forecast-range">${fmtPctRange(f.low_pct, f.high_pct)} <span>do preço base</span></div>
+       <div class="forecast-eur">${fmtPrice(f.low_value)} – ${fmtPrice(f.high_value)}</div>`
+    : `<p class="muted" style="margin:.4rem 0 0">${esc(f.note || 'Sem estimativa.')}</p>`;
+  const llmBlock = llm
+    ? `<div class="forecast-llm">
+         <div class="k">Leitura qualificada (histórico + contexto)</div>
+         <div>${fmtPctRange(llm.low_pct, llm.high_pct)}${llm.low_value != null ? ` · ${fmtPrice(llm.low_value)} – ${fmtPrice(llm.high_value)}` : ''}</div>
+         <p class="muted" style="margin:.4rem 0 0">${esc(llm.justificacao || '')}</p>
+         ${(llm.fatores || []).length ? `<ul class="forecast-fatores">${llm.fatores.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+       </div>`
+    : (f.available ? `<p style="margin:.7rem 0 0"><button class="btn-secondary" id="forecast-qualify">${ico('search')} Qualificar com IA</button></p>` : '');
+  const used = f.used || [];
+  return `<div class="d-card forecast-card">
+    <div class="t row"><span>Previsão de fecho</span><span class="gap-chip conf-${esc(f.confidence || '')}">${esc(confLabel)}</span></div>
+    ${range}
+    ${f.available ? `<p class="muted" style="margin:.5rem 0 0;font-size:12.5px;line-height:1.5">${esc(f.note)}</p>` : ''}
+    ${f.margin_warning ? `<p class="hint" style="margin:.6rem 0 0">${esc(f.margin_warning)}</p>` : ''}
+    <p class="muted" style="margin:.5rem 0 0;font-size:11.5px">${esc(f.disclaimer || 'Estimativa baseada em histórico.')}</p>
+    ${llmBlock}
+    ${used.length ? `<details class="forecast-used" style="margin-top:.8rem"><summary>Concursos históricos usados (${used.length})</summary>
+      <table class="gap-table" style="margin-top:.5rem"><thead><tr><th>Data</th><th>Entidade</th><th>Adjudicado</th><th>Rácio</th></tr></thead><tbody>
+        ${used.map((u) => `<tr class="clickable" onclick="location.hash='${esc(u.url)}'">
+          <td>${fmtDate(u.publication_date)}</td>
+          <td>${esc((u.entity || '—').slice(0, 48))}</td>
+          <td>${fmtPrice(u.awarded)}</td>
+          <td>${Math.round((u.ratio || 0) * 100)}%</td></tr>`).join('')}
+      </tbody></table></details>` : ''}
+  </div>`;
+}
+
+async function mountCloseForecast(host, id) {
+  if (!can('previsao_fecho')) {
+    host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted" style="margin:0">Disponível no plano Pro — estimativa de valor de adjudicação com base no histórico.</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted">A calcular a partir do histórico…</p></div>`;
+  try {
+    const r = await api(`/api/announcements/${id}/close-forecast`);
+    host.innerHTML = renderForecastCard(id, r);
+    const btn = document.getElementById('forecast-qualify');
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'A qualificar…';
+      try {
+        const q = await api(`/api/announcements/${id}/close-forecast/qualify`, { method: 'POST', body: '{}' });
+        host.innerHTML = renderForecastCard(id, q);
+      } catch (err) {
+        btn.disabled = false;
+        alert(err.message);
+      }
+    };
+  } catch (err) {
+    if (err.planRequired) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="d-card"><p class="error">${esc(err.message)}</p></div>`;
+  }
+}
+
+function renderRequirementsList(checklist) {
+  if (!checklist?.length) return '<p class="muted">Sem requisitos extraídos.</p>';
+  const cat = {
+    admissao: 'Admissão', tecnico: 'Técnicos', criterio: 'Adjudicação',
+    documento: 'Documentos', formato: 'Formato', prazo: 'Prazos',
+  };
+  return `<ul class="req-list">${checklist.map((r) => `<li>
+    <span class="chip">${esc(cat[r.category] || r.category)}</span>
+    <strong>${esc(r.title)}</strong>
+    ${r.legal ? '<span class="chip">assinatura</span>' : ''}
+    ${r.detail ? `<div class="muted">${esc(r.detail)}</div>` : ''}
+  </li>`).join('')}</ul>`;
+}
+
+function renderProposalVersions(items) {
+  if (!items?.length) return '<p class="muted">Ainda sem versões. Gera um rascunho ou carrega um .docx editado.</p>';
+  return `<table class="gap-table"><thead><tr><th>V</th><th>Origem</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${items.map((v) => `<tr>
+      <td>v${v.version}</td>
+      <td>${v.kind === 'generated' ? 'Rascunho IA' : 'Upload'}<div class="muted">${esc(v.file_name)}</div></td>
+      <td>${v.gap_report ? gapChip(v.gap_report.overall) : '<span class="muted">—</span>'}</td>
+      <td style="text-align:right"><button class="btn-secondary prop-dl" data-url="${esc(v.download_url)}" data-name="${esc(v.file_name)}">${ico('download')} .docx</button></td>
+    </tr>
+    ${v.gap_report ? `<tr><td colspan="4">${renderGapReport(v.gap_report)}</td></tr>` : ''}`).join('')}
+  </tbody></table>`;
+}
+
+async function mountProposalPanel(host, id) {
+  if (!can('geracao_propostas')) {
+    host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted" style="margin:0">Geração assistida de propostas (.docx) disponível no plano Pro.</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted">A carregar…</p></div>`;
+  let reqs, versions, profile;
+  try {
+    [reqs, versions, profile] = await Promise.all([
+      api(`/api/announcements/${id}/requirements`),
+      api(`/api/announcements/${id}/proposals`),
+      api('/api/company/proposal-profile').catch(() => ({ missing: [] })),
+    ]);
+  } catch (err) {
+    if (err.planRequired) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="d-card"><p class="error">${esc(err.message)}</p></div>`;
+    return;
+  }
+  const missing = (profile.missing || []).map((m) => esc(m)).join(', ');
+  let hasReqs = Boolean(reqs.extraction);
+  host.innerHTML = `<div class="d-card proposal-card">
+    <div class="t">Proposta (ciclo assistido)</div>
+    <p class="muted" style="margin:0 0 .8rem;font-size:12.5px;line-height:1.55">Extrai requisitos do caderno, gera um rascunho .docx, edita-o no Word, volta a carregar e vê o que ainda falta. A submissão no portal é sempre manual.</p>
+    <div id="prop-reqs">
+      ${reqs.extraction
+        ? renderRequirementsList(reqs.checklist)
+        : '<p class="muted">Ainda sem extração de requisitos.</p>'}
+    </div>
+    <p style="margin:.7rem 0"><button class="btn-secondary" id="prop-extract">${ico('search')} ${reqs.extraction ? 'Atualizar requisitos' : 'Extrair requisitos do caderno'}</button></p>
+    <div class="prop-gen">
+      ${missing ? `<p class="hint">Perfil incompleto (${missing}). As lacunas ficam marcadas no documento. <a href="#/conta">Completar perfil</a></p>` : ''}
+      <label>Preço a apresentar (€)</label>
+      <input type="number" id="prop-bid" min="0" step="0.01" placeholder="opcional — cruzado com a previsão de fecho">
+      <p style="margin:.7rem 0 0"><button id="prop-generate">${ico('doc')} Gerar rascunho .docx</button></p>
+    </div>
+    <h3 style="margin:1.1rem 0 .4rem;font-size:13px">Versões</h3>
+    <div id="prop-versions">${renderProposalVersions(versions.items)}</div>
+    <div class="prop-upload" style="margin-top:1rem">
+      <label>Carregar versão editada (.docx)</label>
+      <input type="file" id="prop-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <p class="muted" style="font-size:12px;margin:.3rem 0 0">A reavaliação compara o texto com a checklist e não reescreve o documento.</p>
+    </div>
+    <div id="prop-out"></div>
+  </div>`;
+
+  const extractBtn = document.getElementById('prop-extract');
+  extractBtn.onclick = async () => {
+    extractBtn.disabled = true;
+    aiModalOpen([
+      'A reunir o anúncio do DR e as peças do procedimento…',
+      'A identificar requisitos de admissão e técnicos…',
+      'A extrair critérios de adjudicação e documentos obrigatórios…',
+    ]);
+    try {
+      const r = await api(`/api/announcements/${id}/requirements`, {
+        method: 'POST',
+        body: JSON.stringify({ refresh: hasReqs }),
+      });
+      hasReqs = true;
+      document.getElementById('prop-reqs').innerHTML = renderRequirementsList(r.checklist);
+      extractBtn.innerHTML = `${ico('search')} Atualizar requisitos`;
+      extractBtn.textContent = 'Atualizar requisitos';
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      extractBtn.disabled = false;
+      aiModalClose();
+    }
+  };
+
+  document.getElementById('prop-generate').onclick = async () => {
+    const btn = document.getElementById('prop-generate');
+    btn.disabled = true;
+    aiModalOpen([
+      'A cruzar o perfil da empresa com os requisitos…',
+      'A redigir as secções da proposta…',
+      'A marcar o que falta completar…',
+      'A gerar o documento Word…',
+    ]);
+    try {
+      const bid = document.getElementById('prop-bid').value;
+      const r = await api(`/api/announcements/${id}/proposals/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ bid_price: bid === '' ? null : Number(bid) }),
+      });
+      await downloadBlob(r.download_url, r.file_name);
+      const list = await api(`/api/announcements/${id}/proposals`);
+      document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
+      wireProposalDownloads();
+      document.getElementById('prop-out').innerHTML = `<p class="hint">Rascunho v${r.version} gerado. Edita-o no Word e volta a carregá-lo para a reavaliação.</p>`;
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+      aiModalClose();
+    }
+  };
+
+  document.getElementById('prop-file').onchange = async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    document.getElementById('prop-out').innerHTML = '<p class="muted">A reavaliar a proposta…</p>';
+    aiModalOpen([
+      'A ler o .docx carregado…',
+      'A comparar com a checklist de requisitos…',
+      'A classificar cada ponto: conforme, incompleto ou em falta…',
+    ]);
+    try {
+      const content_base64 = await fileToB64(file);
+      const r = await api(`/api/announcements/${id}/proposals/upload`, {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, content_base64 }),
+      });
+      const list = await api(`/api/announcements/${id}/proposals`);
+      document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
+      wireProposalDownloads();
+      document.getElementById('prop-out').innerHTML = renderGapReport(r.gap_report);
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      ev.target.value = '';
+      aiModalClose();
+    }
+  };
+
+  function wireProposalDownloads() {
+    host.querySelectorAll('.prop-dl').forEach((b) => {
+      b.onclick = async () => {
+        try { await downloadBlob(b.dataset.url, b.dataset.name); }
+        catch (err) { alert(err.message); }
+      };
+    });
+  }
+  wireProposalDownloads();
+}
+
 /* ---------- Detalhe de anúncio ---------- */
 async function renderAnnouncement(id) {
   const a = await api(`/api/announcements/${id}?raw=1`);
@@ -3430,6 +3806,7 @@ async function renderAnnouncement(id) {
           { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('anuncio_aberto', a.id, a.pipeline_status) },
           cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
           { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(a.contracting_procedure_url) },
+          { id: 'proposta', label: 'Proposta', html: '<div id="proposal-panel"></div>' },
         ])}
       <div class="d-side">
         <div class="d-price">
@@ -3441,6 +3818,7 @@ async function renderAnnouncement(id) {
             ${raw.proposalDeadline ? `<p class="est">No detalhe do BASE: ${esc(raw.proposalDeadline)}.</p>` : ''}
           </div>
         </div>
+        <div id="close-forecast"></div>
       </div>
     </div>`;
 
@@ -3448,6 +3826,8 @@ async function renderAnnouncement(id) {
   bindPipelineChips(app);
   wireFichaPipeline('anuncio_aberto', a.id);
   startFichaAi({ kind: 'announcement', id });
+  mountCloseForecast(document.getElementById('close-forecast'), id);
+  mountProposalPanel(document.getElementById('proposal-panel'), id);
   notifyGuide('ficha');
 }
 
@@ -3809,7 +4189,16 @@ async function renderEntity(id) {
 
 /* ---------- Router ---------- */
 /* ---------- Admin: gestão de utilizadores, planos e utilização ---------- */
-const AI_KIND_LABEL = { fit: 'Fit IA', analise_anuncio: 'Análise de anúncio', analise_contrato: 'Análise de contrato', dossier: 'Dossier de resposta' };
+const AI_KIND_LABEL = {
+  fit: 'Fit IA',
+  analise_anuncio: 'Análise de anúncio',
+  analise_contrato: 'Análise de contrato',
+  dossier: 'Dossier de resposta',
+  requisitos: 'Extração de requisitos',
+  proposta: 'Geração de proposta',
+  reeavaliacao: 'Reavaliação de proposta',
+  previsao_fecho: 'Previsão de fecho',
+};
 const STATUS_LABEL = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' };
 
 async function renderAdmin() {

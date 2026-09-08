@@ -826,3 +826,28 @@ a.inv-dl { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 
   .help-layout { grid-template-columns: 1fr; }
   .help-toc { position: static; }
 }
+
+/* ---------- Previsão de fecho e propostas ---------- */
+.forecast-card { margin-top: 12px; }
+.forecast-range { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; }
+.forecast-range span { font-size: 13px; font-weight: 500; color: var(--muted); }
+.forecast-eur { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.forecast-llm { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--row-line); font-size: 13px; }
+.forecast-llm .k { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.forecast-fatores { margin: 6px 0 0 1.1rem; color: var(--ink-2); font-size: 12.5px; }
+.forecast-used summary { cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.gap-chip { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.gap-ok, .conf-alta { background: #e4efe8; color: #2c6353; }
+.gap-mid, .conf-media { background: #fdf6e8; color: #8a6a1e; }
+.gap-bad, .conf-baixa, .conf-insuficiente { background: #f7e9e4; color: #c2543a; }
+.gap-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.gap-table th { text-align: left; font-size: 11px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.gap-table td { padding: 7px 8px; border-bottom: 1px solid var(--row-line); vertical-align: top; }
+.req-list { list-style: none; margin: 0; padding: 0; }
+.req-list li { padding: 8px 0; border-bottom: 1px solid var(--row-line); font-size: 13px; }
+.req-list li:last-child { border-bottom: 0; }
+.proposal-card { margin-top: 14px; }
+.prop-gen label, .prop-upload label, .prop-profile-form label { display: block; font-size: 12.5px; font-weight: 600; margin: 8px 0 4px; }
+.prop-gen input, .prop-upload input, .prop-profile-form input, .prop-profile-form textarea {
+  width: 100%; box-sizing: border-box;
+}
