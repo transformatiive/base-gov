@@ -118,8 +118,8 @@
     .feat-only{display:grid;grid-template-columns:1fr 1fr;gap:22px 48px}
     .plans-sect{padding-top:8px;padding-bottom:8px}
     .plans-sect .sub{font-size:15px;color:var(--ink2);max-width:560px;margin:10px 0 0}
-    .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch;margin-top:32px}
-    .plan{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 26px 26px;display:flex;flex-direction:column;position:relative}
+    .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:stretch;margin-top:32px;min-width:0}
+    .plan{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 26px 26px;display:flex;flex-direction:column;position:relative;min-width:0}
     .plan.hi{border-color:var(--brand);box-shadow:0 18px 50px rgba(20,30,25,.13)}
     .plan .ribbon{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--brand);color:#fff;font-size:11px;font-weight:700;letter-spacing:.05em;padding:5px 13px;border-radius:99px;white-space:nowrap}
     .plan .pname{font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--brand)}
@@ -207,6 +207,24 @@
     .conn .wire{display:flex;align-items:center;gap:9px}
     .conn .wire::before{content:"";width:24px;height:1.5px;background:var(--line);flex:none}
     .conn .node{font-size:11px;font-weight:600;color:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff}
+    /* Rascunho de proposta + previsão de fecho (mock Business) */
+    .prop-mock{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 13px}
+    .prop-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+    .prop-hd .fn{font-size:11.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .prop-hd .ext{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tint-text);background:var(--tint);border:1px solid var(--tint-border);border-radius:5px;padding:2px 7px;flex:none}
+    .prop-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:11.5px;padding:5px 0;border-top:1px solid var(--line2);min-width:0}
+    .prop-row b{font-weight:600;color:var(--ink);min-width:0}
+    .prop-row .miss{color:var(--tint-text);font-weight:600;background:var(--tint);border:1px solid var(--tint-border);border-radius:5px;padding:1px 6px;font-size:10px}
+    .prop-row .ok{color:#2c6353;font-weight:600}
+    .prop-fecho{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+    .prop-fecho .lab{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    .prop-fecho .val{font-size:13px;font-weight:700;color:var(--brand);text-align:right;line-height:1.25}
+    .prop-fecho .val small{display:block;font-size:10.5px;font-weight:600;color:var(--ink2)}
+    .prop-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .prop-chips span{font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px}
+    .prop-chips .ok{background:#e4efe8;color:#2c6353}
+    .prop-chips .mid{background:#fdf6e8;color:#8a6a1e}
+    .prop-chips .bad{background:#f7e9e4;color:#c2543a}
 
     /* Footer */
     .foot{padding-top:24px;padding-bottom:24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
@@ -373,7 +391,7 @@
       <div class="steps">
         <div class="step"><div class="num">01</div><div class="h">Diga o que faz e onde concorre</div><p>CPV, distritos, intervalo de valor e certificações (alvará, ISO…). O radar cruza o histórico do BASE e vigia as novas publicações todos os dias.</p></div>
         <div class="step"><div class="num">02</div><div class="h">Veja os contratos que se repetem</div><p>Concursos já publicados e contratos a terminar — com data de contacto cerca de 4 meses antes da entidade relançar.</p></div>
-        <div class="step"><div class="num">03</div><div class="h">Decidir com o caderno</div><p>A IA lê o caderno de encargos: habilitação exigida, critérios, cauções, alertas e dossier de resposta. A equipa marca o que vai e o que deixa.</p></div>
+        <div class="step"><div class="num">03</div><div class="h">Decidir com o caderno</div><p>A IA lê o caderno: habilitação, critérios, cauções, alertas e dossier de resposta (Pro). No Business gera o rascunho .docx da proposta e a previsão de fecho. A equipa marca o que vai e o que deixa.</p></div>
       </div>
     </div>
   </div>
@@ -416,7 +434,7 @@
       <div class="fcard">
         <div class="viz">
           <div class="doc">
-            <div class="dt">Dossier de resposta — proposta</div>
+            <div class="dt">Dossier de resposta</div>
             <div class="ln" style="width:100%"></div>
             <div class="ln" style="width:92%"></div>
             <div class="ln" style="width:78%"></div>
@@ -424,7 +442,7 @@
             <span class="ph">[EMPRESA]</span> <span class="ph">[NIF]</span>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Gerador de resposta à candidatura<span class="fpill pro">Pro</span></b><div class="d">Dossier alinhado aos critérios do concurso: memória descritiva, declarações do CCP, DEUCP e lista de verificação — com os campos da sua empresa.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Dossier de resposta<span class="fpill pro">Pro</span></b><div class="d">Template com placeholders: memória descritiva alinhada aos critérios, declarações do CCP e checklist de submissão. O rascunho .docx da proposta está no Business.</div></div>
       </div>
 
       <div class="fcard">
@@ -478,16 +496,34 @@
 
       <div class="fcard">
         <div class="viz">
+          <div class="prop-mock">
+            <div class="prop-hd"><span class="fn">proposta-v1.docx</span><span class="ext">.docx</span></div>
+            <div class="prop-row"><b>1. Memória descritiva</b><span class="ok">alinhada ao caderno</span></div>
+            <div class="prop-row"><b>2. Capacidade técnica</b><span class="ok">ISO 50001 · alvará cl. 4</span></div>
+            <div class="prop-row"><b>3. Equipa e referências</b><span class="miss">[A COMPLETAR]</span></div>
+            <div class="prop-row"><b>4. Preço</b><span>248 500 €</span></div>
+            <div class="prop-fecho">
+              <span class="lab">Fecho provável</span>
+              <span class="val">78–84%<small>224–241 mil €</small></span>
+            </div>
+            <div class="prop-chips"><span class="ok">conforme</span><span class="mid">incompleto</span><span class="bad">em falta</span></div>
+          </div>
+        </div>
+        <div class="fbody"><b><span class="bullet"></span>Rascunho de proposta + previsão de fecho<span class="fpill biz">Business · 99€</span></b><div class="d">Extrai requisitos do caderno, gera um .docx com o perfil da empresa (o que faltar fica <b>[A COMPLETAR]</b>, nunca inventado) e estima o valor de adjudicação a partir do histórico. Edita no Word, volta a carregar, e vê o que ainda falta. A submissão no portal é sempre manual.</div></div>
+      </div>
+
+      <div class="fcard">
+        <div class="viz">
           <div class="conn">
             <div class="hub">Base<br>Radar</div>
             <div class="wires">
               <div class="wire"><span class="node">Carteira partilhada</span></div>
               <div class="wire"><span class="node">Até 10 lugares</span></div>
-              <div class="wire"><span class="node">Teto de IA 250</span></div>
+              <div class="wire"><span class="node">Teto 250 / 30 dias</span></div>
             </div>
           </div>
         </div>
-        <div class="fbody"><b><span class="bullet"></span>Carteira da equipa<span class="fpill biz">Business · 99€</span></b><div class="d">Até 10 lugares: o estado Interessa / Em preparação / Submetida é o mesmo para toda a mesa. Teto de IA mais alto. Sem conector CRM — a carteira vive no BaseRadar.</div></div>
+        <div class="fbody"><b><span class="bullet"></span>Carteira da equipa<span class="fpill biz">Business · 99€</span></b><div class="d">Até 10 lugares: o estado Interessa / Em preparação / Submetida é o mesmo para toda a mesa. Teto de 250 análises / 30 dias por utilizador. Sem conector CRM — a carteira vive no BaseRadar.</div></div>
       </div>
 
     </div>
@@ -529,7 +565,7 @@
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Grátis</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Oportunidades com <b>pontuação e adequação IA</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Radar de renovações</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Análise IA + dossier de resposta</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Análise IA + dossier de resposta (placeholders)</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> 40 análises de IA / 30 dias por utilizador</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Lembretes de prazo (7 e 2 dias)</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Concorrentes, entidades e concursos europeus</li>
@@ -549,7 +585,8 @@
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Pro</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Até 10 utilizadores</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Carteira partilhada</b> pela equipa</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Previsão de valor de fecho e rascunho de proposta</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Rascunho assistido de proposta</b> (.docx)</li>
+            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Previsão de valor de fecho (histórico)</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Teto de IA mais alto (250 análises / 30 dias por utilizador)</li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Apoio prioritário</li>
           </ul>
@@ -593,7 +630,15 @@
       </details>
       <details>
         <summary>Qual a diferença entre Grátis, Pro e Business?</summary>
-        <p class="a">O Grátis vigia concursos abertos, mapa, sazonalidade, resumo semanal e a carteira — 1 utilizador. O Pro (29&nbsp;€/mês + IVA) acrescenta pontuação e adequação IA, radar de renovações, análise do caderno de encargos, dossier de resposta, concorrentes, entidades e 2 utilizadores (40 análises de IA a cada 30 dias, por utilizador). O Business (99&nbsp;€/mês + IVA) é o plano da equipa: até 10 lugares, previsão de valor de fecho, rascunho de proposta, teto de IA mais alto (250 / 30 dias por utilizador) e carteira partilhada.</p>
+        <p class="a">O Grátis vigia concursos abertos, mapa, sazonalidade, resumo semanal e a carteira — 1 utilizador. O Pro (29&nbsp;€/mês + IVA) acrescenta pontuação e adequação IA, radar de renovações, análise do caderno, dossier de resposta com placeholders, concorrentes, entidades e 2 utilizadores (40 análises de IA a cada 30 dias, por utilizador). O Business (99&nbsp;€/mês + IVA) é o plano da equipa: até 10 lugares, rascunho .docx da proposta, previsão de valor de fecho, teto de 250 análises / 30 dias por utilizador e carteira partilhada.</p>
+      </details>
+      <details>
+        <summary>Quantas análises de IA posso fazer?</summary>
+        <p class="a">O Pro inclui 40 análises por utilizador a cada 30 dias; o Business, 250. O ciclo começa no dia em que cada pessoa se inscreveu e reinicia às 00:00 de Lisboa, 30 dias depois. Conta cada análise nova (ficha, dossier, rascunho, previsão). Reabrir uma ficha já analisada não conta. A 80% aparece um aviso; a 90% o aviso fica vermelho; no teto as análises novas ficam bloqueadas até ao reset.</p>
+      </details>
+      <details>
+        <summary>Qual a diferença entre o dossier e o rascunho de proposta?</summary>
+        <p class="a">O dossier (Pro) é um modelo com placeholders — critérios, declarações do CCP e checklist de submissão — para copiar e completar. O rascunho de proposta (Business) gera um .docx com o perfil da empresa: memória descritiva, capacidade técnica, equipa, referências e preço. O que faltar fica marcado [A COMPLETAR], nunca é inventado. Pode editar no Word, voltar a carregar, e ver o que ainda falta. A submissão no portal (Vortal, acinGov, etc.) é sempre manual. A previsão de fecho, também Business, estima o valor de adjudicação a partir do histórico.</p>
       </details>
       <details>
         <summary>De onde vêm os dados?</summary>

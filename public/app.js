@@ -1307,8 +1307,8 @@ async function updateSidebar() {
 const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
 const PLAN_FEATURES = {
   free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
-  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '40 análises de IA / 30 dias por utilizador', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Previsão de valor de fecho', 'Rascunho assistido de proposta', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', '250 análises de IA / 30 dias por utilizador', 'Apoio prioritário'],
+  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno e dossier de resposta', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '40 análises de IA / 30 dias por utilizador', '2 utilizadores'],
+  business: ['Tudo do Pro', 'Rascunho assistido de proposta (.docx)', 'Previsão de valor de fecho', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', '250 análises de IA / 30 dias por utilizador', 'Apoio prioritário'],
 };
 
 function closeAccountConfirm() {
