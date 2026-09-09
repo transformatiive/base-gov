@@ -132,8 +132,10 @@
     .plan.hi .btn:hover{background:var(--brand-dark)}
     .plan .pfine{text-align:center;font-size:11.5px;color:var(--muted);min-height:16px}
     .plan ul{list-style:none;margin:20px 0 0;padding:20px 0 0;border-top:1px solid var(--line2);display:flex;flex-direction:column;gap:11px;font-size:13.5px;color:var(--ink2)}
-    .plan ul li{display:flex;gap:10px;align-items:flex-start;line-height:1.45}
-    .plan ul li svg{flex:none;margin-top:1px}
+    /* Ícone absoluto: se o li for flex, o <b> vira coluna à parte
+       («Oportunidades com» | «pontuação e adequação IA»). */
+    .plan ul li{position:relative;padding-left:25px;line-height:1.45}
+    .plan ul li svg{position:absolute;left:0;top:2px}
     .plan ul li.off{color:var(--faint)}
     .plan ul li b{color:var(--ink);font-weight:600}
     /* Cartões de funcionalidade com pré-visualização conceptual */
