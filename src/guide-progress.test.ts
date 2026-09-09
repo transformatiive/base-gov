@@ -43,7 +43,8 @@ const NAV_ADMIN = ['#/admin', '#/admin/uso'];
 
 test('catálogo: cada item da nav tem passo de menu tour', () => {
   const w = loadBrowserJs('public/help/catalog.js', 'public/help/manual/toc.js');
-  assert.deepEqual(w.BRHelpCatalog.menuTour.steps.map((s) => s.href), NAV);
+  const hrefs = w.BRHelpCatalog.menuTour.steps.map((s) => String(s.href));
+  assert.equal(hrefs.join('\n'), NAV.join('\n'));
 });
 
 test('sidebar: grupos, ordem e ícone em cada opção', () => {
