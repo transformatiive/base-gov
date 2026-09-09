@@ -467,14 +467,14 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     if (!to) return reply.code(400).send({ error: { code: 'no_recipient', message: 'Indique o destinatário.' } });
     const r = await sendMail({
       to,
-      subject: 'Concursivo — teste de configuração de email',
+      subject: 'PrepBid — teste de configuração de email',
       html: layout({
         title: 'Configuração de email validada',
-        body: `<p>Se está a ler isto, o envio de email do Concursivo está a funcionar.</p>
+        body: `<p>Se está a ler isto, o envio de email do PrepBid está a funcionar.</p>
                <p>Remetente: <strong>${esc(config.mail.from)}</strong></p>
                <p>Ficam operacionais os convites de equipa, a recuperação de password e as confirmações de pagamento.</p>`,
       }),
-      text: 'Teste de configuração de email do Concursivo — está a funcionar.',
+      text: 'Teste de configuração de email do PrepBid — está a funcionar.',
     });
     if (!r.ok) return reply.code(502).send({ error: { code: 'send_failed', message: r.error ?? 'Falha no envio.' } });
     return { ok: true, id: r.id, from: config.mail.from, to };

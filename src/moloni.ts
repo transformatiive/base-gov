@@ -98,7 +98,7 @@ async function findOrCreateCustomer(company: { name: string; nif: string | null 
     credit_limit: 0,
     payment_method_id: 0,
     salesman_id: 0,
-    field_notes: 'Criado automaticamente pelo Concursivo',
+    field_notes: 'Criado automaticamente pelo PrepBid',
   })) as Record<string, unknown>;
   if (!created?.customer_id) throw new Error(`customers/insert sem customer_id: ${JSON.stringify(created).slice(0, 160)}`);
   return Number(created.customer_id);

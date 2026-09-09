@@ -45,6 +45,9 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.match(landing, /id="land-nav-links"[\s\S]*href="\/app\/#\/registo">Começar grátis/);
   assert.doesNotMatch(landing, /html,body\{[^}]*overflow-x:hidden/);
   assert.doesNotMatch(landing, /var sel = '[^']*\.hero-cta/);
+  assert.doesNotMatch(landing, /M4\.5 12a7\.5/);
+  assert.match(landing, /m9 14 2 2 4-4/);
+  assert.match(landing, /Assistente para ganhar concursos/);
 });
 
 test('páginas legais e guias usam o mesmo destino /app/#/…', () => {
@@ -52,8 +55,8 @@ test('páginas legais e guias usam o mesmo destino /app/#/…', () => {
   assert.match(privacidade, /href="\/app\/#\/login">Entrar/);
   assert.doesNotMatch(legalCss, /html,body\{[^}]*overflow-x:hidden/);
 
-  const article = renderGuideArticleHtml('https://concursivo.example', sample);
-  const index = renderGuideIndexHtml('https://concursivo.example', [sample]);
+  const article = renderGuideArticleHtml('https://prepbid.example', sample);
+  const index = renderGuideIndexHtml('https://prepbid.example', [sample]);
   assert.match(article, /href="\/app\/#\/registo"/);
   assert.match(index, /href="\/app\/#\/login"/);
   assert.match(index, /href="\/app\/#\/registo"/);

@@ -204,7 +204,7 @@ export function esc(v: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/** Envolve o conteúdo num email HTML consistente com a identidade do Concursivo. */
+/** Envolve o conteúdo num email HTML consistente com a identidade do PrepBid. */
 export function layout(opts: { title: string; body: string; cta?: { label: string; url: string }; footnote?: string }): string {
   const cta = opts.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0">
@@ -220,7 +220,7 @@ export function layout(opts: { title: string; body: string; cta?: { label: strin
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e6e8e6;border-radius:12px">
   <tr><td style="padding:22px 28px;border-bottom:1px solid #e6e8e6">
-    <span style="font-size:19px;font-weight:800;color:#191c1e;letter-spacing:-0.5px">Concur<span style="color:${BRAND}">sivo</span></span>
+    <span style="font-size:19px;font-weight:800;color:#191c1e;letter-spacing:-0.5px">Prep<span style="color:${BRAND}">Bid</span></span>
   </td></tr>
   <tr><td style="padding:26px 28px">
     <h1 style="font-size:19px;color:#191c1e;margin:0 0 12px">${opts.title}</h1>
@@ -229,7 +229,7 @@ export function layout(opts: { title: string; body: string; cta?: { label: strin
     ${opts.footnote ? `<p style="font-size:12.5px;color:#8a938e;margin:22px 0 0">${opts.footnote}</p>` : ''}
   </td></tr>
   <tr><td style="padding:16px 28px;border-top:1px solid #e6e8e6">
-    <p style="font-size:11.5px;color:#9aa6a0;margin:0">Concursivo — um produto da Transformatiive, Lda. · Fonte: Portal BASE — IMPIC / dados.gov.pt</p>
+    <p style="font-size:11.5px;color:#9aa6a0;margin:0">PrepBid — um produto da Transformatiive, Lda. · Fonte: Portal BASE — IMPIC / dados.gov.pt</p>
   </td></tr>
 </table></td></tr></table></body></html>`;
 }

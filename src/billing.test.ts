@@ -111,8 +111,8 @@ test('moloniPdfUrlFromResponse lê url em objeto ou lista', () => {
 });
 
 test('pdfFilename sanitiza o número do documento', () => {
-  assert.equal(pdfFilename('IVCX 12/2026', 3), 'concursivo-IVCX-12-2026.pdf');
-  assert.equal(pdfFilename(null, 9), 'concursivo-fatura-9.pdf');
+  assert.equal(pdfFilename('IVCX 12/2026', 3), 'prepbid-IVCX-12-2026.pdf');
+  assert.equal(pdfFilename(null, 9), 'prepbid-fatura-9.pdf');
 });
 
 test('invoicePdfUnavailableMessage cobre rascunho e erro', () => {

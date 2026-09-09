@@ -2,7 +2,7 @@
   'use strict';
   w.BRHelpManualToc = {
     title: 'Manual de utilizador',
-    intro: 'Como usar cada zona do Concursivo. As imagens serão acrescentadas à medida que as capturas estiverem prontas — o texto já descreve o fluxo.',
+    intro: 'Como usar cada zona do PrepBid. As imagens serão acrescentadas à medida que as capturas estiverem prontas — o texto já descreve o fluxo.',
     chapters: [
       { slug: 'hoje', title: 'Hoje', group: 'Dia a dia', href: '#/hoje', html: '/help/manual/hoje.html', shots: [] },
       { slug: 'oportunidades', title: 'Oportunidades', group: 'Radar', href: '#/radar/opportunities', html: '/help/manual/oportunidades.html', shots: [], pro: true },

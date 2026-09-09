@@ -380,7 +380,7 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
       const buf = buildDocx({
         title: `Proposta — ${anns[0].contract_designation ?? `Anúncio ${id}`}`,
         subtitle: [anns[0].contracting_entity, profile.legal_name].filter(Boolean).join(' · '),
-        note: 'Rascunho gerado pelo Concursivo. Requer revisão humana. A submissão no portal de contratação (BASE.gov / Vortal / acinGov / anoGov / SaphetyGov) é sempre manual.',
+        note: 'Rascunho gerado pelo PrepBid. Requer revisão humana. A submissão no portal de contratação (BASE.gov / Vortal / acinGov / anoGov / SaphetyGov) é sempre manual.',
         sections: gen.sections,
         footer: gen.structure_note,
       });

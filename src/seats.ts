@@ -93,16 +93,16 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
     const inviter = `${ctx[0]?.first_name ?? ''} ${ctx[0]?.last_name ?? ''}`.trim() || ctx[0]?.inviter_email || 'Um colega';
     const mail = await sendMail({
       to: email,
-      subject: `${inviter} convidou-o para o Concursivo (${companyName})`,
+      subject: `${inviter} convidou-o para o PrepBid (${companyName})`,
       replyTo: ctx[0]?.inviter_email || undefined,
       html: layout({
-        title: 'Foi convidado para o Concursivo',
-        body: `<p><strong>${esc(inviter)}</strong> convidou-o a juntar-se a <strong>${esc(companyName)}</strong> no Concursivo — a plataforma que identifica que contratos públicos a empresa pode ganhar, quando e por quanto.</p>
+        title: 'Foi convidado para o PrepBid',
+        body: `<p><strong>${esc(inviter)}</strong> convidou-o a juntar-se a <strong>${esc(companyName)}</strong> no PrepBid — a plataforma que identifica que contratos públicos a empresa pode ganhar, quando e por quanto.</p>
                <p>Aceite o convite para criar a sua conta e aceder ao radar da equipa.</p>`,
         cta: { label: 'Aceitar convite', url: acceptUrl },
         footnote: 'Se não estava à espera deste convite, pode simplesmente ignorar este email.',
       }),
-      text: `${inviter} convidou-o para o Concursivo (${companyName}). Aceite em: ${acceptUrl}`,
+      text: `${inviter} convidou-o para o PrepBid (${companyName}). Aceite em: ${acceptUrl}`,
     });
     return reply.code(201).send({ ok: true, email, token, accept_url: acceptPath, email_sent: mail.ok, email_error: mail.ok ? undefined : mail.error });
   });

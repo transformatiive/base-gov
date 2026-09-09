@@ -15,7 +15,7 @@ export const config = {
   // Subscrição / trial
   trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
   planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
-  planName: process.env.PLAN_NAME || 'Concursivo',
+  planName: process.env.PLAN_NAME || 'PrepBid',
   // URL público da app (Checkout success/cancel e webhook). APP_URL é o contrato;
   // APP_BASE_URL mantém-se como fallback para instalações Railway já configuradas.
   appBaseUrl: (process.env.APP_URL || process.env.APP_BASE_URL || '').replace(/\/$/, ''),
@@ -86,7 +86,7 @@ export const config = {
     cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
     cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
-    from: process.env.MAIL_FROM || '',            // ex.: "Concursivo <noreply@concursivo.com>"
+    from: process.env.MAIL_FROM || '',            // ex.: "PrepBid <noreply@prepbid.com>"
     supportEmail: process.env.SUPPORT_EMAIL || '',
   },
 

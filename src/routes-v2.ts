@@ -398,7 +398,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const section = (title: string, body: string) =>
       `<h2 style="font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#0f172a;margin:28px 0 8px">${title}</h2>${body}`;
 
-    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>Concursivo — Digest ${esc(profile.name)}</title></head>
+    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>PrepBid — Digest ${esc(profile.name)}</title></head>
 <body style="margin:0;background:#f6f8fb;font-family:Arial,Helvetica,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
@@ -425,7 +425,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     : '<p style="font-size:13px;color:#64748b">Sem renovações no horizonte de 90 dias.</p>')}
 </td></tr>
 <tr><td style="padding:16px 28px;border-top:1px solid #e2e8f0">
-  <p style="font-size:11px;color:#94a3b8;margin:0">Gerado por Concursivo · Fonte: Portal BASE — IMPIC / dados.gov.pt · ${new Date().toLocaleDateString('pt-PT')}</p>
+  <p style="font-size:11px;color:#94a3b8;margin:0">Gerado por PrepBid · Fonte: Portal BASE — IMPIC / dados.gov.pt · ${new Date().toLocaleDateString('pt-PT')}</p>
 </td></tr>
 </table></td></tr></table></body></html>`;
 

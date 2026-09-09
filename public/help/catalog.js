@@ -10,7 +10,7 @@
     splash: {
       eyebrow: 'Primeiros passos',
       title: 'Quer um onboarding guiado?',
-      lead: 'Em dois minutos vê o que o Concursivo faz. Pode percorrer os menus connosco — ou entrar já na aplicação e receber uma explicação só na primeira visita a cada ecrã.',
+      lead: 'Em dois minutos vê o que o PrepBid faz. Pode percorrer os menus connosco — ou entrar já na aplicação e receber uma explicação só na primeira visita a cada ecrã.',
       examples: [
         { id: 'hoje', title: 'Hoje', body: 'O que exige atenção hoje: concursos a fechar, carteira com prazo e valor em jogo nos próximos 90 dias.' },
         { id: 'oportunidades', title: 'Oportunidades', body: 'Concursos abertos e renovações, ordenados por score. Adequação IA à sua atividade no plano Pro.', pro: true },
