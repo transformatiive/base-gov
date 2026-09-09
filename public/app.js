@@ -133,9 +133,11 @@ function displayFitScore(score) {
   const scaled = n > 0 && n < 1 ? n * 100 : n;
   return Math.max(0, Math.min(100, Math.round(scaled)));
 }
+let _didFirstBoot = false;
 function clearClientSession() {
   window._me = null;
   window._caps = null;
+  _didFirstBoot = false;
 }
 function onHojeHash() {
   const h = (location.hash || '#/').split('?')[0];
@@ -191,13 +193,72 @@ const ICON_PATHS = {
   building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
+  calendar: '<path d="M8 3v3"/><path d="M16 3v3"/><path d="M4 9h16"/><rect x="4" y="5" width="16" height="15" rx="2"/>',
+  columns: '<rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6"/>',
+  chart: '<path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sliders: '<path d="M4 21V14"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 };
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
+const navIco = (name, size = 16) =>
+  `<svg class="nav-ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] ?? ''}</svg>`;
+function hydrateNavIcons() {
+  document.querySelectorAll('#topbar nav a[data-nav-icon]').forEach((a) => {
+    if (a.querySelector(':scope > .nav-ico')) return;
+    a.insertAdjacentHTML('afterbegin', navIco(a.getAttribute('data-nav-icon')));
+  });
+}
 
-/* Wordmark PrepBid (igual ao do header). */
-const wordmark = (size = 20) =>
-  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg><span>Prep<span class="accent">Bid</span></span></span>`;
+const MARK_SVG = (size = 32) =>
+  `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#173f35"/><path fill="#e9f2ee" d="M7.4 11.15c0-1.05.85-1.9 1.9-1.9h3.55c.4 0 .77.18 1.02.48l.85 1.04h8.04c1.05 0 1.9.85 1.9 1.9v10.55c0 1.05-.85 1.9-1.9 1.9H9.3c-1.05 0-1.9-.85-1.9-1.9V11.15z"/><path fill="#b7d4c4" d="M9.3 9.25h3.55l.78 1.02H9.3V9.25z"/><path stroke="#173f35" stroke-opacity=".22" stroke-width="1.35" stroke-linecap="round" d="M10.6 15.15h6.1M10.6 18h4.9"/><circle cx="21.15" cy="19.25" r="4.55" fill="#173f35"/><path d="M19.15 19.3l1.32 1.42 2.78-2.98" stroke="#e9f2ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+/* Wordmark PrepBid (Fraunces + dossier; igual ao do header). */
+const wordmark = (size = 32) =>
+  `<span class="wordmark">${MARK_SVG(size)}<span class="wm-type">Prep<em>Bid</em></span></span>`;
+
+const BOOT_PHRASES = [
+  'A pesquisar concursos abertos…',
+  'A cruzar o perfil da empresa…',
+  'A ver prazos desta semana…',
+  'A preparar o que interessa hoje…',
+  'A juntar o histórico do Portal BASE…',
+];
+let _bootPhraseTimer = 0;
+function stopBootPhrases() {
+  if (_bootPhraseTimer) { clearInterval(_bootPhraseTimer); _bootPhraseTimer = 0; }
+}
+function showBootSplash() {
+  if (document.querySelector('.boot-splash')) return;
+  if (_didFirstBoot) {
+    app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+    return;
+  }
+  _didFirstBoot = true;
+  stopBootPhrases();
+  app.innerHTML = `<div class="boot-splash" role="status" aria-live="polite">
+      ${wordmark(48)}
+      <p class="boot-phrase" id="boot-phrase">${BOOT_PHRASES[0]}</p>
+      <div class="boot-bar" aria-hidden="true"><i></i></div>
+    </div>`;
+  let i = 0;
+  _bootPhraseTimer = setInterval(() => {
+    const node = document.getElementById('boot-phrase');
+    if (!node) { stopBootPhrases(); return; }
+    i = (i + 1) % BOOT_PHRASES.length;
+    node.classList.add('out');
+    setTimeout(() => {
+      const n = document.getElementById('boot-phrase');
+      if (!n) return;
+      n.textContent = BOOT_PHRASES[i];
+      n.classList.remove('out');
+    }, 220);
+  }, 2300);
+}
 
 /* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
 const scoreDonut = (score, color, size = 52) => {
@@ -377,7 +438,7 @@ function applyNavGating() {
     const locked = feat && !can(feat);
     a.classList.toggle('nav-locked', !!locked);
     a.querySelector('.nav-lock')?.remove();
-    if (locked) a.insertAdjacentHTML('beforeend', ' <span class="nav-lock" aria-hidden="true" title="Plano superior">🔒</span>');
+    if (locked) a.insertAdjacentHTML('beforeend', `<span class="nav-lock" aria-hidden="true" title="Plano superior">${navIco('lock', 12)}</span>`);
   });
 }
 
@@ -2857,7 +2918,7 @@ function aiModalOpen(steps) {
   el.id = 'ai-modal';
   el.innerHTML = `
     <div class="ai-modal-box">
-      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'PrepBid'}</div>
+      <div style="display:flex;justify-content:center;margin-bottom:0.6rem">${wordmark(32)}</div>
       <div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>
       <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
     </div>`;
@@ -3205,7 +3266,7 @@ async function renderHoje(opts = {}) {
   if (!ctx && pid) setCtx(pid);
   const active = profiles.find((p) => String(p.id) === pid) ?? profiles[0];
 
-  if (!opts.silent) app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  if (!opts.silent) showBootSplash();
   const q = `?profile_id=${pid}`;
   const freeHoje = !can('score_fit');
   const [opp, prof, mapData, compData, pipe, openAnns] = await Promise.all([
@@ -3415,7 +3476,7 @@ async function renderHoje(opts = {}) {
 }
 
 async function renderPipeline() {
-  app.innerHTML = '<div class="card"><p class="muted">A carregar o pipeline…</p></div>';
+  showBootSplash();
   const { items } = await api('/api/pipeline');
   const openIds = new Set(['interessa', 'preparacao', 'submetida']);
   const closed = (items || []).filter((i) => !openIds.has(i.status));
@@ -4740,27 +4801,11 @@ async function renderUsageAdmin() {
 
 function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
 
-/* Liga "Admin" à navegação lateral (só para administradores). */
+/* Liga o grupo Admin à navegação lateral (só para administradores). */
 function ensureAdminNav() {
-  const nav = document.querySelector('#topbar nav');
-  if (!nav) return;
-  const existingAdmin = nav.querySelector('a[href="#/admin"]');
-  const existingUso = nav.querySelector('a[href="#/admin/uso"]');
-  if (!window._me?.is_admin) {
-    existingAdmin?.remove();
-    existingUso?.remove();
-    return;
-  }
-  if (!existingAdmin) {
-    const a = document.createElement('a');
-    a.href = '#/admin'; a.textContent = 'Admin';
-    nav.appendChild(a);
-  }
-  if (!existingUso) {
-    const a = document.createElement('a');
-    a.href = '#/admin/uso'; a.textContent = 'Utilização';
-    nav.appendChild(a);
-  }
+  const group = document.getElementById('nav-admin');
+  if (!group) return;
+  group.hidden = !window._me?.is_admin;
 }
 
 /* ---------- Feedback / ajuda: botão flutuante + modal ---------- */
@@ -4873,6 +4918,7 @@ function setAppNavOpen(open) {
 }
 
 function bindAppNav() {
+  hydrateNavIcons();
   const btn = document.getElementById('nav-toggle');
   const scrim = document.getElementById('nav-scrim');
   if (!btn || btn.dataset.bound) return;
@@ -4998,6 +5044,7 @@ function renderQaChecklist() {
 
 async function route() {
   stopPolling();
+  stopBootPhrases();
   hideMatrixTip();
   const guideNav = window.BRGuide && window.BRGuide.isNavigating && window.BRGuide.isNavigating();
   if (!guideNav) {
@@ -5031,6 +5078,7 @@ async function route() {
   // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
   // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
   if (!window._me) {
+    showBootSplash();
     try {
       window._me = await api('/api/auth/me');
     } catch {
@@ -5057,9 +5105,7 @@ async function route() {
   const ajuda = hashBase.match(/^#\/ajuda(?:\/([\w-]+))?$/);
   if (ajuda) return renderAjuda(ajuda[1] || '');
   if (hashBase === '#/qa') return renderQaChecklist();
-  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-
-  const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
+  showBootSplash();
   const contract = hashBase.match(/^#\/contracts\/(\d+)$/);
   const profile = hashBase.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
   const entity = hashBase.match(/^#\/entities\/(\d+)$/);

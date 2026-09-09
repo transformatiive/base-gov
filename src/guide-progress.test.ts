@@ -35,15 +35,48 @@ function loadBrowserJs(...rel: string[]) {
 }
 
 const NAV = [
-  '#/hoje', '#/radar/opportunities', '#/pipeline', '#/radar/renewals',
-  '#/radar/announcements', '#/radar/map', '#/radar/seasonality',
+  '#/hoje', '#/pipeline', '#/radar/opportunities',
+  '#/radar/announcements', '#/radar/renewals', '#/radar/map', '#/radar/seasonality',
   '#/radar/competitors', '#/entities', '#/config',
 ];
+const NAV_ADMIN = ['#/admin', '#/admin/uso'];
 
 test('catálogo: cada item da nav tem passo de menu tour', () => {
   const w = loadBrowserJs('public/help/catalog.js', 'public/help/manual/toc.js');
-  const hrefs = new Set(w.BRHelpCatalog.menuTour.steps.map((s) => s.href));
-  for (const h of NAV) assert.equal(hrefs.has(h), true, `menu tour em falta: ${h}`);
+  const hrefs = w.BRHelpCatalog.menuTour.steps.map((s) => String(s.href));
+  assert.equal(hrefs.join('\n'), NAV.join('\n'));
+});
+
+test('sidebar: grupos, ordem e ícone em cada opção', () => {
+  const html = readFileSync(join(root, 'public/index.html'), 'utf8');
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const nav = html.match(/<nav[\s\S]*?<\/nav>/)?.[0] ?? '';
+  assert.match(nav, /aria-label="Secções da aplicação"/);
+  const labels = [...nav.matchAll(/class="nav-group-label"[^>]*>([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(labels, ['Dia a dia', 'Radar', 'Mercado', 'Conta', 'Admin']);
+  const hrefs = [...nav.matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, [...NAV, ...NAV_ADMIN]);
+  const icons = [...nav.matchAll(/data-nav-icon="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(icons.length, hrefs.length);
+  for (const name of icons) {
+    assert.match(appJs, new RegExp(`^\\s+${name}:`, 'm'), `ICON_PATHS em falta: ${name}`);
+  }
+  assert.match(nav, /id="nav-admin"[^>]*hidden/);
+  assert.match(html, /style\.css\?v=47/);
+  assert.match(appJs, /A pesquisar concursos abertos/);
+  assert.match(html, /class="wm-type"/);
+});
+
+test('manual: grupos alinhados com a nav', () => {
+  const w = loadBrowserJs('public/help/catalog.js', 'public/help/manual/toc.js');
+  const bySlug = Object.fromEntries(w.BRHelpManualToc.chapters.map((c) => [c.slug, c.group]));
+  assert.equal(bySlug.hoje, 'Dia a dia');
+  assert.equal(bySlug.carteira, 'Dia a dia');
+  assert.equal(bySlug.oportunidades, 'Dia a dia');
+  assert.equal(bySlug.concursos, 'Radar');
+  assert.equal(bySlug.concorrentes, 'Mercado');
+  assert.equal(bySlug.entidades, 'Mercado');
+  assert.equal(bySlug.config, 'Conta');
 });
 
 test('catálogo: splash tem onboarding vs entrar na app', () => {
