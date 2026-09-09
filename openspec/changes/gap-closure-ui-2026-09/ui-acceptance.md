@@ -31,7 +31,7 @@ Planos de teste: **Grátis**, **Pro** (ou trial), **Business** (dois utilizadore
 ### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
 - **Passos:** Percorrer os cartões (renovações, concorrentes, resumo semanal).
-- **Passa se:** as mini-visualizações usam nomes de **obras, energia ou saúde** e entidades públicas; o resumo promete email semanal; existe (ou o copy promete) carteira de propostas ou mesa de trabalho.
+- **Passa se:** as mini-visualizações usam nomes de **obras, energia ou saúde** e entidades públicas; o resumo promete email semanal; existe (ou o copy promete) carteira de propostas.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas», «pirotecnia».
 
 ### GTM-05 — CTA e meta

@@ -14,7 +14,7 @@
       examples: [
         { id: 'hoje', title: 'Hoje', body: 'O que exige atenção hoje: concursos a fechar, carteira com prazo e valor em jogo nos próximos 90 dias.' },
         { id: 'oportunidades', title: 'Oportunidades', body: 'Concursos abertos e renovações, ordenados por score. Adequação IA à sua atividade no plano Pro.', pro: true },
-        { id: 'carteira', title: 'Carteira', body: 'Kanban da empresa: Interessa → Em preparação → Submetida. Estados partilhados com a equipa.' },
+        { id: 'carteira', title: 'Carteira', body: 'A carteira da empresa: Interessa → Em preparação → Submetida. Os estados são partilhados pela equipa.' },
         { id: 'mapa', title: 'Mapa e sazonalidade', body: 'Onde as entidades compram na sua atividade, e em que meses o mercado se mexe.' },
       ],
       ctaTour: 'Avançar com o onboarding',
@@ -24,7 +24,7 @@
     menuTour: {
       steps: [
         { href: '#/hoje', title: 'Hoje', body: 'O painel do dia: o que tem prazo, o que está na carteira e o valor em jogo. Comece sempre aqui.' },
-        { href: '#/pipeline', feature: 'pipeline', title: 'Carteira', body: 'Mesa de trabalho da empresa. Arraste cartas entre Interessa, Em preparação e Submetida. Os estados são partilhados.' },
+        { href: '#/pipeline', feature: 'pipeline', title: 'Carteira', body: 'A carteira da empresa. Arraste as cartas entre Interessa, Em preparação e Submetida. Os estados são partilhados pela equipa.' },
         { href: '#/radar/opportunities', feature: 'score_fit', title: 'Oportunidades', body: 'Concursos abertos e renovações da sua atividade, ordenados por score (valor, urgência, recorrência). A adequação IA aparece no plano Pro.' },
         { href: '#/radar/announcements', title: 'Concursos', body: 'Anúncios do BASE/DRE na sua atividade, incluindo no plano Grátis. Abra a ficha para prazos, peças e análise IA.' },
         { href: '#/radar/renewals', feature: 'renovacoes', title: 'Renovações', body: 'Contratos a terminar — a janela para contactar o cliente antes do novo procedimento.' },
@@ -59,7 +59,7 @@
       carteira: {
         lockedFallback: locked,
         steps: [
-          { sel: 'pl-title', title: 'Carteira', body: 'Mesa de trabalho da empresa. Os estados são os mesmos para toda a equipa.', placement: 'bottom' },
+          { sel: 'pl-title', title: 'Carteira', body: 'A carteira da empresa. Os estados são os mesmos para toda a equipa.', placement: 'bottom' },
           { sel: 'pl-board', title: 'Kanban', body: 'Três colunas abertas. Arraste a carta para mudar o estado.', placement: 'bottom' },
           { sel: 'pl-col-interessa', title: 'Interessa', body: 'Caixa de entrada. Daqui passa a Em preparação quando for avançar.', placement: 'right' },
           { sel: 'pl-closed', title: 'Fechadas', body: 'Ganha, perdida, descartada e outras — fora do quadro principal.', placement: 'top' },
