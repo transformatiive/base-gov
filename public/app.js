@@ -3505,7 +3505,7 @@ async function renderPipeline() {
   }
 
   let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0" data-guide="pl-title">Carteira</h1>
-    <div class="muted" style="margin-top:3px">Mesa de trabalho da empresa — arraste as cartas entre colunas. Estados partilhados.</div></div></div>`;
+    <div class="muted" style="margin-top:3px">A carteira da empresa — arraste as cartas entre colunas. Os estados são partilhados pela equipa.</div></div></div>`;
   if (!(items || []).length) {
     html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="${can('score_fit') ? '#/radar/opportunities' : '#/radar/announcements'}">${can('score_fit') ? 'Oportunidades' : 'Concursos'}</a>.</p>`;
   } else {

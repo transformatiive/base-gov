@@ -71,3 +71,15 @@ test('route() declara results antes de o usar — senão Hoje/Radar rebentam', (
   assert.ok(decl >= 0, 'falta const results = hash.match(#/searches/…)');
   assert.ok(use > decl, 'if (results) aparece antes da declaração');
 });
+
+test('Carteira usa copy em português, não mesa de trabalho', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const catalog = readFileSync(join(root, 'public/help/catalog.js'), 'utf8');
+  const index = readFileSync(join(root, 'public/index.html'), 'utf8');
+  assert.doesNotMatch(appJs, /[Mm]esa de trabalho/);
+  assert.doesNotMatch(catalog, /[Mm]esa de trabalho/);
+  assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
+  assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
+  assert.match(index, /catalog\.js\?v=6/);
+  assert.match(index, /app\.js\?v=75/);
+});
