@@ -131,7 +131,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const fromDay = from.toISOString().slice(0, 10);
     const toDay = to.toISOString().slice(0, 10);
 
-    const [kpis, daily, modules, actions, origins, companies, recent] = await Promise.all([
+    const [kpis, daily, modules, actions, origins, companies, recent, searchKpis, searchesByKind, searchesByCompany, recentSearches] = await Promise.all([
       pool.query(
         `SELECT
            count(*) FILTER (WHERE kind = 'page_view')::int AS pageviews,
@@ -189,6 +189,42 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
           LIMIT 80`,
         [from],
       ),
+      pool.query(
+        `SELECT count(*)::int AS n,
+                count(*) FILTER (WHERE kind = 'anuncios')::int AS anuncios,
+                count(*) FILTER (WHERE kind = 'contratos')::int AS contratos,
+                count(DISTINCT company_id)::int AS companies,
+                count(DISTINCT created_by)::int AS users
+           FROM searches WHERE created_at >= $1`,
+        [from],
+      ),
+      pool.query(
+        `SELECT coalesce(kind,'contratos') AS kind, count(*)::int AS n,
+                count(*) FILTER (WHERE status IN ('completed','completed_truncated'))::int AS done,
+                count(*) FILTER (WHERE status = 'failed')::int AS failed
+           FROM searches WHERE created_at >= $1
+           GROUP BY kind ORDER BY n DESC`,
+        [from],
+      ),
+      pool.query(
+        `SELECT c.id AS company_id, c.name, c.plan, count(*)::int AS n, max(s.created_at) AS last_at
+           FROM searches s JOIN companies c ON c.id = s.company_id
+          WHERE s.created_at >= $1
+          GROUP BY c.id, c.name, c.plan
+          ORDER BY n DESC LIMIT 40`,
+        [from],
+      ),
+      pool.query(
+        `SELECT s.id, s.term, s.kind, s.status, s.created_at, s.finished_at, s.total_reported, s.total_scraped,
+                c.name AS company, u.username
+           FROM searches s
+           LEFT JOIN companies c ON c.id = s.company_id
+           LEFT JOIN users u ON u.id = s.created_by
+          WHERE s.created_at >= $1
+          ORDER BY s.created_at DESC
+          LIMIT 40`,
+        [from],
+      ),
     ]);
 
     const dailyFilled = fillDailySeries(
@@ -223,6 +259,12 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       })),
       companies: companies.rows,
       recent: recent.rows,
+      searches: {
+        kpis: searchKpis.rows[0],
+        by_kind: searchesByKind.rows,
+        by_company: searchesByCompany.rows,
+        recent: recentSearches.rows,
+      },
     };
   });
 }

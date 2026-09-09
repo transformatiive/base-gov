@@ -45,6 +45,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email)) WHERE 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version     TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip          TEXT;
+-- Ciclo de teto de IA: 30 dias a partir da inscrição, reset às 00:00 Lisboa.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_period_start TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_period_end   TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_ai_period_end ON users (ai_period_end)
+  WHERE ai_period_end IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS searches (
   id             SERIAL PRIMARY KEY,
@@ -278,8 +283,8 @@ UPDATE companies SET plan = 'pro' WHERE plan = 'baseradar';
 -- Empresas sem plano reconhecido (nulo/vazio/desconhecido) resolvem como free.
 UPDATE companies SET plan = 'free' WHERE plan IS NULL OR plan NOT IN ('free', 'pro', 'business');
 
--- Registo de utilização de IA (uma linha por análise BEM-SUCEDIDA). Conta e regista;
--- NÃO bloqueia (o teto é soft, controlado por flag). Falhas não contam.
+-- Registo de utilização de IA (uma linha por análise BEM-SUCEDIDA). Falhas e
+-- resultados em cache não contam. O teto por utilizador bloqueia novas chamadas.
 CREATE TABLE IF NOT EXISTS ai_usage_events (
   id             SERIAL PRIMARY KEY,
   company_id     INT REFERENCES companies(id) ON DELETE CASCADE,
@@ -292,6 +297,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_events (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_usage_company_month ON ai_usage_events (company_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created ON ai_usage_events (user_id, created_at);
 
 -- Convites de utilizadores por empresa (seats). Limite por plano validado na app.
 CREATE TABLE IF NOT EXISTS company_invites (

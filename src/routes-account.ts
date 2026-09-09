@@ -418,8 +418,19 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
          (SELECT count(*) FROM users u WHERE u.company_id = c.id) AS n_users,
          (SELECT count(*) FROM profiles p WHERE p.company_id = c.id) AS n_profiles,
          (SELECT count(*) FROM ai_usage_events ae WHERE ae.company_id = c.id
-            AND ae.created_at >= date_trunc('month', now())) AS ai_month,
-         (SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin, 'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version) ORDER BY u.id)
+            AND ae.created_at >= now() - interval '30 days') AS ai_month,
+         (SELECT count(*) FROM searches s WHERE s.company_id = c.id
+            AND s.created_at >= now() - interval '30 days') AS searches_30d,
+         (SELECT json_agg(json_build_object(
+            'id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin,
+            'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version,
+            'created_at', u.created_at, 'ai_reset_at', u.ai_period_end,
+            'ai_used', (SELECT count(*) FROM ai_usage_events ae
+                         WHERE ae.user_id = u.id
+                           AND u.ai_period_start IS NOT NULL
+                           AND ae.created_at >= u.ai_period_start
+                           AND (u.ai_period_end IS NULL OR ae.created_at < u.ai_period_end))
+          ) ORDER BY u.id)
             FROM users u WHERE u.company_id = c.id) AS users
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);
     return { items: rows };
@@ -719,7 +730,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   // ---------- Admin: estatísticas de utilização ----------
   app.get('/api/admin/stats', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
-    const [byPlan, byStatus, totals, split, aiByKind, aiTotals, searchesByKind, runs] = await Promise.all([
+    const [byPlan, byStatus, totals, split, aiByKind, aiTotals, searchesByKind, searchTotals, searchesByCompany, recentSearches, runs] = await Promise.all([
       pool.query(`SELECT plan, count(*)::int AS n FROM companies GROUP BY plan`),
       pool.query(`SELECT subscription_status AS status, count(*)::int AS n FROM companies GROUP BY subscription_status`),
       pool.query(`SELECT
@@ -732,11 +743,27 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           count(*) FILTER (WHERE plan = 'free' OR subscription_status IN ('canceled','past_due'))::int AS free_inactive
         FROM companies`),
       pool.query(`SELECT kind, count(*)::int AS n FROM ai_usage_events
-          WHERE created_at >= date_trunc('month', now()) GROUP BY kind ORDER BY n DESC`),
+          WHERE created_at >= now() - interval '30 days' GROUP BY kind ORDER BY n DESC`),
       pool.query(`SELECT count(*)::int AS n_month, coalesce(sum(cost_estimate),0)::float AS cost_month,
           (SELECT count(*)::int FROM ai_usage_events) AS n_total
-        FROM ai_usage_events WHERE created_at >= date_trunc('month', now())`),
-      pool.query(`SELECT coalesce(kind,'contratos') AS kind, count(*)::int AS n FROM searches GROUP BY kind ORDER BY n DESC`),
+        FROM ai_usage_events WHERE created_at >= now() - interval '30 days'`),
+      pool.query(`SELECT coalesce(kind,'contratos') AS kind, count(*)::int AS n FROM searches
+          WHERE created_at >= now() - interval '30 days' GROUP BY kind ORDER BY n DESC`),
+      pool.query(`SELECT count(*)::int AS n_total,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30
+        FROM searches`),
+      pool.query(`SELECT c.id, c.name, c.plan, count(*)::int AS n, max(s.created_at) AS last_at
+           FROM searches s JOIN companies c ON c.id = s.company_id
+          WHERE s.created_at >= now() - interval '30 days'
+          GROUP BY c.id, c.name, c.plan
+          ORDER BY n DESC LIMIT 20`),
+      pool.query(`SELECT s.id, s.term, s.kind, s.status, s.created_at, s.finished_at,
+              c.name AS company, u.username, u.email
+           FROM searches s
+           LEFT JOIN companies c ON c.id = s.company_id
+           LEFT JOIN users u ON u.id = s.created_by
+          ORDER BY s.created_at DESC LIMIT 30`),
       pool.query(`SELECT count(*)::int AS total,
           count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30 FROM profile_runs`),
     ]);
@@ -756,6 +783,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       companies_by_status: byStatus.rows,
       ai_usage: { by_kind: aiByKind.rows, ...aiTotals.rows[0] },
       searches_by_kind: searchesByKind.rows,
+      searches: {
+        ...searchTotals.rows[0],
+        by_kind: searchesByKind.rows,
+        by_company: searchesByCompany.rows,
+        recent: recentSearches.rows,
+      },
       profile_runs: runs.rows[0],
       signups: signups.rows[0],
       payments: payments.rows[0],

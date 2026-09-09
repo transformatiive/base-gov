@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, auth } from './auth.js';
 import { requirePlan } from './plans.js';
-import { recordUsage } from './aiUsage.js';
+import { isAiCapped, recordUsage, rejectIfAiCapped } from './aiUsage.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
@@ -266,6 +266,13 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
       const force = Boolean((req.body as { force?: boolean })?.force);
+      if (!force) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
+          [id, profileId],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
       const r = await analyzeAnnouncement(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
@@ -285,6 +292,13 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
       const force = Boolean((req.body as { force?: boolean })?.force);
+      if (!force) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
+          [id, profileId],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
       const r = await analyzeContract(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
@@ -303,6 +317,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
+    if (await rejectIfAiCapped(req, reply)) return;
     try {
       const r = await responseTemplate(id, profileId);
       const { companyId, userId } = auth(req);
@@ -318,7 +333,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     if (!(await ensureProfile(req, reply, profileId))) return;
     const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
     try {
-      const { scores, usage } = await fitScores(profileId, items);
+      const a = auth(req);
+      const capped = !a.isAdmin && await isAiCapped(a.userId, a.plan);
+      const { scores, usage } = await fitScores(profileId, items, { capped });
       // Só conta quando houve chamada real (fit calculado, não vindo todo da cache).
       if (usage.tokens_in > 0 || usage.tokens_out > 0) {
         const { companyId, userId } = auth(req);
