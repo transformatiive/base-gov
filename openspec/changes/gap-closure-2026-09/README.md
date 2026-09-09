@@ -4,6 +4,8 @@
 
 Esta pasta contém os artefactos de *Spec-Driven Development* para a alteração **gap-closure-2026-09**: pipeline por oportunidade, perfil rico da empresa a alimentar o fit de IA, filtros facetados, feedback sobre a IA, digest automático, lembretes de prazo e um conjunto de melhorias transversais.
 
+> **Implementação e QA:** documento único (os 9 ficheiros desta pasta cruzados de novo com a análise de gaps + GTM + AC de UI) em [`../gap-closure-ui-2026-09/SPEC.md`](../gap-closure-ui-2026-09/SPEC.md). O `design.md` desta pasta continua válido; o SPEC absorve-o e não o contradiz.
+
 ## Estrutura
 
 ```

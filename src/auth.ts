@@ -13,6 +13,8 @@ export interface AuthUser {
   isAdmin: boolean;
   accessOk: boolean;          // subscrição ativa ou trial a decorrer
   plan: Plan;                 // plano efetivo (free|pro|business) — fonte de gating
+  firstName: string | null;
+  lastName: string | null;
 }
 
 type AuthedRequest = FastifyRequest & { auth?: AuthUser };
@@ -21,7 +23,7 @@ type AuthedRequest = FastifyRequest & { auth?: AuthUser };
 const ACCESS_OK_SQL = `(c.subscription_status = 'active'
   OR (c.subscription_status = 'trialing' AND (c.trial_ends_at IS NULL OR c.trial_ends_at > now())))`;
 
-const USER_COLS = `u.id, u.username, u.company_id, u.is_admin,
+const USER_COLS = `u.id, u.username, u.company_id, u.is_admin, u.first_name, u.last_name,
   c.plan, c.subscription_status, c.trial_ends_at, c.access_until,
   COALESCE(${ACCESS_OK_SQL}, true) AS access_ok`;
 const USER_FROM = `FROM users u LEFT JOIN companies c ON c.id = u.company_id`;
@@ -33,6 +35,8 @@ function toUser(row: Record<string, unknown>): AuthUser {
     companyId: (row.company_id as number) ?? null,
     isAdmin: row.is_admin === true,
     accessOk: row.access_ok !== false,
+    firstName: (row.first_name as string) ?? null,
+    lastName: (row.last_name as string) ?? null,
     // Plano efetivo resolvido no backend — fonte única de verdade do gating.
     plan: effectivePlan({
       plan: row.plan,
@@ -70,39 +74,35 @@ async function checkBasicAuth(header: string): Promise<AuthUser | null> {
   return verifyCredentials(decoded.slice(0, sep), decoded.slice(sep + 1));
 }
 
-/** Aceita: cookie de sessão assinado (UI), X-API-Key (integrações) ou HTTP Basic. */
-export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-  let user: AuthUser | null = null;
-
+/** Sessão/API key se existirem; não responde 401. */
+export async function tryAuth(req: FastifyRequest): Promise<AuthUser | null> {
   const raw = req.cookies[SESSION_COOKIE];
   if (raw) {
     const unsigned = req.unsignCookie(raw);
-    if (unsigned.valid && unsigned.value) user = await loadByUsername(unsigned.value);
-  }
-
-  if (!user) {
-    const apiKey = req.headers['x-api-key'];
-    if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
-      // Integrações têm acesso global (sem empresa) — para uso interno/administrativo.
-      user = { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true, plan: 'business' };
+    if (unsigned.valid && unsigned.value) {
+      const user = await loadByUsername(unsigned.value);
+      if (user) return user;
     }
   }
 
-  if (!user) {
-    const authHeader = req.headers.authorization;
-    if (typeof authHeader === 'string') user = await checkBasicAuth(authHeader);
+  const apiKey = req.headers['x-api-key'];
+  if (config.appApiKey && typeof apiKey === 'string' && apiKey === config.appApiKey) {
+    return { userId: null, username: 'api-key', companyId: null, isAdmin: true, accessOk: true, plan: 'business', firstName: null, lastName: null };
   }
 
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader === 'string') return checkBasicAuth(authHeader);
+  return null;
+}
+
+/** Aceita: cookie de sessão assinado (UI), X-API-Key (integrações) ou HTTP Basic. */
+export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const user = await tryAuth(req);
   if (!user) {
     reply.code(401).send({ error: { code: 'unauthorized', message: 'Autenticação necessária' } });
     return;
   }
-
   (req as AuthedRequest).auth = user;
-
-  // O acesso depende do PLANO, não de um estado ativo/inativo único (R10):
-  // toda a conta autenticada tem o plano free como base; as features Pro/Business
-  // são bloqueadas com 403 por requirePlan() nas rotas respetivas. Sem 402 global.
 }
 
 /** Contexto autenticado do pedido (após requireAuth). */

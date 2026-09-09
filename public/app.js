@@ -1,10 +1,112 @@
-/* SPA mínima do BaseRadar — sem dependências. */
+/* SPA mínima do PrepBid — sem dependências. */
 const app = document.getElementById('app');
 const topbar = document.getElementById('topbar');
 const whoami = document.getElementById('whoami');
 let pollTimer = null;
+let _viewGen = 0;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** Títulos do Portal BASE: C1/tofu (Windows-1252) e aspas exteriores. */
+function unwrapDisplayQuotes(s) {
+  let t = String(s ?? '').trim();
+  for (let i = 0; i < 4 && t.length >= 2; i++) {
+    const a = t[0];
+    const b = t[t.length - 1];
+    const pair = { '"': '"', "'": "'", '\u00AB': '\u00BB', '\u201C': '\u201D', '\u2018': '\u2019' };
+    if (pair[a] === b) t = t.slice(1, -1).trim();
+    else break;
+  }
+  return t.replace(/^[\s"«“'\u2018]+/, '').replace(/[\s"»”'\u2019]+$/, '').trim();
+}
+
+function cleanDisplayText(s) {
+  if (s == null) return '';
+  let t = String(s);
+  if (!t) return '';
+  t = t.replace(/\uFFFD/g, ' · ');
+  t = t.replace(/[\t\n\r]+/g, ' ');
+  t = t.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' · ');
+  t = t.replace(/[\u007F-\u009F]/g, ' · ');
+  t = t.replace(/[\uE000-\uF8FF]/g, ' · ');
+  t = t.replace(/[\u25A0-\u25AF\u25B0-\u25B3\u25FB-\u25FE\u2610\u2B1B\u2B1C]/g, ' · ');
+  t = t.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, ' — ');
+  t = t.replace(/(\S) - (\S)/g, '$1 — $2');
+  t = t.replace(/[•●◦‣∙]/g, ' · ');
+  // Aspas partidas do BASE/Windows: ¿ no fim do token (ex. DA MAIA¿). Não mexer em «¿» espanhol ao início da frase.
+  t = t.replace(/(\p{L}|\p{N})¿(?=[\s.,;:)\]»"'”’]|$)/gu, '$1"');
+  t = t.replace(/¿(?=[\s»"'”’]|$)/g, '"');
+  t = t.replace(/´/g, "'");
+  t = t.replace(/`/g, "'");
+  t = t.replace(/Ã§/g, 'ç').replace(/Ã£/g, 'ã').replace(/Ã¡/g, 'á')
+    .replace(/Ã©/g, 'é').replace(/Ã­/g, 'í').replace(/Ã³/g, 'ó')
+    .replace(/Ãº/g, 'ú').replace(/Ãª/g, 'ê').replace(/Ã´/g, 'ô');
+  t = t.replace(/[ \u00A0\u202F\u2007\u2009]+/g, ' ');
+  t = t.replace(/(?:\s*·\s*)+/g, ' · ');
+  t = t.replace(/(?:\s*—\s*)+/g, ' — ');
+  t = t.replace(/\s*—\s*·\s*/g, ' · ').replace(/\s*·\s*—\s*/g, ' · ');
+  t = t.trim().replace(/^(?:·|—)\s*/, '').replace(/\s*(?:·|—)$/, '');
+  return unwrapDisplayQuotes(t);
+}
+
+function normalizeFichaCompare(s) {
+  return unwrapDisplayQuotes(cleanDisplayText(s))
+    .replace(/[«»“”"'\u2018\u2019]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function fichaTitleParts(brief, extra) {
+  const cleaned = cleanDisplayText(brief);
+  let ref = '';
+  let rest = cleaned;
+  const num = rest.match(/^(\d{6,})\b(?:\s*[—–-]\s*|\s+)([\s\S]*)$/);
+  if (num) {
+    ref = num[1];
+    rest = unwrapDisplayQuotes(num[2]);
+  } else {
+    rest = unwrapDisplayQuotes(rest);
+  }
+  const segs = rest.split(/\s*·\s*/)
+    .map((p) => unwrapDisplayQuotes(p).replace(/^(?:—)\s*/, '').replace(/\s*—$/, '').trim())
+    .filter(Boolean);
+  const isSubstantial = (p) => (p.match(/[\p{L}\p{N}]/gu) || []).length >= 3;
+  let idx = segs.findIndex(isSubstantial);
+  if (idx < 0) idx = 0;
+  const title = segs[idx] || rest;
+  let lead = segs.filter((_, i) => i !== idx).join(' · ');
+  const extraRaw = extra == null ? '' : String(extra);
+  if (extraRaw.trim()) {
+    const briefN = normalizeFichaCompare(brief);
+    const extraN = normalizeFichaCompare(extraRaw);
+    if (extraN && extraN !== briefN && !briefN.includes(extraN)) {
+      const extraClean = cleanDisplayText(extraRaw);
+      if (!lead) lead = extraClean;
+      else {
+        const leadN = normalizeFichaCompare(lead);
+        if (leadN !== extraN && !leadN.includes(extraN)) lead = `${lead} · ${extraClean}`;
+      }
+    }
+  }
+  return { ref, title, lead };
+}
+
+function fichaHeadHtml(brief, extra, fallback) {
+  const source = (brief != null && String(brief).trim()) ? brief : (fallback ?? '');
+  const { ref, title, lead } = fichaTitleParts(source, extra);
+  const h1 = title || fallback || '—';
+  return `${ref ? `<p class="d-ref">${esc(ref)}</p>` : ''}<h1>${esc(h1)}</h1>${lead ? `<p class="lead">${esc(lead)}</p>` : ''}`;
+}
+
+function escTitle(s) {
+  return esc(cleanDisplayText(s));
+}
+
+function escTitleMax(s, n) {
+  return esc(cleanDisplayText(s).slice(0, n));
+}
+
 const fmtPrice = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }));
 const fmtDate = (v) => (v ? String(v).slice(0, 10) : '—');
 const badge = (s) => `<span class="badge ${esc(s)}">${esc(s)}</span>`;
@@ -18,9 +120,46 @@ const endDaysBadge = (d) => {
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €');
+/** KPI quando o match local bateu o tecto (completed_truncated). */
+function formatKpiCount(n, truncated) {
+  const v = Number.isFinite(Number(n)) ? Math.max(0, Math.round(Number(n))) : 0;
+  const s = String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  return truncated && v > 0 ? `${s}+` : s;
+}
+/** Fit 0–100; fracções 0–1 (ex. 0,65) passam a 65. Nunca arredonda 65 para 1. */
+function displayFitScore(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  const scaled = n > 0 && n < 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
+}
+let _didFirstBoot = false;
+function clearClientSession() {
+  window._me = null;
+  window._caps = null;
+  _didFirstBoot = false;
+}
+function onHojeHash() {
+  const h = (location.hash || '#/').split('?')[0];
+  return h === '#/hoje' || h === '#/' || h === '';
+}
+function runInProgress(status) {
+  return status === 'pending' || status === 'running';
+}
 const dPtShort = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }) : '—');
 const fmtDatePt = (v) => (v ? new Date(v).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const daysUntil = (v) => (v ? Math.round((new Date(v) - new Date(new Date().toISOString().slice(0, 10))) / 86400000) : null);
+
+/** PIP-07: «No pipeline» só com prazos a decorrer (não ultrapassados). Interessa ≤14 d, Em preparação ≤7 d. */
+function hojePipelineDue(it) {
+  const d = daysUntil(it.deadline);
+  if (d == null || d < 0) return false;
+  switch (it.status) {
+    case 'preparacao': return d <= 7;
+    case 'interessa': return d <= 14;
+    default: return false;
+  }
+}
 /* Acordo-quadro: canal de venda distinto (contratação centralizada/ESPAP). */
 const isAcordoQuadro = (o) => /acordo[-\s]?quadro/i.test([o?.contract_designation, o?.announcement_type, o?.model_type, o?.contracting_procedure_type, o?.contract_type].filter(Boolean).join(' '));
 const AQ_BADGE = '<span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6" title="Acordo-quadro — canal de contratação centralizada">AQ</span>';
@@ -54,13 +193,72 @@ const ICON_PATHS = {
   building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
+  calendar: '<path d="M8 3v3"/><path d="M16 3v3"/><path d="M4 9h16"/><rect x="4" y="5" width="16" height="15" rx="2"/>',
+  columns: '<rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6"/>',
+  chart: '<path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sliders: '<path d="M4 21V14"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 };
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
+const navIco = (name, size = 16) =>
+  `<svg class="nav-ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] ?? ''}</svg>`;
+function hydrateNavIcons() {
+  document.querySelectorAll('#topbar nav a[data-nav-icon]').forEach((a) => {
+    if (a.querySelector(':scope > .nav-ico')) return;
+    a.insertAdjacentHTML('afterbegin', navIco(a.getAttribute('data-nav-icon')));
+  });
+}
 
-/* Wordmark BaseRadar (igual ao do header). */
-const wordmark = (size = 20) =>
-  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Base<span class="accent">Radar</span></span></span>`;
+const MARK_SVG = (size = 32) =>
+  `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#173f35"/><path fill="#e9f2ee" d="M7.4 11.15c0-1.05.85-1.9 1.9-1.9h3.55c.4 0 .77.18 1.02.48l.85 1.04h8.04c1.05 0 1.9.85 1.9 1.9v10.55c0 1.05-.85 1.9-1.9 1.9H9.3c-1.05 0-1.9-.85-1.9-1.9V11.15z"/><path fill="#b7d4c4" d="M9.3 9.25h3.55l.78 1.02H9.3V9.25z"/><path stroke="#173f35" stroke-opacity=".22" stroke-width="1.35" stroke-linecap="round" d="M10.6 15.15h6.1M10.6 18h4.9"/><circle cx="21.15" cy="19.25" r="4.55" fill="#173f35"/><path d="M19.15 19.3l1.32 1.42 2.78-2.98" stroke="#e9f2ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+/* Wordmark PrepBid (Fraunces + dossier; igual ao do header). */
+const wordmark = (size = 32) =>
+  `<span class="wordmark">${MARK_SVG(size)}<span class="wm-type">Prep<em>Bid</em></span></span>`;
+
+const BOOT_PHRASES = [
+  'A pesquisar concursos abertos…',
+  'A cruzar o perfil da empresa…',
+  'A ver prazos desta semana…',
+  'A preparar o que interessa hoje…',
+  'A juntar o histórico do Portal BASE…',
+];
+let _bootPhraseTimer = 0;
+function stopBootPhrases() {
+  if (_bootPhraseTimer) { clearInterval(_bootPhraseTimer); _bootPhraseTimer = 0; }
+}
+function showBootSplash() {
+  if (document.querySelector('.boot-splash')) return;
+  if (_didFirstBoot) {
+    app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+    return;
+  }
+  _didFirstBoot = true;
+  stopBootPhrases();
+  app.innerHTML = `<div class="boot-splash" role="status" aria-live="polite">
+      ${wordmark(48)}
+      <p class="boot-phrase" id="boot-phrase">${BOOT_PHRASES[0]}</p>
+      <div class="boot-bar" aria-hidden="true"><i></i></div>
+    </div>`;
+  let i = 0;
+  _bootPhraseTimer = setInterval(() => {
+    const node = document.getElementById('boot-phrase');
+    if (!node) { stopBootPhrases(); return; }
+    i = (i + 1) % BOOT_PHRASES.length;
+    node.classList.add('out');
+    setTimeout(() => {
+      const n = document.getElementById('boot-phrase');
+      if (!n) return;
+      n.textContent = BOOT_PHRASES[i];
+      n.classList.remove('out');
+    }, 220);
+  }, 2300);
+}
 
 /* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
 const scoreDonut = (score, color, size = 52) => {
@@ -73,6 +271,7 @@ const scoreDonut = (score, color, size = 52) => {
 };
 
 async function api(path, opts = {}) {
+  const method = String(opts.method || 'GET').toUpperCase();
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   if (res.status === 401) {
     if (location.hash !== '#/login') location.hash = '#/login';
@@ -91,9 +290,95 @@ async function api(path, opts = {}) {
       err.planRequired = body.error;   // { feature, required_plan, current_plan }
       throw err;
     }
+    if (res.status === 429 && body?.error?.code === 'ai_cap_reached') {
+      const err = new Error(body.error.message || 'Atingiu o teto de análises deste ciclo.');
+      err.aiCapReached = body.error;
+      throw err;
+    }
     throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
   }
+  const act = usageActionFromApi(method, path);
+  if (act) trackUsage('action', { action: act });
   return res.json();
+}
+
+function usageActionFromApi(method, apiPath) {
+  const m = String(method || 'GET').toUpperCase();
+  if (m === 'GET' || m === 'HEAD') return null;
+  const p = String(apiPath || '').split('?')[0];
+  if (p === '/api/usage' || p.startsWith('/api/admin')) return null;
+  if (m === 'POST' && /\/api\/announcements\/\d+\/analyze$/.test(p)) return 'analise_anuncio';
+  if (m === 'POST' && /\/api\/contracts\/\d+\/analyze$/.test(p)) return 'analise_contrato';
+  if (m === 'POST' && /\/api\/announcements\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
+  if (m === 'POST' && /\/api\/announcements\/\d+\/close-forecast/.test(p)) return 'previsao_fecho';
+  if (m === 'PUT' && p.startsWith('/api/pipeline/')) return 'carteira';
+  if (m === 'POST' && p === '/api/billing/checkout') return 'checkout';
+  if (m === 'POST' && p === '/api/billing/trial') return 'activar_trial';
+  if (m === 'POST' && p === '/api/profiles') return 'criar_perfil';
+  if (m === 'POST' && p === '/api/searches') return 'pesquisa';
+  if (m === 'POST' && p === '/api/feedback') return 'feedback';
+  if (m === 'POST' && /\/api\/profiles\/\d+\/run$/.test(p)) return 'recolha';
+  return null;
+}
+
+function brVisitorId() {
+  try {
+    let id = localStorage.getItem('br_vid');
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+      localStorage.setItem('br_vid', id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+function brFirstTouch() {
+  try {
+    const existing = JSON.parse(localStorage.getItem('br_acq') || 'null');
+    if (existing && existing.landing) return existing;
+    const q = new URLSearchParams(location.search);
+    const hashQ = location.hash.includes('?') ? new URLSearchParams(location.hash.split('?')[1]) : new URLSearchParams();
+    const pick = (k) => q.get(k) || hashQ.get(k) || '';
+    const acq = {
+      utm_source: pick('utm_source'),
+      utm_medium: pick('utm_medium'),
+      utm_campaign: pick('utm_campaign'),
+      landing: `${location.pathname}${location.hash.split('?')[0] || ''}`,
+    };
+    localStorage.setItem('br_acq', JSON.stringify(acq));
+    return acq;
+  } catch {
+    return {};
+  }
+}
+
+function trackUsage(kind, extra = {}) {
+  const path = extra.path || (location.hash.split('?')[0] || '#/');
+  if (!path || path === '#/admin' || path.startsWith('#/admin/') || path === '#/qa') return;
+  const acq = brFirstTouch();
+  const body = JSON.stringify({
+    kind,
+    path,
+    action: extra.action || undefined,
+    visitor_id: brVisitorId(),
+    referrer: document.referrer || '',
+    utm_source: acq.utm_source || undefined,
+    utm_medium: acq.utm_medium || undefined,
+    utm_campaign: acq.utm_campaign || undefined,
+    landing: acq.landing || undefined,
+  });
+  try {
+    if (kind === 'page_view' && navigator.sendBeacon) {
+      const ok = navigator.sendBeacon('/api/usage', new Blob([body], { type: 'application/json' }));
+      if (ok) return;
+    }
+  } catch { /* fallback fetch */ }
+  fetch('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
 }
 
 /* Capabilities do plano (espelho do backend). O backend é sempre a verdade;
@@ -109,10 +394,37 @@ function can(feature) {
   if (window._me?.is_admin) return true;
   return Array.isArray(c.capabilities) && c.capabilities.includes(feature);
 }
+window.can = can;
+
+const RADAR_GUIDE = {
+  opportunities: 'oportunidades',
+  renewals: 'renovacoes',
+  announcements: 'concursos',
+  map: 'mapa',
+  seasonality: 'sazonalidade',
+  competitors: 'concorrentes',
+};
+function radarGuideId(tab) { return RADAR_GUIDE[tab] || 'oportunidades'; }
+function notifyGuide(id) {
+  const g = window.BRGuide;
+  if (!g) return;
+  try { g._viewReady?.(); } catch { /* ignore */ }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { try { g.afterView?.(id); } catch { /* ignore */ } });
+  });
+}
+/** Cumprimento do Hoje — manter alinhado com src/display-name.ts */
+function greetingName(me) {
+  const first = (me?.first_name ?? '').trim().split(/\s+/)[0];
+  if (first) return first;
+  const local = (me?.username ?? '').split(/[\s@]/)[0];
+  return local || 'Olá';
+}
 const PLAN_LABEL = { free: 'Grátis', pro: 'Pro', business: 'Business' };
 
 // Mapa item de navegação → feature exigida (vazio = livre no plano free).
 const NAV_FEATURE = {
+  '#/pipeline': 'pipeline',
   '#/radar/opportunities': 'score_fit',
   '#/radar/renewals': 'renovacoes',
   '#/radar/competitors': 'concorrentes',
@@ -126,7 +438,570 @@ function applyNavGating() {
     const locked = feat && !can(feat);
     a.classList.toggle('nav-locked', !!locked);
     a.querySelector('.nav-lock')?.remove();
-    if (locked) a.insertAdjacentHTML('beforeend', ' <span class="nav-lock" aria-hidden="true" title="Plano superior">🔒</span>');
+    if (locked) a.insertAdjacentHTML('beforeend', `<span class="nav-lock" aria-hidden="true" title="Plano superior">${navIco('lock', 12)}</span>`);
+  });
+}
+
+const PL_LABELS = {
+  nova: 'Nova', interessa: 'Interessa', preparacao: 'Em preparação',
+  submetida: 'Submetida', ganha: 'Ganha', perdida: 'Perdida', descartada: 'Descartada',
+};
+const PL_NEXT = {
+  nova: ['interessa', 'preparacao', 'submetida', 'descartada'],
+  interessa: ['preparacao', 'submetida', 'descartada'],
+  preparacao: ['interessa', 'submetida', 'descartada'],
+  submetida: ['ganha', 'perdida', 'descartada'],
+  descartada: ['interessa'],
+  ganha: ['interessa', 'preparacao'],
+  perdida: ['interessa', 'preparacao'],
+};
+const DISTRICTS_UI = ['Aveiro','Beja','Braga','Bragança','Castelo Branco','Coimbra','Évora','Faro','Guarda','Leiria','Lisboa','Portalegre','Porto','Santarém','Setúbal','Viana do Castelo','Vila Real','Viseu','Açores','Madeira'];
+const FB_REASONS = [
+  ['fora_atividade', 'Fora da nossa atividade'],
+  ['fora_geografia', 'Fora da geografia'],
+  ['requisito_impossivel', 'Requisito impossível'],
+  ['valor_desadequado', 'Valor desadequado'],
+  ['outro', 'Outro'],
+];
+
+const fmtDateDMY = (v) => {
+  if (!v) return '—';
+  const s = String(v);
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+  }
+  return s.slice(0, 10);
+};
+const fmtRecolha = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('pt-PT', {
+    timeZone: 'Europe/Lisbon', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')}/${get('month')} ${get('hour')}:${get('minute')}`;
+};
+
+function hashQuery() {
+  const i = location.hash.indexOf('?');
+  return new URLSearchParams(i >= 0 ? location.hash.slice(i + 1) : '');
+}
+function setHashQuery(mutator) {
+  const p = hashQuery();
+  mutator(p);
+  const base = location.hash.split('?')[0];
+  const s = p.toString();
+  const next = s ? `${base}?${s}` : base;
+  if (location.hash !== next) location.hash = next;
+  else route();
+}
+
+function pipelineTypeOf(o) {
+  return o.type || (o.announcement_id ? 'anuncio_aberto' : 'renovacao');
+}
+function pipelineIdOf(o) {
+  return o.announcement_id ?? o.contract_id ?? o.item_id ?? o.id;
+}
+
+function plTone(status) {
+  switch (status) {
+    case 'interessa': return { bg: '#e4efe8', fg: '#2c6353', bd: '#cfe2d6' };
+    case 'preparacao': return { bg: '#fdf6e8', fg: '#8a6a1e', bd: '#ecd9ac' };
+    case 'submetida': return { bg: '#e9f2ee', fg: '#173f35', bd: '#b7d4c4' };
+    case 'ganha': return { bg: '#2c6353', fg: '#e9f2ee', bd: '#2c6353' };
+    case 'perdida': return { bg: '#f7e9e4', fg: '#c2543a', bd: '#ecc9bf' };
+    case 'descartada': return { bg: '#eef1ef', fg: '#7d8681', bd: '#dfe3e0' };
+    case 'nova': return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
+    default: return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
+  }
+}
+
+function plChip(status) {
+  const t = plTone(status);
+  return `<span class="mini-chip" style="background:${t.bg};color:${t.fg};border:1px solid ${t.bd}">${esc(PL_LABELS[status] || status)}</span>`;
+}
+
+function plOptionButtons(cur) {
+  const opts = [...new Set([cur, ...(PL_NEXT[cur] || [])])];
+  return opts.map((s) => {
+    const tone = plTone(s);
+    const on = s === cur;
+    return `<button type="button" data-v="${s}"${on ? ' aria-current="true"' : ''} style="background:${tone.bg};color:${tone.fg};border-color:${tone.bd}">${esc(PL_LABELS[s] || s)}${on ? ` ${ico('check', 14)}` : ''}</button>`;
+  }).join('');
+}
+
+function fillPipelineDropdown(dd, status) {
+  const cur = status || 'nova';
+  const t = plTone(cur);
+  dd.dataset.cur = cur;
+  const btn = dd.querySelector('.pl-dd-btn');
+  if (btn) {
+    btn.style.background = t.bg;
+    btn.style.color = t.fg;
+    btn.style.borderColor = t.bd;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = `${esc(PL_LABELS[cur] || cur)} ${ico('chevron', 14)}`;
+  }
+  const menu = dd.querySelector('.pl-dd-menu');
+  if (menu) menu.innerHTML = plOptionButtons(cur);
+}
+
+function pipelineSelect(type, id, status) {
+  const cur = status || 'nova';
+  const t = plTone(cur);
+  return `<div class="pl-dd" data-type="${esc(type)}" data-id="${id}" data-cur="${cur}" onclick="event.stopPropagation()">
+    <button type="button" class="pl-dd-btn" aria-haspopup="listbox" aria-expanded="false" style="background:${t.bg};color:${t.fg};border-color:${t.bd}">${esc(PL_LABELS[cur] || cur)} ${ico('chevron', 14)}</button>
+    <div class="pl-dd-menu" hidden>${plOptionButtons(cur)}</div>
+  </div>`;
+}
+
+function closePipelineMenus() {
+  document.querySelectorAll('.pl-dd-menu').forEach((m) => { m.hidden = true; });
+  document.querySelectorAll('.pl-dd-btn').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
+
+function placePlDdMenu(btn, menu) {
+  const r = btn.getBoundingClientRect();
+  const w = Math.max(r.width, 188);
+  menu.hidden = false;
+  const mh = menu.offsetHeight || 168;
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+  let top = r.bottom + 4;
+  if (top + mh > window.innerHeight - 8 && r.top - 4 - mh > 8) top = r.top - 4 - mh;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.minWidth = `${w}px`;
+}
+
+let plDdDocBound = false;
+function bindPipelineChips(root) {
+  if (!plDdDocBound) {
+    plDdDocBound = true;
+    document.addEventListener('click', closePipelineMenus);
+    window.addEventListener('scroll', closePipelineMenus, true);
+    window.addEventListener('resize', closePipelineMenus);
+  }
+  (root || document).querySelectorAll('.pl-dd').forEach((dd) => {
+    if (dd.dataset.bound) return;
+    dd.dataset.bound = '1';
+    const btn = dd.querySelector('.pl-dd-btn');
+    const menu = dd.querySelector('.pl-dd-menu');
+    if (!btn || !menu) return;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      closePipelineMenus();
+      if (!willOpen) return;
+      placePlDdMenu(btn, menu);
+      btn.setAttribute('aria-expanded', 'true');
+    };
+    menu.onclick = async (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      const next = b.dataset.v;
+      const prev = dd.dataset.cur;
+      closePipelineMenus();
+      if (next === prev) return;
+      try {
+        await api(`/api/pipeline/${dd.dataset.type}/${dd.dataset.id}`, {
+          method: 'PUT', body: JSON.stringify({ status: next }),
+        });
+        fillPipelineDropdown(dd, next);
+      } catch (err) {
+        fillPipelineDropdown(dd, prev);
+        alert(err.message);
+      }
+    };
+  });
+}
+
+function fichaTabsHtml(panes) {
+  const items = panes.filter((p) => p && p.html);
+  if (!items.length) return '';
+  const tabs = items.map((p, i) =>
+    `<button type="button" class="${i === 0 ? 'active' : ''}" data-pane="${esc(p.id)}">${esc(p.label)}</button>`).join('');
+  const bodies = items.map((p, i) =>
+    `<div class="ficha-pane" data-pane="${esc(p.id)}"${i === 0 ? '' : ' hidden'}>${p.html}</div>`).join('');
+  return `<div class="ficha-tabs-wrap">
+    <div class="tabs ficha-tabs" data-guide="ficha-tabs">${tabs}</div>
+    <div class="d-card">${bodies}</div>
+  </div>`;
+}
+
+function bindFichaTabs(root) {
+  (root || document).querySelectorAll('.ficha-tabs-wrap').forEach((wrap) => {
+    wrap.querySelectorAll('.ficha-tabs button').forEach((btn) => {
+      btn.onclick = () => {
+        wrap.querySelectorAll('.ficha-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+        wrap.querySelectorAll('.ficha-pane').forEach((p) => { p.hidden = p.dataset.pane !== btn.dataset.pane; });
+      };
+    });
+  });
+}
+
+const AI_STEPS_ANN = [
+  'A recolher o anúncio do DR e as peças do procedimento em paralelo…',
+  'A extrair critérios, prazos e preço…',
+  'A levantar habilitação, cauções e alertas…',
+  'A avaliar o fit e a recomendação de avançar…',
+  'Ainda a sintetizar o parecer — sem caderno pode levar cerca de um minuto…',
+];
+const AI_STEPS_CONTRACT = [
+  'A abrir os documentos do contrato em paralelo…',
+  'A extrair o que foi contratado e os critérios…',
+  'A levantar requisitos e riscos da renovação…',
+  'A avaliar se vale a pena perseguir a renovação…',
+  'Ainda a sintetizar o plano — pode levar cerca de um minuto…',
+];
+
+function aiProgressHtml(steps) {
+  return `<div class="ai-inline" role="status" aria-live="polite">
+    <p class="ai-inline-k">Análise IA em curso</p>
+    <div class="ai-progress"><div class="ai-progress-bar" id="ai-inline-bar"></div></div>
+    <p class="muted" id="ai-inline-step" style="min-height:1.6em;margin:0.7rem 0 0">${esc(steps[0])}</p>
+  </div>`;
+}
+
+function aiLockedHtml() {
+  return `<p style="margin:0 0 8px;line-height:1.55">A análise com IA do caderno de encargos está no plano Pro.</p>
+    <p class="muted" style="margin:0 0 12px">7 dias de teste, sem cartão. A análise já feita fica em cache e não volta a ser cobrada ao reabrir a ficha.</p>
+    <p style="margin:0"><a href="#/planos"><button type="button">Ver planos</button></a></p>`;
+}
+
+function aiTabPaneHtml(kind) {
+  const steps = kind === 'contract' ? AI_STEPS_CONTRACT : AI_STEPS_ANN;
+  const intro = kind === 'contract'
+    ? 'Ao abrir esta ficha a análise começa sozinha: o que foi contratado, o que preparar para a renovação, e se vale a pena perseguir. Se já existir, mostra-se de imediato.'
+    : 'Ao abrir esta ficha a análise começa sozinha: critérios, habilitação, riscos e se deve avançar. Se já existir, mostra-se de imediato.';
+  const body = can('analise_ia') ? aiProgressHtml(steps) : aiLockedHtml();
+  return `<p class="muted" style="margin:0 0 12px;line-height:1.55">${intro}</p>
+    <div id="ai-pane-body" data-guide="ficha-ia">${body}</div>`;
+}
+
+function activateFichaPane(root, paneId) {
+  (root || document).querySelectorAll('.ficha-tabs-wrap').forEach((wrap) => {
+    wrap.querySelectorAll('.ficha-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.pane === paneId));
+    wrap.querySelectorAll('.ficha-pane').forEach((p) => { p.hidden = p.dataset.pane !== paneId; });
+  });
+}
+
+function aiProgressStepIndex(elapsedSec, nSteps) {
+  if (nSteps <= 1) return 0;
+  const last = nSteps - 1;
+  if (elapsedSec < 4) return 0;
+  if (elapsedSec < 9) return Math.min(1, last);
+  if (elapsedSec < 16) return Math.min(2, last);
+  if (elapsedSec < 24) return Math.min(3, last);
+  return last;
+}
+function aiProgressPct(elapsedSec) {
+  return Math.min(88, 8 + elapsedSec * 2.1);
+}
+
+let _aiInlineTimer = null;
+function aiInlineStart(steps) {
+  aiInlineStop();
+  const t0 = Date.now();
+  _aiInlineTimer = setInterval(() => {
+    const s = (Date.now() - t0) / 1000;
+    const pct = aiProgressPct(s);
+    const i = aiProgressStepIndex(s, steps.length);
+    const bar = document.getElementById('ai-inline-bar');
+    const stepEl = document.getElementById('ai-inline-step');
+    if (bar) bar.style.width = pct + '%';
+    if (stepEl) stepEl.textContent = steps[i];
+  }, 400);
+}
+function aiInlineStop() {
+  if (_aiInlineTimer) { clearInterval(_aiInlineTimer); _aiInlineTimer = null; }
+  const bar = document.getElementById('ai-inline-bar');
+  if (bar) bar.style.width = '100%';
+}
+
+let _fichaAiGen = 0;
+
+async function startFichaAi({ kind, id, force = false }) {
+  const gen = ++_fichaAiGen;
+  const expectedHash = kind === 'contract' ? `#/contracts/${id}` : `#/announcements/${id}`;
+  const stillHere = () => gen === _fichaAiGen && location.hash.split('?')[0] === expectedHash;
+  const body = document.getElementById('ai-pane-body');
+  if (!body || !stillHere()) return;
+  if (!can('analise_ia')) {
+    body.innerHTML = aiLockedHtml();
+    return;
+  }
+  const steps = kind === 'contract' ? AI_STEPS_CONTRACT : AI_STEPS_ANN;
+  activateFichaPane(app, 'ia');
+  if (force || !body.querySelector('.ai-inline')) body.innerHTML = aiProgressHtml(steps);
+  aiInlineStart(steps);
+  try {
+    const pid = Number(getCtx() || 0);
+    const path = kind === 'contract' ? `/api/contracts/${id}/analyze` : `/api/announcements/${id}/analyze`;
+    const payload = { profile_id: pid };
+    if (force) payload.force = true;
+    const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
+    if (!stillHere()) return;
+    loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
+    const itemType = kind === 'contract' ? 'renovacao' : 'anuncio_aberto';
+    let docNote = '';
+    if (kind === 'contract' && r.docs_used === 0) {
+      docNote = '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, active «Descarregar documentos PDF» na pesquisa/perfil.</p>';
+    } else if (kind === 'announcement' && r.docs_used > 0) {
+      docNote = `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`;
+    } else if (kind === 'announcement' && (r.docs_used === 0 || r.docs_used === -1)) {
+      docNote = '<p class="hint">A análise usa o anúncio do Diário da República e os dados estruturados. Sem peças/caderno acessíveis, a checklist de preparação não é gerada.</p>';
+    }
+    const dossier = kind === 'announcement'
+      ? `<p style="margin-top:0.6rem"><button type="button" class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
+         <div id="ai-template-out"></div>`
+      : '';
+    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, r.model, itemType, id, r.docs_used)}${docNote}
+      <p style="margin-top:0.8rem"><button type="button" class="btn-secondary" id="ai-rerun-btn">${ico('refresh')} Voltar a analisar</button></p>
+      ${dossier}`;
+    hydrateChecklist(body);
+    const rerun = document.getElementById('ai-rerun-btn');
+    if (rerun) rerun.onclick = () => startFichaAi({ kind, id, force: true });
+    const tbtn = document.getElementById('ai-template-btn');
+    if (tbtn) {
+      tbtn.onclick = async () => {
+        tbtn.disabled = true;
+        aiModalOpen([
+          'A reunir os critérios de adjudicação já extraídos…',
+          'A montar a lista de verificação de submissão na plataforma…',
+          'A redigir a declaração do Anexo I do CCP…',
+          'A estruturar a memória descritiva alinhada aos critérios…',
+          'A preparar os placeholders da sua empresa…',
+        ]);
+        try {
+          const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+          loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
+          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
+          const url = URL.createObjectURL(blob);
+          document.getElementById('ai-template-out').innerHTML = `
+            <div class="card" style="margin-top:0.6rem">
+              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
+                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
+              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
+            </div>`;
+        } catch (err) {
+          document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+          tbtn.disabled = false;
+        } finally { aiModalClose(); }
+      };
+    }
+  } catch (err) {
+    if (!stillHere()) return;
+    if (err.planRequired) { body.innerHTML = aiLockedHtml(); return; }
+    if (err.aiCapReached) {
+      await loadCaps(true);
+      renderAiQuotaBanner(window._caps, window._me);
+      body.innerHTML = `<p class="error">${esc(err.message)}</p>
+        <p class="muted">Reabrir uma ficha já analisada não conta para o teto. O ciclo reinicia a ${esc(err.aiCapReached.reset_label || '00:00')}.</p>
+        <p><a class="btn-secondary" href="#/planos">Ver planos</a></p>`;
+      return;
+    }
+    body.innerHTML = `<p class="error">${esc(err.message)}</p>
+      <p><button type="button" class="btn-secondary" id="ai-retry-btn">Tentar de novo</button></p>`;
+    const retry = document.getElementById('ai-retry-btn');
+    if (retry) retry.onclick = () => startFichaAi({ kind, id, force });
+  } finally {
+    if (stillHere()) aiInlineStop();
+  }
+}
+
+function carteiraPaneHtml(type, id, status) {
+  return `<div id="pl-ficha" data-guide="ficha-carteira">
+    <p class="muted" style="margin:0 0 .6rem">Estado partilhado pela empresa.</p>
+    <div>${pipelineSelect(type, id, status)}</div>
+    <label style="display:block;margin-top:.8rem">Nota</label>
+    <textarea id="pl-note" rows="3" style="width:100%" maxlength="2000"></textarea>
+    <label style="display:block;margin-top:.5rem">Responsável</label>
+    <select id="pl-assignee" style="width:100%"><option value="">—</option></select>
+    <p style="margin-top:.5rem"><button class="btn-secondary" id="pl-save">Guardar</button></p>
+    <div id="pl-hist" class="muted" style="font-size:12px;margin-top:.6rem"></div>
+  </div>`;
+}
+
+function fitCell(f, type, id) {
+  if (!f) return '<span class="opp-fit none">—</span>';
+  const ruleRaw = (f.reasons || []).find((r) => String(r).startsWith('Regra:'))
+    || (/excluído por regra|fora da área geográfica|valor fora do intervalo/i.test(f.reason || '') ? f.reason : '');
+  const ruleShow = String(ruleRaw || '').replace(/^Regra:\s*/, '');
+  const title = [...(f.reasons || []), f.reason].filter(Boolean).join(' · ');
+  const stale = f.stale ? ' <span class="stale">desatualizado</span>' : '';
+  const fb = can('feedback_ia')
+    ? `<span class="fit-fb" data-type="${esc(type)}" data-id="${id}">👍 👎</span>`
+    : `<a class="fit-fb locked" href="#/planos" title="Feedback IA no plano Pro" onclick="event.stopPropagation()">🔒</a>`;
+  const regra = ruleShow ? `<small class="regra">${esc(ruleShow)}${can('perfil_empresa') ? ` · <a href="#/conta" onclick="event.stopPropagation()">editar perfil</a>` : ''}</small>` : '';
+  return `<span class="opp-fit" title="${esc(title)}">${f.fit}${stale}${regra}${fb}</span>`;
+}
+
+function bindFitFeedback(root) {
+  root.querySelectorAll('.fit-fb[data-type]').forEach((el) => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      document.querySelector('.fit-pop')?.remove();
+      const pop = document.createElement('div');
+      pop.className = 'fit-pop';
+      pop.innerHTML = `<button data-v="up">👍 Útil</button>${FB_REASONS.map(([c, l]) => `<button data-v="down" data-r="${c}">👎 ${l}</button>`).join('')}`;
+      document.body.appendChild(pop);
+      const r = el.getBoundingClientRect();
+      pop.style.left = `${r.left}px`;
+      pop.style.top = `${r.bottom + 4 + window.scrollY}px`;
+      const close = () => pop.remove();
+      pop.onclick = async (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        try {
+          const body = { target_type: 'fit', item_type: el.dataset.type, item_id: Number(el.dataset.id), verdict: b.dataset.v };
+          if (b.dataset.r) body.reason_code = b.dataset.r;
+          const res = await api('/api/ai/feedback', { method: 'POST', body: JSON.stringify(body) });
+          el.classList.add('voted');
+          el.title = b.dataset.r || b.dataset.v || '';
+          if (res.suggestion?.action === 'add_district' && confirm(res.suggestion.label)) {
+            await api('/api/ai/feedback/apply-suggestion', { method: 'POST', body: JSON.stringify({ district: res.suggestion.district }) });
+          }
+        } catch (err) { alert(err.message); }
+        close();
+      };
+      setTimeout(() => document.addEventListener('click', close, { once: true }), 0);
+    };
+  });
+}
+
+function platformName(url) {
+  if (!url) return 'ver anúncio';
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch { host = String(url).toLowerCase(); }
+  if (host.includes('vortal')) return 'Vortal';
+  if (host.includes('acingov')) return 'AcinGov';
+  if (host.includes('saphety')) return 'Saphety';
+  if (host.includes('anogov')) return 'AnoGov';
+  if (host.includes('compraspublicas')) return 'Compras Públicas';
+  return 'plataforma eletrónica';
+}
+
+function formalidadesPaneHtml(url) {
+  const name = platformName(url);
+  const link = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(name)} ↗</a>` : esc(name);
+  return `<p style="font-size:12.5px;line-height:1.6;margin:0">Submissão na ${link}. Prepare o DEUCP (Documento Europeu Único de Contratação Pública) e a assinatura digital qualificada. Este texto é informativo — não constitui aconselhamento jurídico.</p>`;
+}
+
+function filterBarHtml(kind, facets) {
+  const p = hashQuery();
+  const pro = can('filtros_avancados');
+  const distCount = new Map((facets?.districts || []).map((d) => [d.value, d.n]));
+  const hasFacets = !!(facets && Array.isArray(facets.districts));
+  const distOpts = [`<option value="">Todos</option>`].concat(DISTRICTS_UI.map((d) => {
+    const n = distCount.get(d);
+    const nShow = hasFacets ? (n ?? 0) : null;
+    const label = nShow != null ? `${d} (${nShow})` : d;
+    const dis = hasFacets && nShow === 0 ? ' disabled' : '';
+    return `<option value="${esc(d)}" ${p.get('district') === d ? 'selected' : ''}${dis}>${esc(label)}</option>`;
+  }));
+  const unkN = facets?.unknown?.n;
+  distOpts.push(`<option value="__unknown__" ${p.get('district') === '__unknown__' ? 'selected' : ''}>${unkN ? `Sem localização (${unkN})` : 'Sem localização'}</option>`);
+  const dl = p.get('deadline') || p.get('deadline_within') || '';
+  const deadOpts = [['', 'Qualquer'], ['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['60', '60 dias']]
+    .map(([v, l]) => `<option value="${v}" ${dl === v ? 'selected' : ''}>${l}</option>`).join('');
+  const procOpts = [`<option value="">Todos</option>`].concat((facets?.procedures || []).map((pr) =>
+    `<option value="${esc(pr.value)}" ${p.get('procedure') === pr.value ? 'selected' : ''}>${esc(pr.value)} (${pr.n})</option>`)).join('');
+  const adv = (inner) => (pro ? inner : `<span class="filt-lock">${inner} 🔒</span>`);
+  const procSel = kind === 'announcements'
+    ? `<label>Procedimento<select data-f="procedure" ${pro ? '' : 'disabled'}>${procOpts}</select></label>`
+    : '';
+  return `<div class="filter-bar" data-kind="${kind}" data-guide="${kind === 'opportunities' ? 'opp-filters' : kind === 'renewals' ? 'ren-filters' : 'ann-filters'}">
+    <label>Texto<input type="search" data-f="q" value="${esc(p.get('q') || '')}" placeholder="Objeto ou entidade"></label>
+    <label>Distrito<select data-f="district">${distOpts.join('')}</select></label>
+    <label>Prazo<select data-f="deadline">${deadOpts}</select></label>
+    ${adv(`<label>Valor mín.<input type="number" data-f="value_min" ${pro ? '' : 'disabled'} value="${esc(p.get('value_min') || '')}" placeholder="€"></label>
+      <label>Valor máx.<input type="number" data-f="value_max" ${pro ? '' : 'disabled'} value="${esc(p.get('value_max') || '')}" placeholder="€"></label>
+      <label>Entidade<input type="text" data-f="entity" ${pro ? '' : 'disabled'} value="${esc(p.get('entity') || '')}"></label>
+      <label>CPV<input type="text" data-f="cpv" ${pro ? '' : 'disabled'} value="${esc(p.get('cpv') || '')}" placeholder="prefixo"></label>
+      ${procSel}
+      <label>Ordenar<select data-f="sort" ${pro ? '' : 'disabled'}>
+        <option value="">Prazo</option>
+        <option value="value" ${p.get('sort') === 'value' ? 'selected' : ''}>Valor</option>
+        <option value="published" ${p.get('sort') === 'published' ? 'selected' : ''}>Publicação</option>
+        <option value="fit" ${p.get('sort') === 'fit' ? 'selected' : ''}>Fit</option>
+      </select></label>
+      <label>Ordem<select data-f="order" ${pro ? '' : 'disabled'}>
+        <option value="asc" ${p.get('order') !== 'desc' ? 'selected' : ''}>Asc</option>
+        <option value="desc" ${p.get('order') === 'desc' ? 'selected' : ''}>Desc</option>
+      </select></label>`)}
+    <label class="muted" style="flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0">
+      <input type="checkbox" data-f="only_new" ${p.get('only_new') === '1' ? 'checked' : ''}> Só novas</label>
+    <button type="button" class="btn-secondary" data-clear>Limpar filtros</button>
+  </div>`;
+}
+
+function bindFilterBar(root) {
+  const bar = root.querySelector('.filter-bar');
+  if (!bar) return;
+  const applyFromBar = () => {
+    setHashQuery((p) => {
+      p.delete('page');
+      bar.querySelectorAll('[data-f]').forEach((el) => {
+        const k = el.dataset.f;
+        if (el.type === 'checkbox') {
+          if (el.checked) p.set(k, '1'); else p.delete(k);
+        } else if (!el.value) p.delete(k);
+        else p.set(k, el.value);
+      });
+    });
+  };
+  bar.querySelectorAll('select, input[type="checkbox"]').forEach((el) => {
+    if (el.disabled) {
+      el.onclick = (e) => { e.preventDefault(); location.hash = '#/planos'; };
+      return;
+    }
+    el.onchange = applyFromBar;
+  });
+  bar.querySelectorAll('input[type="search"], input[type="number"], input[type="text"]').forEach((el) => {
+    if (el.disabled) {
+      el.onclick = () => { location.hash = '#/planos'; };
+      return;
+    }
+    el.onchange = applyFromBar;
+  });
+  bar.querySelector('[data-clear]').onclick = () => {
+    const base = location.hash.split('?')[0];
+    location.hash = base;
+  };
+  bar.querySelectorAll('.filt-lock').forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); location.hash = '#/planos'; };
+  });
+}
+
+function filterQueryString() {
+  const p = hashQuery();
+  const out = new URLSearchParams();
+  ['q', 'district', 'deadline', 'deadline_within', 'value_min', 'value_max', 'entity', 'procedure', 'cpv', 'sort', 'order', 'only_new', 'page'].forEach((k) => {
+    if (p.get(k)) out.set(k, p.get(k));
+  });
+  return out.toString();
+}
+
+function pagerHtml(total, page, size) {
+  const last = Math.max(0, Math.ceil((Number(total) || 0) / (size || 50)) - 1);
+  if (last <= 0) return '';
+  return `<div class="pager">
+    <button ${page <= 0 ? 'disabled' : ''} data-pg="${page - 1}">${ico('back')} Anterior</button>
+    <span>Página ${page + 1} de ${last + 1}</span>
+    <button ${page >= last ? 'disabled' : ''} data-pg="${page + 1}">Seguinte ${ico('next')}</button>
+  </div>`;
+}
+
+function bindPager(root) {
+  root.querySelectorAll('.pager button[data-pg]').forEach((b) => {
+    if (b.disabled) return;
+    b.onclick = () => setHashQuery((p) => p.set('page', b.dataset.pg));
   });
 }
 
@@ -145,7 +1020,15 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-function hideTrialBanner() { const t = document.getElementById('trial-banner'); if (t) { t.hidden = true; t.innerHTML = ''; } }
+function hideTrialBanner() {
+  const t = document.getElementById('trial-banner');
+  if (t) { t.hidden = true; t.innerHTML = ''; }
+  hideAiQuotaBanner();
+}
+function hideAiQuotaBanner() {
+  const t = document.getElementById('ai-quota-banner');
+  if (t) { t.hidden = true; t.innerHTML = ''; t.className = ''; }
+}
 
 /* Mensagens de validação do browser em português (por omissão vêm no idioma do browser). */
 function localizeValidation(form) {
@@ -251,7 +1134,7 @@ function renderLogin() {
   app.innerHTML = `
     <div class="card login-box">
       ${wordmark(24)}
-      <p class="muted">Radar comercial de contratos públicos</p>
+      <p class="muted">Assistente para ganhar concursos públicos</p>
       <form id="login-form">
         <label>Utilizador</label>
         <input type="text" name="username" autocomplete="username" required>
@@ -261,7 +1144,7 @@ function renderLogin() {
         <p><button type="submit">Entrar</button></p>
       </form>
       <p class="login-foot"><a href="#/recuperar">Esqueci-me da password</a></p>
-      <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis — 7 dias</a></p>
+      <p class="login-foot">Ainda não tem conta? <a href="#/registo">Comece grátis</a></p>
     </div>`;
   localizeValidation(document.getElementById('login-form'));
   document.getElementById('login-form').onsubmit = async (e) => {
@@ -269,6 +1152,8 @@ function renderLogin() {
     const fd = new FormData(e.target);
     try {
       await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }) });
+      clearClientSession();
+      await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
       document.getElementById('login-error').textContent = err.message === 'unauthorized' ? 'Credenciais inválidas' : err.message;
@@ -276,7 +1161,7 @@ function renderLogin() {
   };
 }
 
-/* ---------- Inscrição (7 dias grátis) ---------- */
+/* ---------- Inscrição (plano Grátis; trial Pro é opt-in) ---------- */
 async function renderRegister() {
   topbar.hidden = true;
   hideTrialBanner();
@@ -285,7 +1170,7 @@ async function renderRegister() {
     <div class="card register-box">
       ${wordmark(24)}
       <h2 style="margin:0.4rem 0 0.2rem">Comece grátis</h2>
-      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado. Pode experimentar o Pro 7 dias grátis a qualquer momento.</p>
+      <p class="muted" style="margin:0 0 1rem">Sem cartão. Diga-nos a sua atividade e o radar fica pré-configurado. O teste Pro de 7 dias activa-se depois, nos planos.</p>
       <form id="reg-form">
         <div class="reg-grid">
           <div><label>Primeiro nome *</label><input type="text" name="first_name" required></div>
@@ -302,18 +1187,18 @@ async function renderRegister() {
         </div>
 
         <label style="margin-top:0.8rem">A sua atividade</label>
-        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: pirotecnia, fogo de artifício) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
+        <p class="muted" style="margin:0 0 0.4rem;font-size:0.82rem">Palavras-chave (ex.: reabilitação, iluminação pública, dispositivos médicos) e/ou códigos CPV. Pesquise pelo nome da atividade e clique para adicionar.</p>
         <input type="text" name="terms" placeholder="Palavras-chave separadas por vírgula">
         <div id="reg-cpv-chips" class="cpv-chips" style="margin:0.5rem 0"></div>
         <div class="inline" style="gap:0.5rem;margin-top:0.4rem">
-          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção)" style="flex:1">
+          <input type="text" id="reg-cpv-q" placeholder="Pesquisar CPV pela atividade (ex.: construção, energia, saúde)" style="flex:1">
           <button type="button" class="btn-secondary" id="reg-cpv-btn">${ico('search')} Procurar</button>
         </div>
         <div id="reg-cpv-results" style="margin-top:0.4rem"></div>
 
         <div class="error" id="reg-error" style="margin-top:0.6rem"></div>
         <p style="margin-top:0.9rem"><button type="submit" id="reg-submit">Criar conta e começar</button></p>
-        <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie score, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
+        <p class="muted" style="font-size:0.8rem">A conta começa no plano Grátis. Desbloqueie pontuação, IA e renovações com o Pro (7 dias grátis, sem cartão) ou o Business.</p>
         <p class="muted" style="font-size:0.78rem">Ao criar conta, aceita os <a href="/termos" target="_blank" rel="noopener">Termos e Condições</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
       </form>
       <p class="login-foot">Já tem conta? <a href="#/login">Entrar</a></p>
@@ -343,6 +1228,25 @@ async function renderRegister() {
   };
   document.getElementById('reg-cpv-btn').onclick = doSearch;
   document.getElementById('reg-cpv-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } };
+  const termsInp = document.querySelector('#reg-form [name=terms]');
+  const maybeHintMedicalCpv = async () => {
+    const raw = String(termsInp?.value || '');
+    if (!/dispositiv[oa]s?\s+m[eé]dic/i.test(raw)) return;
+    if ([...chosen.keys()].some((c) => c.replace(/\D/g, '').startsWith('331'))) return;
+    try {
+      const d = await fetch('/api/public/cpv?q=' + encodeURIComponent('dispositivos médicos')).then((r) => r.json());
+      const pick = (d.items || []).find((c) => String(c.code).replace(/\D/g, '').startsWith('331'))
+        || { code: '33100000-1', designation: 'Equipamento médico' };
+      chosen.set(pick.code, pick.designation);
+      renderChips();
+      const box = document.getElementById('reg-cpv-results');
+      if (box && !box.dataset.hinted) {
+        box.dataset.hinted = '1';
+        box.insertAdjacentHTML('afterbegin', '<p class="hint">Adicionámos o CPV de dispositivos médicos (331) para o radar privilegiar fornecimento de equipamento, não obras hospitalares.</p>');
+      }
+    } catch { /* silencioso */ }
+  };
+  if (termsInp) termsInp.addEventListener('blur', () => { maybeHintMedicalCpv(); });
   localizeValidation(document.getElementById('reg-form'));
 
   document.getElementById('reg-form').onsubmit = async (e) => {
@@ -355,15 +1259,19 @@ async function renderRegister() {
     if (terms.length === 0 && cpv_codes.length === 0) {
       errBox.textContent = 'Escolha pelo menos uma palavra-chave ou código CPV da sua atividade.'; return;
     }
+    await maybeHintMedicalCpv();
+    const cpvAfterHint = [...chosen.keys()];
     const btn = document.getElementById('reg-submit');
     btn.disabled = true; btn.textContent = 'A criar conta…';
     try {
       await api('/api/auth/register', { method: 'POST', body: JSON.stringify({
         first_name: fd.get('first_name'), last_name: fd.get('last_name'), phone: fd.get('phone'),
         email: fd.get('email'), password: fd.get('password'),
-        company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes,
+        company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes: cpvAfterHint,
       }) });
-      window._me = null;
+      clearClientSession();
+      try { sessionStorage.setItem('br_onboard', '1'); } catch { /* ignore */ }
+      await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
       errBox.textContent = err.message; btn.disabled = false; btn.textContent = 'Criar conta e começar';
@@ -390,13 +1298,43 @@ function renderTrialBanner(me) {
     cls = 'past-due'; title = 'Pagamento pendente'; sub = 'Regularize para manter o plano.'; cta = 'Regularizar';
   } else if (plan === 'free') {
     // Convite discreto a experimentar/upgrade — sem alarme (o free é um plano válido).
-    title = 'Plano Grátis'; sub = 'Desbloqueie score, IA e renovações.'; cta = 'Fazer upgrade';
+    title = 'Plano Grátis'; sub = 'Desbloqueie pontuação, IA e renovações.'; cta = 'Fazer upgrade';
   } else {
     host.hidden = true; host.innerHTML = ''; return;   // Pro/Business ativos: sem banner
   }
   host.hidden = false;
   host.className = cls;
   host.innerHTML = `<div class="tb-title">${title}</div><div class="tb-sub">${sub}</div><a href="#/planos">${cta}</a>`;
+}
+
+function renderAiQuotaBanner(caps, me) {
+  const host = document.getElementById('ai-quota-banner');
+  if (!host) return;
+  if (!me || me.is_admin) { hideAiQuotaBanner(); return; }
+  const ai = caps?.ai_usage;
+  if (!ai || !ai.enabled || !ai.cap) { hideAiQuotaBanner(); return; }
+  const level = ai.level || 'ok';
+  if (level === 'ok') { hideAiQuotaBanner(); return; }
+  const pct = Math.min(100, Math.round((Number(ai.used) / Number(ai.cap)) * 100));
+  const reset = ai.reset_label || '00:00 do próximo ciclo';
+  let title = `${ai.used} / ${ai.cap} análises`;
+  let sub = `O teto reinicia a ${reset}.`;
+  if (level === 'capped') {
+    title = `Teto de análises atingido (${ai.used} / ${ai.cap})`;
+    sub = `Novas análises ficam bloqueadas até ${reset}. Reabrir uma ficha já analisada não conta.`;
+  } else if (level === 'alert') {
+    title = `Análises quase no teto (${ai.used} / ${ai.cap})`;
+    sub = `Já usou ${pct}% deste ciclo. Reinicia a ${reset}.`;
+  } else {
+    title = `A aproximar-se do teto de análises (${ai.used} / ${ai.cap})`;
+    sub = `Já usou ${pct}% deste ciclo. Reinicia a ${reset}.`;
+  }
+  host.hidden = false;
+  host.className = level === 'warn' ? 'warn' : (level === 'capped' ? 'capped' : 'alert');
+  host.innerHTML = `<div class="tb-title">${esc(title)}</div>
+    <div class="tb-sub">${esc(sub)}</div>
+    <div class="tb-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+    ${level === 'capped' ? '<a href="#/planos">Ver planos</a>' : ''}`;
 }
 
 /* Preenche o bloco "Atividade" da barra lateral com o perfil ativo. */
@@ -412,12 +1350,14 @@ async function updateSidebar() {
     const active = profiles.find((p) => String(p.id) === ctx) ?? profiles[0];
     const nT = active.terms?.length ?? 0;
     const nC = (active.cpv_codes ?? []).length;
-    const sched = { diaria: 'diária', semanal: 'semanal', mensal: 'mensal' }[active.schedule] ?? (active.schedule || '—');
+    const sched = { daily: 'diária', weekly: 'semanal', manual: 'manual' }[active.schedule] ?? (active.schedule || '—');
+    const recolha = active.last_run_at ? `Última recolha: ${fmtRecolha(active.last_run_at)}` : '';
     el.innerHTML = `<div class="side-section">
       <div class="lbl">ATIVIDADE</div>
       <a class="side-activity" href="#/config/profiles">
         <div class="top"><span class="nm">${esc(active.name)}</span>${ico('chevron', 13)}</div>
         <div class="mt">${nT} termo${nT === 1 ? '' : 's'} · ${nC} CPV · recolha ${esc(sched)}</div>
+        ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
       </a>
     </div>`;
   } catch { /* silencioso — não bloqueia a navegação */ }
@@ -426,10 +1366,128 @@ async function updateSidebar() {
 /* ---------- Planos (grátis / pro / business): trial, upgrade e pagamento ---------- */
 const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
 const PLAN_FEATURES = {
-  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Digest semanal'],
-  pro: ['Tudo do Grátis', 'Oportunidades com score + fit IA', 'Radar de renovações', 'Concursos europeus (TED)', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação Excel', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores (seats)', 'Integração API (CRM / ERP)', 'Uso elevado de IA', 'Exportação avançada'],
+  free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
+  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno e dossier de resposta', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '40 análises de IA / 30 dias por utilizador', '2 utilizadores'],
+  business: ['Tudo do Pro', 'Rascunho assistido de proposta (.docx)', 'Previsão de valor de fecho', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', '250 análises de IA / 30 dias por utilizador', 'Apoio prioritário'],
 };
+
+function closeAccountConfirm() {
+  document.getElementById('acct-confirm')?.remove();
+}
+
+function openAccountConfirm({ title, bodyHtml, confirmLabel, keepLabel = 'Manter', danger = false, infoOnly = false, onConfirm }) {
+  closeAccountConfirm();
+  const wrap = document.createElement('div');
+  wrap.id = 'acct-confirm';
+  wrap.className = 'modal-backdrop';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+  wrap.setAttribute('aria-labelledby', 'acct-confirm-title');
+  const actions = infoOnly
+    ? `<button type="button" class="btn-secondary" data-act="keep">${esc(keepLabel)}</button>`
+    : `<button type="button" class="btn-secondary" data-act="keep">${esc(keepLabel)}</button>
+       <button type="button" class="${danger ? 'btn-danger' : ''}" data-act="go">${esc(confirmLabel)}</button>`;
+  wrap.innerHTML = `<div class="modal-box">
+    <button class="modal-x" type="button" aria-label="Fechar">×</button>
+    <h3 id="acct-confirm-title" style="margin:0 0 .5rem">${esc(title)}</h3>
+    <div class="muted" style="margin:0 0 1.1rem;line-height:1.55">${bodyHtml}</div>
+    <div class="inline" style="gap:.5rem;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+    <div class="acct-confirm-out"></div>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('.modal-x').onclick = closeAccountConfirm;
+  wrap.querySelector('[data-act=keep]').onclick = closeAccountConfirm;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeAccountConfirm(); });
+  const go = wrap.querySelector('[data-act=go]');
+  if (!go) return;
+  go.onclick = async () => {
+    go.disabled = true;
+    const out = wrap.querySelector('.acct-confirm-out');
+    out.innerHTML = '<p class="muted">A processar…</p>';
+    try {
+      await onConfirm();
+      closeAccountConfirm();
+    } catch (err) {
+      go.disabled = false;
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  };
+}
+
+function promptDowngradeToFree({ memberCount, onDone }) {
+  if (memberCount > 1) {
+    openAccountConfirm({
+      title: 'Passar para Grátis',
+      bodyHtml: '<p style="margin:0">O plano Grátis permite apenas 1 utilizador. Remova os outros membros da equipa em Conta → Equipa e volte a tentar.</p>',
+      keepLabel: 'Fechar',
+      infoOnly: true,
+    });
+    return;
+  }
+  openAccountConfirm({
+    title: 'Passar para Grátis',
+    bodyHtml: '<p style="margin:0">A subscrição paga é cancelada já. Fica o plano Grátis: 1 utilizador, sem análises IA, com os limites do Grátis. As faturas já emitidas mantêm-se.</p>',
+    confirmLabel: 'Passar para Grátis',
+    keepLabel: 'Manter o plano',
+    onConfirm: async () => {
+      await api('/api/billing/downgrade-free', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      window._me = null;
+      window._caps = null;
+      onDone();
+    },
+  });
+}
+
+function promptDeleteAccount({ companyName, onDone }) {
+  openAccountConfirm({
+    title: 'Cancelar e apagar a conta',
+    bodyHtml: `<p style="margin:0 0 .6rem">Isto cancela a subscrição, apaga <strong>${esc(companyName || 'a empresa')}</strong> e todos os dados (equipa, carteira, radar). Não dá para recuperar.</p>
+      <p style="margin:0">Se só quer deixar de pagar, passe para o plano Grátis.</p>`,
+    confirmLabel: 'Apagar a conta',
+    keepLabel: 'Manter a conta',
+    danger: true,
+    onConfirm: async () => {
+      await api('/api/account/delete', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      window._me = null;
+      window._caps = null;
+      onDone();
+    },
+  });
+}
+
+function renderCancelAccountBlock() {
+  return `<div class="acct-danger">
+    <h3>Cancelar conta</h3>
+    <p class="muted" style="margin:.2rem 0 .8rem">Cancela a subscrição e apaga a empresa e todos os dados. Não dá para recuperar.</p>
+    <button type="button" class="btn-danger" id="acct-delete">Cancelar e apagar a conta</button>
+  </div>`;
+}
+
+function wireAccountLifecycle({ companyName, memberCount }) {
+  const freeBtn = document.getElementById('bill-free');
+  if (freeBtn) {
+    freeBtn.onclick = () => promptDowngradeToFree({
+      memberCount,
+      onDone: () => { location.hash = '#/conta'; renderAccount(); },
+    });
+  }
+  document.querySelectorAll('[data-act=downgrade]').forEach((b) => {
+    b.onclick = () => promptDowngradeToFree({
+      memberCount,
+      onDone: () => { location.hash = '#/conta'; },
+    });
+  });
+  const delBtn = document.getElementById('acct-delete');
+  if (delBtn) {
+    delBtn.onclick = () => promptDeleteAccount({
+      companyName,
+      onDone: async () => {
+        await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        location.hash = '#/login';
+      },
+    });
+  }
+}
 
 async function renderPlans() {
   topbar.hidden = false;
@@ -448,7 +1506,7 @@ async function renderPlans() {
     const paid = p.key !== 'free';
     let cta = '';
     if (isCurrent) cta = `<button class="btn-secondary" disabled>Plano atual</button>`;
-    else if (p.key === 'free') cta = '';
+    else if (p.key === 'free') cta = `<button type="button" class="btn-secondary" data-act="downgrade">Passar para Grátis</button>`;
     else if (p.key === 'pro' && canTrial) cta = `<button class="plan-cta" data-act="trial">Experimentar 7 dias grátis</button>`;
     else cta = `<button class="plan-cta" data-plan="${p.key}" data-act="checkout">${current === 'free' ? 'Subscrever' : 'Mudar para ' + PLAN_LABEL[p.key]}</button>`;
     return `<div class="plan-box${isCurrent ? ' current' : ''}" style="flex:1;min-width:210px;border:1px solid ${isCurrent ? 'var(--brand)' : 'var(--line,#e2e8f0)'};border-radius:12px;padding:1.1rem;display:flex;flex-direction:column;gap:.6rem">
@@ -469,8 +1527,11 @@ async function renderPlans() {
       ${!cat.billing_enabled ? '<div class="hint" style="margin-top:1rem">Os pagamentos ainda não estão ativos nesta instalação. O teste gratuito funciona; para subscrever contacte o suporte.</div>' : ''}
       <div id="plan-method" style="margin-top:1rem"></div>
       <div id="plan-result" style="margin-top:1rem"></div>
+      ${renderCancelAccountBlock()}
       <p style="margin-top:1.2rem"><a href="#/conta">← Conta e subscrição</a></p>
     </div>`;
+
+  wireAccountLifecycle({ companyName: c.name, memberCount: Number(summary.members) || 1 });
 
   app.querySelectorAll('.plan-cta').forEach((b) => {
     b.onclick = async () => {
@@ -508,55 +1569,297 @@ async function renderPlans() {
   });
 }
 
-/* ---------- Conta: plano, uso de IA e equipa (seats) ---------- */
+/* ---------- Conta: plano, faturas Moloni e equipa (seats) ---------- */
+function billingPeriodLine(summary) {
+  const b = summary.billing || {};
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('pt-PT') : '');
+  switch (b.mode) {
+    case 'trial':
+      return `Em teste${b.trial_days_left != null ? ` · ${b.trial_days_left} dia(s) restantes` : ''}${b.trial_ends_at ? ` · termina a ${fmt(b.trial_ends_at)}` : ''}`;
+    case 'subscription':
+      return `Subscrição automática${b.renews_at ? ` · próxima renovação a ${fmt(b.renews_at)}` : ''}`;
+    case 'one_time':
+      return `Pagamento pontual (sem renovação automática)${b.access_until ? ` · acesso até ${fmt(b.access_until)}` : ''}`;
+    case 'past_due':
+      return `Pagamento pendente${b.renews_at ? ` · próxima tentativa a ${fmt(b.renews_at)}` : ''}`;
+    case 'canceled':
+      return `Subscrição cancelada${b.access_until ? ` · acesso até ${fmt(b.access_until)}` : ''}`;
+    case 'free':
+      return 'Plano Grátis';
+    default:
+      return '';
+  }
+}
+
+function renderInvoicesBlock(invoices) {
+  const items = invoices?.items || [];
+  const money = (cents, cur) => (Number(cents) / 100).toLocaleString('pt-PT', {
+    style: 'currency', currency: String(cur || 'eur').toUpperCase(),
+  });
+  const pdfLabel = (inv) => {
+    switch (inv.moloni_status) {
+      case 'ok': return '';
+      case 'draft': return 'A emitir';
+      case 'error': return 'Emissão falhou';
+      case 'skipped': return 'Indisponível';
+      default: return 'A processar';
+    }
+  };
+  const rows = items.map((inv) => {
+    const date = new Date(inv.created_at).toLocaleDateString('pt-PT');
+    const dl = inv.downloadable
+      ? `<a class="inv-dl" href="/api/billing/invoices/${inv.id}/pdf">${ico('download')} Descarregar</a>`
+      : `<span class="muted">${esc(pdfLabel(inv))}</span>`;
+    return `<tr><td>${esc(date)}</td><td>${money(inv.amount_cents, inv.currency)}</td><td>${dl}</td></tr>`;
+  }).join('');
+  return `
+    <div class="acct-section">
+      <h3 style="margin:0">Faturas</h3>
+      <p class="muted" style="margin:.3rem 0 .6rem">Cada pagamento Stripe origina uma fatura Moloni. Descarregue o PDF nesta lista.</p>
+      ${items.length
+        ? `<table class="inv-table"><thead><tr><th>Data</th><th>Valor</th><th>PDF</th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<p class="muted" style="margin:.4rem 0 0">Ainda não há faturas nesta conta.</p>'}
+      <div id="inv-result"></div>
+    </div>`;
+}
+
+function wireInvoices() {
+  document.querySelectorAll('a.inv-dl').forEach((a) => {
+    a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('inv-result');
+      if (out) out.innerHTML = '<p class="muted">A descarregar…</p>';
+      try {
+        const res = await fetch(a.getAttribute('href'));
+        if (res.status === 401) { location.hash = '#/login'; return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const dispo = res.headers.get('Content-Disposition') || '';
+        const m = /filename="?([^"]+)"?/i.exec(dispo);
+        const name = m ? m[1] : 'fatura.pdf';
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        if (out) out.innerHTML = '';
+      } catch (err) {
+        if (out) out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+        else alert(err.message);
+      }
+    });
+  });
+}
+
+function wireBillingPortal() {
+  const btn = document.getElementById('bill-portal');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const out = document.getElementById('bill-result');
+    if (out) out.innerHTML = '<p class="muted">A abrir a gestão de pagamentos…</p>';
+    try {
+      const r = await api('/api/billing/portal', { method: 'POST' });
+      if (r.url) { location.href = r.url; return; }
+      throw new Error('Não foi possível abrir a gestão de pagamentos.');
+    } catch (err) {
+      if (out) out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      else alert(err.message);
+    }
+  };
+}
+
 async function renderAccount() {
   topbar.hidden = false;
   const paid = /[?&]pago=1/.test(location.hash);
   if (paid) { window._me = null; window._caps = null; }   // força releitura do plano após pagamento
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let caps, summary, seats;
+  let caps, summary, seats, invoices = { items: [] }, propProfile;
   try {
     [caps, summary] = await Promise.all([api('/api/me/capabilities'), api('/api/billing/summary')]);
   } catch { return; }
   window._caps = caps;
   try { seats = await api('/api/seats'); } catch { seats = null; }
+  try { invoices = await api('/api/billing/invoices'); } catch { invoices = { items: [] }; }
+  try { propProfile = await api('/api/company/proposal-profile'); }
+  catch (err) { propProfile = err.planRequired ? 'locked' : null; }
   const c = summary.company || {};
-  const plan = caps.plan || 'free';
-  const statusLabel = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' }[c.subscription_status] || c.subscription_status || '—';
+  const b = summary.billing || {};
+  const plan = summary.plan || 'free';
+  const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
-  const seatMax = caps.seats?.max ?? 1;
-  const seatUsed = caps.seats?.used ?? 1;
+  const barColor = ai.level === 'capped' || ai.level === 'alert' ? '#e11d48' : (ai.level === 'warn' ? '#d97706' : 'var(--brand)');
+  const resetLine = ai.reset_label
+    ? `Reinicia a ${ai.reset_label}.`
+    : '';
+  const { used: seatUsed, max: seatMax } = seatOccupancy(seats, caps);
+  const memberCount = (seats?.members || []).length || Number(summary.members) || 1;
+  const upgradeLabel = plan === 'business' ? 'Ver planos' : plan === 'free' ? 'Fazer upgrade' : 'Mudar de plano';
 
   app.innerHTML = `
     <div class="card" style="max-width:820px;margin:1.5rem auto">
-      <div class="eyebrow" style="color:var(--brand)">Conta</div>
-      ${paid ? '<div class="hint" style="margin:.4rem 0">Pagamento recebido. Assim que for confirmado pelo banco, o plano é ativado automaticamente — pode demorar alguns instantes nos métodos MB WAY / Multibanco / transferência.</div>' : ''}
+      <div class="eyebrow" style="color:var(--brand)">Conta e subscrição</div>
+      ${paid ? '<div class="hint" style="margin:.4rem 0">Pagamento recebido. Assim que for confirmado pelo banco, o plano é ativado automaticamente — pode demorar alguns instantes nos métodos MB WAY / Multibanco / transferência. A fatura Moloni aparece abaixo quando for emitida.</div>' : ''}
       <h2 style="margin:.3rem 0 .2rem">${esc(c.name ?? window._me?.username ?? '')}</h2>
       <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
 
       <div class="inline" style="gap:1rem;flex-wrap:wrap;align-items:stretch">
-        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
+        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem" data-guide="acct-plan">
           <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Plano</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${PLAN_LABEL[plan]}</div>
-          <div class="muted" style="font-size:.85rem">Estado: ${esc(statusLabel)}${
-            c.subscription_status === 'trialing' && c.trial_days_left != null ? ` · ${c.trial_days_left} dia(s) restantes` : ''}${
-            c.renewal_at ? ` · renova a ${new Date(c.renewal_at).toLocaleDateString('pt-PT')}` : ''}</div>
-          <p style="margin:.8rem 0 0"><a class="btn" href="#/planos" style="display:inline-block;padding:.45rem .9rem;background:var(--brand);color:#fff;border-radius:8px;text-decoration:none;font-size:.85rem">${plan === 'business' ? 'Ver planos' : 'Fazer upgrade'}</a></p>
+          <div class="muted" style="font-size:.85rem">${esc(period)}</div>
+          <div class="bill-actions">
+            <a class="btn" href="#/planos">${esc(upgradeLabel)}</a>
+            ${plan !== 'free' ? '<button type="button" class="btn-secondary" id="bill-free">Passar para Grátis</button>' : ''}
+            ${b.can_manage_payment ? '<button type="button" class="btn-secondary" id="bill-portal">Gerir subscrição</button>' : ''}
+          </div>
+          <div id="bill-result"></div>
         </div>
 
         <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
-          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA este mês</div>
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${ai.used}${ai.cap > 0 ? ` <span style="font-size:.9rem;font-weight:400;color:var(--muted,#64748b)">/ ${ai.cap}</span>` : ''}</div>
-          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct >= 100 ? '#e11d48' : 'var(--brand)'}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
-          <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.enabled ? 'O teto é indicativo — avisamos, não bloqueamos.' : 'Contagem informativa; sem bloqueio.'}</div>
+          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
+          <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.cap > 0
+            ? `${ai.remaining ?? Math.max(0, ai.cap - ai.used)} restantes neste ciclo. ${resetLine}${ai.enabled && ai.level === 'capped' ? ' Novas análises estão bloqueadas.' : ''}`
+            : 'Contagem informativa.'}</div>
         </div>
       </div>
 
+      ${renderInvoicesBlock(invoices)}
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
+      <div id="company-profile-block" data-guide="acct-profile" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      ${renderProposalProfileBlock(propProfile, plan)}
+      <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      ${renderCancelAccountBlock()}
     </div>`;
 
   wireSeats();
+  wireInvoices();
+  wireBillingPortal();
+  wireAccountLifecycle({ companyName: c.name, memberCount });
+  await fillCompanyProfileBlock();
+  wireProposalProfile();
+  fillNotifyBlock();
+  notifyGuide('conta');
+}
+
+/** Lugares = membros + convites pendentes (igual ao POST /api/seats/invite). */
+function seatOccupancy(seats, caps) {
+  const max = Number(seats?.seats?.max ?? caps?.seats?.max ?? 1) || 1;
+  const listed = (seats?.members?.length || 0) + (seats?.invites?.length || 0);
+  const used = seats?.seats?.used != null
+    ? Number(seats.seats.used)
+    : (listed > 0 ? listed : Number(caps?.seats?.used ?? 1));
+  return { used, max };
+}
+
+function renderProposalProfileBlock(profile, plan) {
+  if (profile === 'locked' || (profile == null && !can('geracao_propostas'))) {
+    return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+      <h3 style="margin:0 0 .4rem">Perfil para propostas</h3>
+      <p class="muted">Disponível no plano Business: habilitações, referências e margem mínima reutilizados em todos os concursos.</p>
+    </div>`;
+  }
+  const p = profile || { legal_name: '', nif: '', cae: '', certifications: [], technical_capabilities: '', portfolio: '', references: [], key_team: [], min_margin_pct: '', notes: '', missing: [] };
+  const refs = (p.references || []).map((r) => `${r.project || ''} | ${r.client || ''} | ${r.year || ''} | ${r.value || ''}`).join('\n');
+  const team = (p.key_team || []).map((t) => `${t.name || ''} | ${t.role || ''} | ${t.cv_summary || ''}`).join('\n');
+  return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    <h3 style="margin:0 0 .3rem">Perfil para propostas</h3>
+    <p class="muted" style="margin:0 0 .8rem">Preenchido uma vez e reutilizado em todos os rascunhos. O que faltar é marcado no .docx, nunca inventado.</p>
+    ${(p.missing || []).length ? `<p class="hint">Ainda em falta: ${esc(p.missing.join(', '))}</p>` : ''}
+    <form id="prop-profile-form" class="prop-profile-form">
+      <div class="reg-grid">
+        <div><label>Denominação social</label><input name="legal_name" value="${esc(p.legal_name || '')}"></div>
+        <div><label>NIF</label><input name="nif" value="${esc(p.nif || '')}" maxlength="9"></div>
+      </div>
+      <label>CAE</label><input name="cae" value="${esc(p.cae || '')}">
+      <label>Habilitações / certidões (uma por linha)</label>
+      <textarea name="certifications" rows="3">${esc((p.certifications || []).join('\n'))}</textarea>
+      <label>Capacidades técnicas</label>
+      <textarea name="technical_capabilities" rows="3">${esc(p.technical_capabilities || '')}</textarea>
+      <label>Portefólio de serviços</label>
+      <textarea name="portfolio" rows="3">${esc(p.portfolio || '')}</textarea>
+      <label>Referências (projeto | cliente | ano | valor)</label>
+      <textarea name="references" rows="4" placeholder="Requalificação do parque | CM Sintra | 2024 | 85000">${esc(refs)}</textarea>
+      <p class="muted" style="margin:.2rem 0 .6rem"><button type="button" class="lnk" id="prop-suggest-refs">Sugerir referências a partir de contratos ganhos no BASE</button></p>
+      <label>Equipa-chave (nome | função | CV resumido)</label>
+      <textarea name="key_team" rows="3">${esc(team)}</textarea>
+      <label>Margem mínima aceitável (%)</label>
+      <input type="number" name="min_margin_pct" min="0" max="100" step="0.1" value="${p.min_margin_pct ?? ''}" placeholder="para cruzar com a previsão de fecho">
+      <label>Notas</label>
+      <textarea name="notes" rows="2">${esc(p.notes || '')}</textarea>
+      <p style="margin:.8rem 0 0"><button type="submit">Guardar perfil</button></p>
+      <div id="prop-profile-out"></div>
+    </form>
+  </div>`;
+}
+
+function parsePipeRows(text, keys) {
+  return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split('|').map((s) => s.trim());
+    const o = {};
+    keys.forEach((k, i) => { o[k] = parts[i] || ''; });
+    return o;
+  });
+}
+
+function wireProposalProfile() {
+  const form = document.getElementById('prop-profile-form');
+  if (!form) return;
+  const out = document.getElementById('prop-profile-out');
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const refs = parsePipeRows(fd.get('references'), ['project', 'client', 'year', 'value']).map((r) => ({
+      project: r.project, client: r.client,
+      year: r.year ? Number(r.year) : null,
+      value: r.value ? Number(String(r.value).replace(/\s/g, '').replace(',', '.')) : null,
+    }));
+    const team = parsePipeRows(fd.get('key_team'), ['name', 'role', 'cv_summary']);
+    const margin = String(fd.get('min_margin_pct') || '').trim();
+    out.innerHTML = '<span class="muted">A guardar…</span>';
+    try {
+      await api('/api/company/proposal-profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          legal_name: fd.get('legal_name'),
+          nif: fd.get('nif'),
+          cae: fd.get('cae'),
+          certifications: String(fd.get('certifications') || '').split('\n').map((s) => s.trim()).filter(Boolean),
+          technical_capabilities: fd.get('technical_capabilities'),
+          portfolio: fd.get('portfolio'),
+          references: refs,
+          key_team: team,
+          min_margin_pct: margin === '' ? null : Number(margin),
+          notes: fd.get('notes'),
+        }),
+      });
+      out.innerHTML = '<p class="hint">Perfil guardado. Os próximos rascunhos de proposta usam estes dados.</p>';
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  };
+  const suggest = document.getElementById('prop-suggest-refs');
+  if (suggest) suggest.onclick = async () => {
+    suggest.disabled = true;
+    try {
+      const r = await api('/api/company/proposal-profile/suggested-references');
+      const ta = form.querySelector('[name="references"]');
+      const extra = (r.items || []).map((i) => [i.project, i.client, i.year || '', i.value || ''].join(' | ')).join('\n');
+      if (!extra) { out.innerHTML = '<p class="muted">Não encontrámos contratos adjudicados ao NIF desta conta.</p>'; return; }
+      ta.value = [ta.value.trim(), extra].filter(Boolean).join('\n');
+      out.innerHTML = `<p class="hint">${r.items.length} referência(s) sugerida(s) a partir do histórico BASE. Revisa e guarda.</p>`;
+    } catch (err) {
+      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally { suggest.disabled = false; }
+  };
 }
 
 function renderSeatsBlock(seats, used, max, plan) {
@@ -570,7 +1873,7 @@ function renderSeatsBlock(seats, used, max, plan) {
     <tr><td colspan="2" class="muted">${esc(i.email)} <span class="chip">convite pendente</span></td><td></td>
         <td style="text-align:right"><button class="lnk seat-inv-rm" data-id="${i.id}" style="color:#e11d48">Cancelar</button></td></tr>`).join('');
   return `
-    <div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    <div data-guide="acct-seats" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
       <div class="inline" style="justify-content:space-between;align-items:baseline">
         <h3 style="margin:0">Equipa <span class="muted" style="font-size:.85rem;font-weight:400">(${used}/${max} lugares)</span></h3>
       </div>
@@ -605,6 +1908,102 @@ function wireSeats() {
   document.querySelectorAll('.seat-inv-rm').forEach((b) => b.onclick = async () => {
     try { await api('/api/seats/invites/' + b.dataset.id, { method: 'DELETE' }); renderAccount(); } catch (err) { alert(err.message); }
   });
+}
+
+function chipPicker(values, suggestions, name) {
+  const set = new Set(values || []);
+  const all = [...new Set([...(suggestions || []), ...set])];
+  return `<div class="chip-pick" data-name="${esc(name)}">${all.map((v) =>
+    `<button type="button" class="${set.has(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}
+    <input type="text" placeholder="outro…" style="min-width:120px;font-size:0.8rem"></div>`;
+}
+
+async function fillCompanyProfileBlock() {
+  const host = document.getElementById('company-profile-block');
+  if (!host) return;
+  let p;
+  try { p = await api('/api/company/profile'); } catch (e) { host.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+  const sug = p.suggestions || {};
+  host.innerHTML = `
+    <h3 style="margin:0 0 .6rem">Perfil da empresa</h3>
+    <p class="muted" style="margin:0 0 .8rem">Alvarás, distritos e exclusões — usados nas regras de fit, antes da IA.</p>
+    <label>Descrição</label>
+    <textarea id="cp-desc" rows="2" style="width:100%">${esc(p.description || '')}</textarea>
+    <label style="margin-top:.7rem">Certificações / alvarás</label>
+    ${chipPicker(p.certifications, sug.certifications, 'certs')}
+    <label style="margin-top:.7rem">Distritos onde executa</label>
+    ${chipPicker(p.districts, sug.districts || DISTRICTS_UI, 'districts')}
+    <div class="reg-grid" style="margin-top:.7rem">
+      <div><label>Valor mínimo (€)</label><input type="number" id="cp-vmin" value="${p.value_min ?? ''}"></div>
+      <div><label>Valor máximo (€)</label><input type="number" id="cp-vmax" value="${p.value_max ?? ''}"></div>
+    </div>
+    <label style="margin-top:.7rem">Nunca faz (termos)</label>
+    <input type="text" id="cp-excl-t" value="${esc((p.excluded_terms || []).join(', '))}" placeholder="ex.: manutenção, espaços verdes">
+    <label style="margin-top:.7rem">Entidades excluídas</label>
+    <input type="text" id="cp-excl-e" value="${esc((p.excluded_entities || []).join(', '))}">
+    <p id="cp-err" class="error"></p>
+    <p style="margin-top:.8rem"><button id="cp-save">Guardar perfil</button></p>`;
+  host.querySelectorAll('.chip-pick').forEach((box) => {
+    box.onclick = (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      b.classList.toggle('on');
+    };
+    const inp = box.querySelector('input');
+    if (inp) inp.onchange = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      box.insertAdjacentHTML('afterbegin', `<button type="button" class="on" data-v="${esc(v)}">${esc(v)}</button>`);
+      inp.value = '';
+    };
+  });
+  document.getElementById('cp-save').onclick = async () => {
+    const picked = (name) => [...host.querySelectorAll(`.chip-pick[data-name="${name}"] button.on`)].map((b) => b.dataset.v);
+    const err = document.getElementById('cp-err');
+    err.textContent = '';
+    try {
+      await api('/api/company/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          description: document.getElementById('cp-desc').value,
+          certifications: picked('certs'),
+          districts: picked('districts'),
+          value_min: document.getElementById('cp-vmin').value || null,
+          value_max: document.getElementById('cp-vmax').value || null,
+          excluded_terms: document.getElementById('cp-excl-t').value.split(',').map((s) => s.trim()).filter(Boolean),
+          excluded_entities: document.getElementById('cp-excl-e').value.split(',').map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      err.textContent = '';
+      const ok = document.createElement('p'); ok.className = 'hint'; ok.textContent = 'Perfil guardado.';
+      document.getElementById('cp-save').after(ok);
+    } catch (e) { err.textContent = e.message; }
+  };
+}
+
+async function fillNotifyBlock() {
+  const host = document.getElementById('notify-block');
+  if (!host) return;
+  let n;
+  try { n = await api('/api/me/notifications'); } catch { return; }
+  host.innerHTML = `
+    <h3 style="margin:0 0 .6rem">Notificações</h3>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="nt-digest" ${n.notify_digest !== false ? 'checked' : ''}> Resumo semanal (segunda-feira 08:00 Lisboa)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:.4rem"><input type="checkbox" id="nt-rem" ${n.notify_reminders !== false ? 'checked' : ''}> Lembretes de prazo (7 e 2 dias)${can('lembretes') ? '' : ' <span class="muted">· Pro</span>'}</label>
+    <p class="muted" style="font-size:.8rem;margin:.5rem 0 0">O digest está incluído em todos os planos, incluindo o trial Pro.</p>`;
+  const save = async () => {
+    try {
+      await api('/api/me/notifications', {
+        method: 'PUT',
+        body: JSON.stringify({
+          notify_digest: document.getElementById('nt-digest').checked,
+          notify_reminders: document.getElementById('nt-rem').checked,
+        }),
+      });
+    } catch (e) { alert(e.message); }
+  };
+  document.getElementById('nt-digest').onchange = save;
+  document.getElementById('nt-rem').onchange = save;
 }
 
 /* ---------- Aceitar convite de equipa ---------- */
@@ -721,7 +2120,7 @@ async function renderResults(searchId, page = 0) {
 
   const rows = data.items.map((c) => `
     <tr class="clickable" onclick="location.hash='#/contracts/${c.id}'">
-      <td>${esc(c.object_brief_description || c.description || '')}</td>
+      <td>${escTitle(c.object_brief_description || c.description || '')}</td>
       <td>${esc(c.contracting_procedure_type ?? '')}</td>
       <td>${fmtPrice(c.initial_contractual_price)}</td>
       <td>${fmtDate(c.publication_date)}</td>
@@ -825,6 +2224,7 @@ async function renderContract(id) {
       : `<span class="fim-badge past">HÁ ${-diff} DIAS</span>`;
   }
   const adj = firstEnt('contracting');
+  if ((location.hash.split('?')[0]) !== `#/contracts/${id}`) return;
 
   app.innerHTML = `
     <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/renewals">Renovações</a> → <span class="cur">Contrato BASE #${c.basegov_id}</span></div>
@@ -835,19 +2235,15 @@ async function renderContract(id) {
           ${c.contracting_procedure_type ? `<span class="d-tag">${esc(String(c.contracting_procedure_type).toUpperCase())}</span>` : ''}
           ${c.contract_types ? `<span class="d-tag">${esc(String(c.contract_types).toUpperCase())}</span>` : ''}
         </div>
-        <h1>${esc(c.object_brief_description ?? `Contrato #${c.basegov_id}`)}</h1>
-        ${c.description ? `<p class="lead">${esc(c.description)}</p>` : ''}
-      </div>
-      <div class="d-actions">
-        <button id="ai-contract-btn">${ico('search')} ${isRenewal ? 'Preparar renovação com IA' : 'Analisar com IA'}</button>
-        <a href="${esc(c.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
+        ${fichaHeadHtml(c.object_brief_description, c.description, `Contrato #${c.basegov_id}`)}
       </div>
     </div>
-    <div class="d-grid">
-      <div>
-        <div class="d-card">
-          <div class="t">Partes e enquadramento</div>
-          <div class="parts">
+    <div class="d-grid ficha-layout">
+        ${fichaTabsHtml([
+          { id: 'ia', label: 'Análise IA', html: aiTabPaneHtml('contract') },
+          {
+            id: 'enq', label: 'Enquadramento',
+            html: `<div class="parts">
             <span class="lb">Adjudicante</span><span>${entLine('contracting')}</span>
             <span class="lb">Adjudicatário</span><span>${entLine('contracted')}</span>
             <span class="lb">Concorrentes</span><span>${concorrentes}</span>
@@ -855,25 +2251,32 @@ async function renderContract(id) {
             <span class="lb">CPV</span><span>${esc(c.cpvs ?? '—')}${c.cpvs_designation ? ' · ' + esc(c.cpvs_designation) : ''}</span>
             <span class="lb">Fundamentação</span><span>${esc(c.contract_fundamentation ?? '—')}</span>
             <span class="lb">Regime</span><span>${esc(c.regime ?? '—')}</span>
-          </div>
-        </div>
-        ${(c.documents ?? []).length ? `<div class="d-card">
-          <div class="t">Documentos · ${(c.documents ?? []).length}</div>
-          <div>${docs}</div>
-        </div>` : ''}
-        ${(c.modifications ?? []).length ? `<div class="d-card">
-          <div class="t">Modificações ao contrato · ${c.modifications.length}</div>
-          <div class="crono">
+          </div>`,
+          },
+          { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('renovacao', c.id, c.pipeline_status) },
+          cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
+          (c.documents ?? []).length ? {
+            id: 'docs', label: `Documentos (${(c.documents ?? []).length})`,
+            html: `<div>${docs}</div>`,
+          } : null,
+          (c.modifications ?? []).length ? {
+            id: 'mods', label: `Modificações (${c.modifications.length})`,
+            html: `<div class="crono">
             ${c.modifications.map((mo, i) => `<div class="crono-row">
               <div class="crono-mark"><span class="crono-dot" style="background:#c99a3c"></span>${i < c.modifications.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
               <div class="body">${mo.date ? `<b>${fmtDate(mo.date)}</b> · ` : ''}${esc(mo.label)}${mo.price_text ? ` <span class="muted">(${esc(mo.price_text)})</span>` : ''}</div>
             </div>`).join('')}
           </div>
-          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de incumbente a defender a posição).</p>
-        </div>` : ''}
-        <div id="ai-contract-result"></div>
-      </div>
-      <div>
+          <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de adjudicatário actual a defender a posição).</p>`,
+          } : null,
+          { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(c.contracting_procedure_url) },
+          adj ? {
+            id: 'ent', label: 'Entidade',
+            html: `<p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
+          ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}`,
+          } : null,
+        ])}
+      <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO CONTRATUAL</div>
           <div class="big">${fmtPrice(c.initial_contractual_price)}</div>
@@ -892,37 +2295,14 @@ async function renderContract(id) {
               : '<p class="est">Sem data de celebração ou prazo no BASE — não é possível estimar.</p>'}
           </div>
         </div>
-        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
-        ${adj ? `<div class="d-card">
-          <div class="t">A entidade compra</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
-          ${adj.id ? `<a href="#/entities/${adj.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border-btn)">Ficha da entidade →</a>` : ''}
-        </div>` : ''}
       </div>
     </div>`;
 
-  document.getElementById('ai-contract-btn').onclick = async () => {
-    const btn = document.getElementById('ai-contract-btn');
-    const out = document.getElementById('ai-contract-result');
-    btn.disabled = true;
-    aiModalOpen([
-      'A carregar o contrato e as entidades…',
-      'A abrir os documentos PDF guardados na base…',
-      'A extrair critérios e requisitos do caderno de encargos…',
-      'A estudar o fornecedor atual e o histórico da entidade…',
-      'A montar o plano de preparação da renovação…',
-    ]);
-    try {
-      const pid = Number(getCtx() || 0);
-      const r = await api(`/api/contracts/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${
-        r.docs_used === 0 ? '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, ativa "Descarregar documentos PDF" na pesquisa/perfil.</p>' : ''}</div>`;
-      out.scrollIntoView({ block: 'nearest' });
-    } catch (err) {
-      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-      btn.disabled = false;
-    } finally { aiModalClose(); }
-  };
+  bindFichaTabs(app);
+  bindPipelineChips(app);
+  wireFichaPipeline('renovacao', c.id);
+  startFichaAi({ kind: 'contract', id });
+  notifyGuide('ficha');
 }
 
 /* ---------- Perfis ---------- */
@@ -934,7 +2314,7 @@ async function renderProfiles() {
         <td><strong>${esc(p.name)}</strong></td>
         <td class="muted">${p.terms.map(esc).join(', ')}</td>
         <td>${esc(p.schedule)}${p.include_announcements ? ' · anúncios' : ''}</td>
-        <td>${p.n_contracts} / ${p.n_announcements}</td>
+        <td>${formatKpiCount(p.n_contracts, p.contracts_truncated || p.last_run?.contracts_truncated)} / ${formatKpiCount(p.n_announcements, p.announcements_truncated || p.last_run?.announcements_truncated)}</td>
         <td>${p.last_run ? `${badge(p.last_run.status)} <span class="muted">+${p.last_run.new_contracts ?? 0}c +${p.last_run.new_announcements ?? 0}a</span>` : '—'}</td>
         <td>${p.last_run_at ? new Date(p.last_run_at).toLocaleString('pt-PT') : '—'}</td>
       </tr>`).join('');
@@ -945,16 +2325,16 @@ async function renderProfiles() {
 
   app.innerHTML = `
     ${configTabs('profiles')}
-    <div class="card">
+    <div class="card" data-guide="cfg-profiles">
       <h2>Novo perfil de atividade</h2>
-      <p class="muted">Vários termos em conjunto (ex.: pirotecnia, fogo de artifício, espetáculo pirotécnico) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
+      <p class="muted">Vários termos em conjunto (ex.: reabilitação, cobertura, fachadas, conservação de edifícios) com deduplicação automática, contratos + anúncios DR, e execução agendada.</p>
       <form id="new-profile-form">
-        <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Pirotecnia" required></p>
-        <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: pirotecnia, fogo de artifício" required></p>
+        <p><input type="text" name="name" placeholder="Nome do perfil — ex.: Obras e reabilitação" required></p>
+        <p><input type="text" name="terms" placeholder="Termos separados por vírgula — ex.: reabilitação, cobertura, fachadas" required></p>
         <div style="margin:0.6rem 0">
           <div id="cpv-chips" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: pirotecnia, limpeza, construção…" style="flex:1;min-width:220px">
+            <input type="text" id="cpv-search" placeholder="Códigos CPV: pesquisa por atividade — ex.: reabilitação, construção, conservação…" style="flex:1;min-width:220px">
             <button type="button" class="btn-secondary" id="cpv-search-btn">${ico('search')} Procurar CPV</button>
           </div>
           <div id="cpv-results" class="muted" style="margin-top:0.4rem"></div>
@@ -1041,6 +2421,7 @@ async function renderProfiles() {
   await load();
   stopPolling();
   pollTimer = setInterval(load, 4000);
+  notifyGuide('config');
 }
 
 /* ---------- Dashboard de perfil ---------- */
@@ -1054,8 +2435,9 @@ const PROFILE_TABS = [
 async function renderInsightTab(el, q, tab, p) {
 
   if (tab === 'opportunities') {
-    const kw = window._oppFilter ?? '';
-    const d = await api(`/api/insights/opportunities${q}${kw ? `&q=${encodeURIComponent(kw)}` : ''}`);
+    const kw = window._oppFilter ?? hashQuery().get('q') ?? '';
+    const extra = filterQueryString();
+    const d = await api(`/api/insights/opportunities${q}${extra ? `&${extra}` : ''}${kw && !hashQuery().get('q') ? `&q=${encodeURIComponent(kw)}` : ''}`);
     window._oppReload = () => renderInsightTab(el, q, tab, p);
     const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
     const fits = window._fitCache?.[q] ?? {};
@@ -1070,27 +2452,35 @@ async function renderInsightTab(el, q, tab, p) {
     const oppRow = (o) => {
       const f = fits[fitKey(o)];
       const urgent = o.type === 'anuncio_aberto' || (o.days_left != null && o.days_left <= 30);
+      const plType = pipelineTypeOf(o);
+      const plId = pipelineIdOf(o);
       return `<div class="opp-tr body" onclick="location.hash='${esc(o.internal_url ?? o.basegov_url)}'">
         <div class="opp-score"><b>${o.score}</b><div class="track"><div class="fill" style="width:${Math.min(100, o.score)}%;background:${scoreBarColor(o)}"></div></div></div>
-        <span class="opp-fit ${f ? '' : 'none'}"${f && f.reason ? ` title="${esc(f.reason)}"` : ''}>${f ? f.fit : '—'}</span>
-        <div><div class="ti">${esc(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
+        ${fitCell(f, plType, plId)}
+        <div><div class="ti">${escTitle(o.title ?? '')}</div><div class="sub">${esc(subLine(o))}</div></div>
         <span class="ent">${esc(o.entity ?? '—')}</span>
         <span class="val">${fmtEuro0(o.value)}</span>
         <span class="dat ${urgent ? 'urgent' : ''}">${o.key_date ? `${dPtShort(o.key_date)} · ${o.days_left}d` : '—'}</span>
+        <span onclick="event.stopPropagation()">${pipelineSelect(plType, plId, o.pipeline_status)}</span>
       </div>`;
     };
-    el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Oportunidades</h1>
+    el.innerHTML = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0" data-guide="opp-title">Oportunidades</h1>
         <div class="muted" style="margin-top:3px">Concursos abertos e renovações previsíveis, ordenados por score (valor, urgência, recorrência da entidade).</div></div>
       <form class="opp-search" onsubmit="event.preventDefault(); window._oppFilter=this.q.value; window._oppReload();">
         ${ico('search', 14)}<input type="text" name="q" value="${esc(kw)}" placeholder="Filtrar por objeto ou entidade">
       </form></div>
+      ${filterBarHtml('opportunities')}
+      ${d.excluded_no_value && d.items?.length >= 0 ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : ''}
       ${matrix}
       ${q.includes('profile_id=') && !q.endsWith('profile_id=') ? `<p class="muted" style="margin:0.2rem 0 0.6rem" id="fit-status"></p>` : ''}
-      <div class="opp-t">
-        <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span></div>
-        ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem oportunidades ativas — executa o perfil ou alarga os termos.</div>'}
+      <div class="opp-t" data-guide="opp-table">
+        <div class="opp-tr head"><span>SCORE</span><span class="fh">FIT IA</span><span>OPORTUNIDADE</span><span class="eh">ENTIDADE</span><span class="val">VALOR</span><span class="dat dh">DATA-CHAVE</span><span>ESTADO</span></div>
+        ${d.items.map(oppRow).join('') || '<div class="opp-tr" style="color:var(--muted)">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split(\'?\')[0]">Limpar filtros</button></div>'}
       </div>`;
     bindMatrixTooltip(el);
+    bindPipelineChips(el);
+    bindFitFeedback(el);
+    bindFilterBar(el);
     const pid = new URLSearchParams(q.slice(1)).get('profile_id');
     const toFitItem = (o) => ({
       type: o.type,
@@ -1123,43 +2513,71 @@ async function renderInsightTab(el, q, tab, p) {
       }
     }
   } else if (tab === 'renewals') {
-    const d = await api(`/api/insights/renewals${q}&months=12`);
-    el.innerHTML = `<h2>Radar de renovações (próximos 12 meses)</h2>
+    const extraR = filterQueryString();
+    const d = await api(`/api/insights/renewals${q}&months=12${extraR ? `&${extraR}` : ''}`);
+    el.innerHTML = `<h2 data-guide="ren-title">Radar de renovações (próximos 12 meses)</h2>
       <p class="muted">Contratos em curso cuja execução termina em breve — a entidade irá provavelmente lançar novo procedimento; contactar na data sugerida.</p>
+      ${filterBarHtml('renewals')}
       <div class="hint">"Termina" é o fim previsto, estimado a partir dos dados do BASE: data de celebração + prazo de execução (o BASE não publica a data de fim explícita). A mesma regra é usada na matriz, no mapa e no digest; a data exata pode desviar-se se o contrato tiver sido suspenso ou prorrogado.</div>
-      <table><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th></tr></thead><tbody>
+      <table data-guide="ren-table"><thead><tr><th>Termina</th><th>Contactar até</th><th>Objeto</th><th>Entidade adjudicante</th><th>Fornecedor atual</th><th>Valor</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((r) => `<tr>
-        <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
-        <td><strong>${fmtDate(r.suggested_contact_date)}</strong></td>
-        <td><a href="#/contracts/${r.id}">${esc(r.object_brief_description ?? '')}</a></td>
+        <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+        <td><strong>${fmtDateDMY(r.suggested_contact_date)}</strong></td>
+        <td><a href="#/contracts/${r.id}">${escTitle(r.object_brief_description ?? '')}</a></td>
         <td>${esc(r.contracting ?? '—')}</td>
         <td>${esc(r.incumbent ?? '—')}</td>
-        <td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sem renovações no horizonte.</td></tr>'}
+        <td>${fmtPrice(r.initial_contractual_price)}</td>
+        <td>${pipelineSelect('renovacao', r.id, r.pipeline_status)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split(\'?\')[0]">Limpar filtros</button></td></tr>'}
       </tbody></table>`;
+    bindPipelineChips(el);
+    bindFilterBar(el);
   } else if (tab === 'announcements') {
     const showAll = window._annShowAll === true;
-    const d = await api(`/api/announcements${q}&size=100${showAll ? '' : '&open=1'}`);
+    const extraA = filterQueryString();
+    const page = Math.max(0, Number(hashQuery().get('page') || 0) || 0);
+    const size = 50;
+    const d = await api(`/api/announcements${q}&size=${size}&page=${page}${showAll ? '' : '&open=1'}${extraA ? `&${extraA}` : ''}`);
+    const facets = await api(`/api/announcements/facets${q}${showAll ? '' : '&open=1'}${extraA ? `&${extraA}` : ''}`).catch(() => ({ districts: [], unknown: null, procedures: [] }));
     window._annReload = () => renderInsightTab(el, q, tab, p);
-    el.innerHTML = `<div class="toolbar"><h2>Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
+    const facetNote = (facets.unknown && facets.unknown.n)
+      ? `<p class="filter-note">${esc(facets.unknown.label)}</p>` : '';
+    const exclNote = d.excluded_no_value
+      ? `<p class="filter-note">Concursos sem valor publicado excluídos pelo filtro de valor.</p>` : '';
+    el.innerHTML = `<div class="toolbar"><h2 data-guide="ann-title">Anúncios DR ${showAll ? '' : '— concursos abertos'}</h2>
       <label class="muted"><input type="checkbox" ${showAll ? 'checked' : ''}
         onchange="window._annShowAll=this.checked; window._annReload()"> mostrar expirados</label></div>
       <p class="muted">Por omissão só se mostram concursos com prazo de propostas ainda a decorrer — os expirados já não são acionáveis.</p>
-      <table><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th></tr></thead><tbody>
+      ${filterBarHtml('announcements', facets)}
+      ${facetNote}${exclNote}
+      <table data-guide="ann-table"><thead><tr><th>Publicação</th><th>Prazo propostas</th><th>Designação</th><th>Entidade</th><th>Procedimento</th><th>Preço base</th><th>Estado</th></tr></thead><tbody>
       ${d.items.map((a) => {
         const open = a.proposal_deadline_date && a.proposal_deadline_date >= new Date().toISOString().slice(0, 10);
         return `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
         <td>${fmtDate(a.dr_publication_date)}</td>
         <td><span class="dot ${open ? 'open' : 'closed'}"></span> ${fmtDate(a.proposal_deadline_date)}</td>
-        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
+        <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${escTitle(a.contract_designation ?? '')}</a>${isAcordoQuadro(a) ? ' ' + AQ_BADGE : ''}</td>
         <td>${esc(a.contracting_entity ?? '—')}</td>
         <td>${esc(a.contracting_procedure_type ?? '—')}</td>
-        <td>${fmtPrice(a.base_price)}</td></tr>`;
-      }).join('') || `<tr><td colspan="6" class="muted">${showAll ? 'Sem anúncios recolhidos.' : 'Sem concursos abertos neste momento — ativa "mostrar expirados" para ver o histórico.'}</td></tr>`}
+        <td>${fmtPrice(a.base_price)}</td>
+        <td onclick="event.stopPropagation()">${pipelineSelect('anuncio_aberto', a.id, a.pipeline_status)}</td></tr>`;
+      }).join('') || `<tr><td colspan="7" class="muted">Sem resultados com estes filtros. <button class="lnk" onclick="location.hash=location.hash.split('?')[0]">Limpar filtros</button></td></tr>`}
       </tbody></table>
+      ${pagerHtml(d.total, d.page ?? page, d.size ?? size)}
       <div style="margin-top:1.4rem">
         <div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">Concursos europeus (TED)</span><span class="sh">acima dos limiares UE · fonte Tenders Electronic Daily</span></div>
         <div id="ted-panel" class="card" style="margin:0"><p class="muted" style="margin:0">A procurar no TED…</p></div>
       </div>`;
+    bindPipelineChips(el);
+    bindFilterBar(el);
+    bindPager(el);
+    const tedHost = document.getElementById('ted-panel');
+    if (tedHost && !can('ted')) {
+      tedHost.innerHTML = upgradePanel({
+        required_plan: 'pro',
+        feature: 'ted',
+        message: 'Os concursos europeus (TED) estão incluídos no plano Pro.',
+      });
+    } else {
     // TED carrega em separado — não bloqueia a lista do BASE nem quebra se falhar.
     api(`/api/insights/ted${q}`).then((t) => {
       const host = document.getElementById('ted-panel');
@@ -1179,10 +2597,16 @@ async function renderInsightTab(el, q, tab, p) {
           <span class="dat">${n.publication_date ? dPtShort(n.publication_date) : '—'}</span>
         </div>`).join('')}
       </div>`;
-    }).catch(() => {
+    }).catch((err) => {
       const host = document.getElementById('ted-panel');
-      if (host) host.innerHTML = '<p class="muted" style="margin:0">TED indisponível de momento.</p>';
+      if (!host) return;
+      if (err.planRequired) {
+        host.innerHTML = upgradePanel(err.planRequired);
+        return;
+      }
+      host.innerHTML = '<p class="muted" style="margin:0">TED indisponível de momento.</p>';
     });
+    }
   } else if (tab === 'seasonality') {
     const d = await api(`/api/insights/seasonality${q}`);
     const chart = (data, metric, label) => {
@@ -1192,7 +2616,7 @@ async function renderInsightTab(el, q, tab, p) {
           <b>${metric === 'total_value' ? fmtCompact(m[metric]) : m[metric]}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
       </div></div>`;
     };
-    el.innerHTML = `<h2>Sazonalidade</h2>
+    el.innerHTML = `<h2 data-guide="sea-chart">Sazonalidade</h2>
       <p class="muted">Em que meses do ano se publicam contratos e anúncios nesta área — recuar 4-6 meses para planear o contacto comercial.</p>
       ${chart(d.contracts, 'count', 'Contratos por mês (nº)')}
       ${chart(d.contracts, 'total_value', 'Contratos por mês (valor)')}
@@ -1240,7 +2664,7 @@ async function renderInsightTab(el, q, tab, p) {
         ? 'A timeline começa hoje e avança pelo fim previsto dos contratos em execução — desliza para veres onde se concentram as renovações em cada período.'
         : 'Histórico por data de publicação — desliza para veres a evolução do mercado.'}
         Clica num círculo ou numa linha para o detalhe do distrito.</p>
-      <div class="map-controls">
+      <div class="map-controls" data-guide="map-legend">
         <select id="map-period" style="width:auto" aria-label="Âmbito temporal">
           <option value="end" ${basis === 'end' ? 'selected' : ''}>Renovações futuras (fim de contrato)</option>
           <option value="publication" ${basis === 'publication' ? 'selected' : ''}>Histórico (publicação)</option>
@@ -1255,7 +2679,7 @@ async function renderInsightTab(el, q, tab, p) {
         <span class="month-label" id="map-month-label">Todo o período</span>
       </div>
       <div class="map-wrap">
-        <div id="osm-map"></div>
+        <div id="osm-map" data-guide="map-canvas"></div>
         <div class="map-table" id="region-panel"><table><thead><tr><th>Distrito</th><th>Contratos</th><th>Valor total</th><th>Valor médio</th></tr></thead><tbody id="map-district-tbody"></tbody></table></div>
       </div>
       <div class="legend">
@@ -1312,7 +2736,7 @@ async function renderInsightTab(el, q, tab, p) {
     };
     el.innerHTML = `<h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Concorrentes</h1>
       <div class="muted" style="margin:3px 0 18px">Adjudicatários com contratos na sua atividade — quota, valores médios e clientes.</div>
-      <div class="comp-table">
+      <div class="comp-table" data-guide="cmp-table">
         <div class="comp-row head"><span>CONCORRENTE</span><span class="r">CONTRATOS</span><span class="r">TOTAL</span><span class="r mh">MÉDIO</span><span class="qh">QUOTA</span><span class="ch">PRINCIPAIS CLIENTES</span></div>
         ${d.items.map(row).join('') || '<div class="comp-row"><span class="muted">Sem dados.</span></div>'}
       </div>`;
@@ -1415,13 +2839,13 @@ async function loadRegionPanel(district, q) {
     ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
         <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
-        <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${escTitleMax(r.object_brief_description ?? '', 90)}</a></td>
         <td>${esc(r.contracting ?? '—')}</td><td>${fmtPrice(r.initial_contractual_price)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sem renovações nos próximos 12 meses.</p>'}
     <h4>Contratos recentes (${d.contracts.length})</h4>
     <table><thead><tr><th>Publicação</th><th>Objeto</th><th>Entidade</th><th>Valor</th></tr></thead><tbody>
       ${d.contracts.map((c) => `<tr class="clickable" onclick="location.hash='#/contracts/${c.id}'">
         <td>${fmtDate(c.publication_date)}</td>
-        <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${esc((c.object_brief_description ?? '').slice(0, 90))}</a></td>
+        <td><a href="#/contracts/${c.id}" onclick="event.stopPropagation()">${escTitleMax(c.object_brief_description ?? '', 90)}</a></td>
         <td>${esc(c.contracting ?? '—')}</td><td>${fmtPrice(c.initial_contractual_price)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem contratos.</td></tr>'}
     </tbody></table>`;
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1433,7 +2857,7 @@ function matrixTipHtml(o, fit) {
   const keyDate = o.key_date ? String(o.key_date).slice(0, 10) : '—';
   return `
     ${kind}
-    <div class="mt-title">${esc(o.title ?? '')}</div>
+    <div class="mt-title">${escTitle(o.title ?? '')}</div>
     <ul class="mt-list">
       <li><strong>${esc(o.entity ?? '—')}</strong></li>
       <li>Valor: <strong>${fmtPrice(o.value)}</strong></li>
@@ -1494,7 +2918,7 @@ function aiModalOpen(steps) {
   el.id = 'ai-modal';
   el.innerHTML = `
     <div class="ai-modal-box">
-      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'BaseRadar'}</div>
+      <div style="display:flex;justify-content:center;margin-bottom:0.6rem">${wordmark(32)}</div>
       <div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>
       <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
     </div>`;
@@ -1560,9 +2984,9 @@ function renderPriorityMatrix(items, fits) {
       fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
   };
 
-  return `<div class="card" style="overflow-x:auto;margin:0.6rem 0">
+  return `<div class="card" data-guide="opp-matrix" style="overflow-x:auto;margin:0.6rem 0">
     <h3 style="margin:0 0 0.2rem">Matriz de priorização</h3>
-    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = fit IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
+    <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = adequação IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
       ${yGrid}${xGrid}
       <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
@@ -1736,28 +3160,148 @@ function updateLeafletMarkers(items, radiusRef) {
 function getCtx() { return localStorage.getItem('ctxProfile') || ''; }
 function setCtx(v) { localStorage.setItem('ctxProfile', v || ''); }
 
+async function maybeOnboarding() {
+  try {
+    if (sessionStorage.getItem('br_onboard') !== '1') return;
+    if (localStorage.getItem('br_onboard_done')) return;
+  } catch { return; }
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `<div class="modal-box onboard-box">
+    <button class="modal-x" aria-label="Fechar">×</button>
+    <div class="eyebrow">Perfil da empresa</div>
+    <h2 style="margin:.2rem 0 .4rem">4 perguntas rápidas</h2>
+    <p class="muted" id="ob-step-lbl">Passo 1 de 4 — onde executa</p>
+    <div id="ob-body"></div>
+    <div class="inline" style="justify-content:space-between;margin-top:1rem">
+      <button class="btn-secondary" id="ob-skip">Saltar</button>
+      <button id="ob-next">Continuar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  let step = 0;
+  const state = { districts: [], certifications: [], value_min: '', value_max: '', excluded_terms: '' };
+  let sug = { certifications: [], districts: DISTRICTS_UI };
+  try {
+    const p = await api('/api/company/profile');
+    sug = p.suggestions || sug;
+    Object.assign(state, {
+      districts: p.districts || [], certifications: p.certifications || [],
+      value_min: p.value_min ?? '', value_max: p.value_max ?? '',
+      excluded_terms: (p.excluded_terms || []).join(', '),
+    });
+  } catch { /* continua */ }
+  const labels = ['Onde executa?', 'Que certificações e alvarás tem?', 'Em que intervalo de valor concorre?', 'O que nunca faz?'];
+  return new Promise((resolve) => {
+  const draw = () => {
+    wrap.querySelector('#ob-step-lbl').textContent = `Passo ${step + 1} de 4 — ${labels[step]}`;
+    const body = wrap.querySelector('#ob-body');
+    if (step === 0) {
+      body.innerHTML = chipPicker(state.districts, sug.districts || DISTRICTS_UI, 'districts');
+    } else if (step === 1) {
+      body.innerHTML = chipPicker(state.certifications, sug.certifications, 'certs');
+    } else if (step === 2) {
+      body.innerHTML = `<div class="reg-grid"><div><label>Mínimo €</label><input type="number" id="ob-min" value="${esc(state.value_min)}"></div>
+        <div><label>Máximo €</label><input type="number" id="ob-max" value="${esc(state.value_max)}"></div></div>`;
+    } else {
+      body.innerHTML = `<input type="text" id="ob-excl" value="${esc(state.excluded_terms)}" placeholder="ex.: manutenção">`;
+    }
+    body.querySelectorAll('.chip-pick').forEach((box) => {
+      box.onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) b.classList.toggle('on'); };
+    });
+  };
+  const picked = (name) => [...wrap.querySelectorAll(`.chip-pick[data-name="${name}"] button.on`)].map((b) => b.dataset.v);
+  const finish = async (save) => {
+    wrap.remove();
+    try { localStorage.setItem('br_onboard_done', '1'); } catch { /* ignore */ }
+    if (save) {
+      try {
+        await api('/api/company/profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            districts: state.districts,
+            certifications: state.certifications,
+            value_min: state.value_min || null,
+            value_max: state.value_max || null,
+            excluded_terms: String(state.excluded_terms || '').split(',').map((s) => s.trim()).filter(Boolean),
+          }),
+        });
+      } catch (e) { alert(e.message); }
+    }
+    resolve();
+  };
+  wrap.querySelector('.modal-x').onclick = () => finish(false);
+  wrap.querySelector('#ob-skip').onclick = () => finish(false);
+  wrap.querySelector('#ob-next').onclick = () => {
+    if (step === 0) state.districts = picked('districts');
+    if (step === 1) state.certifications = picked('certs');
+    if (step === 2) {
+      state.value_min = wrap.querySelector('#ob-min').value;
+      state.value_max = wrap.querySelector('#ob-max').value;
+    }
+    if (step === 3) {
+      state.excluded_terms = wrap.querySelector('#ob-excl').value;
+      finish(true);
+      return;
+    }
+    step += 1;
+    wrap.querySelector('#ob-next').textContent = step === 3 ? 'Guardar' : 'Continuar';
+    draw();
+  };
+  draw();
+  });
+}
+
 /* ---------- Hoje: painel diário de ação (agrega os insights existentes) ---------- */
-async function renderHoje() {
+async function renderHoje(opts = {}) {
+  const gen = _viewGen;
   const profilesData = await api('/api/profiles');
+  if (gen !== _viewGen || !onHojeHash()) return;
   const profiles = profilesData.items;
   if (profiles.length === 0) return renderRadar('opportunities'); // reencaminha ao onboarding
 
   let ctx = getCtx();
   if (ctx && !profiles.some((p) => String(p.id) === ctx)) ctx = '';
   const pid = ctx || String(profiles[0].id);
+  if (!ctx && pid) setCtx(pid);
   const active = profiles.find((p) => String(p.id) === pid) ?? profiles[0];
 
-  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
+  if (!opts.silent) showBootSplash();
   const q = `?profile_id=${pid}`;
-  const [opp, prof, mapData, compData] = await Promise.all([
-    api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
+  const freeHoje = !can('score_fit');
+  const [opp, prof, mapData, compData, pipe, openAnns] = await Promise.all([
+    freeHoje ? Promise.resolve({ items: [] }) : api(`/api/insights/opportunities${q}`).catch(() => ({ items: [] })),
     api(`/api/profiles/${pid}`).catch(() => null),
     api(`/api/insights/map${q}`).catch(() => ({ items: [] })),
-    api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
+    freeHoje ? Promise.resolve({ items: [] }) : api(`/api/insights/competitors${q}`).catch(() => ({ items: [] })),
+    api('/api/pipeline').catch(() => ({ items: [] })),
+    freeHoje ? api(`/api/announcements${q}&open=1&size=50`).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
   ]);
-  const items = opp.items ?? [];
+  if (gen !== _viewGen || !onHojeHash()) return;
+  const daysUntil = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
+    return Math.round((d.getTime() - Date.now()) / 86400000);
+  };
+  let items = opp.items ?? [];
+  if (freeHoje) {
+    items = (openAnns.items ?? []).map((a) => ({
+      type: 'anuncio_aberto',
+      days_left: daysUntil(a.proposal_deadline_date),
+      title: a.contract_designation,
+      entity: a.contracting_entity,
+      value: a.base_price != null ? Number(a.base_price) : null,
+      announcement_id: a.id,
+      internal_url: `#/announcements/${a.id}`,
+      basegov_url: a.basegov_url,
+      score: null,
+      key_date: a.proposal_deadline_date,
+    }));
+  }
   const withDays = items.filter((o) => o.days_left != null);
-  const agir = withDays.filter((o) => o.days_left <= 30).sort((a, b) => b.score - a.score).slice(0, 4);
+  const agir = withDays.filter((o) => o.days_left <= 30)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (a.days_left ?? 99) - (b.days_left ?? 99))
+    .slice(0, 4);
   const preparar = withDays.filter((o) => o.type === 'renovacao' && o.days_left > 30 && o.days_left <= 183)
     .sort((a, b) => a.days_left - b.days_left).slice(0, 5);
   const monitorizar = withDays.filter((o) => o.days_left > 183).sort((a, b) => b.score - a.score);
@@ -1768,38 +3312,67 @@ async function renderHoje() {
   const jogoRenov = jogo.filter((o) => o.type === 'renovacao').length;
   const nRenov12 = items.filter((o) => o.type === 'renovacao').length;
   const totals = prof?.totals ?? {};
+  const recolhaPendente = runInProgress(active.last_run?.status)
+    || runInProgress(prof?.runs?.[0]?.status)
+    || (((totals.n_announcements ?? active.n_announcements ?? 0) === 0
+      && (totals.n_contracts ?? active.n_contracts ?? 0) === 0)
+      && runInProgress(active.last_run?.status || prof?.runs?.[0]?.status));
   const fitCache = window._fitCache?.[q] ?? {};
   const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
 
   const h = new Date().getHours();
   const greet = h < 12 ? 'Bom dia' : h < 20 ? 'Boa tarde' : 'Boa noite';
-  const firstName = esc((window._me?.username || '').split(/[\s@]/)[0] || 'Olá');
+  const firstName = esc(greetingName(window._me || {}));
   const today = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const contactar = (keyDate) => {
     if (!keyDate) return '—';
     const d = new Date(Math.max(Date.now(), new Date(keyDate).getTime() - 120 * 86400000));
     return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
   };
+  const recolha = active.last_run_at ? `Última recolha: ${fmtRecolha(active.last_run_at)}` : '';
+  const meId = window._me?.user_id;
+  const pipeItems = pipe.items ?? [];
+  const pipeDue = pipeItems.filter(hojePipelineDue);
+  const mine = pipeDue.filter((it) => meId != null && Number(it.assigned_user_id) === Number(meId));
+  const pipeShow = pipeDue.slice(0, 6);
+  const pipeCard = (it) => `<div class="opp-card" onclick="location.hash='${esc(it.internal_url ?? '#')}'">
+    <div><div class="k">${plChip(it.status)}</div>
+      <div class="ti">${escTitle(it.title ?? '')}</div>
+      <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
+  const pipeHtml = pipeDue.length ? `<div class="hoje-pipe" data-guide="hoje-pipe">
+      ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
+        <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
+      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span>${
+        pipeDue.length > 6
+          ? `<a class="sh" href="#/pipeline">ver todas (${pipeDue.length}) →</a>`
+          : '<span class="sh">prazos próximos</span>'
+      }</div>
+      <div class="opp-cards">${pipeShow.map(pipeCard).join('')}</div>
+    </div>` : '';
   const chipText = (o) => (o.type === 'anuncio_aberto' ? `CONCURSO · ${o.days_left}d` : 'RENOVAÇÃO');
   const chipCls = (o) => (o.type === 'anuncio_aberto' ? 'concurso' : 'renovacao');
 
   const agirCard = (o) => {
     const fit = fitCache[fitKey(o)];
+    const showScore = can('score_fit') && o.score != null;
+    const showIa = can('analise_ia');
     return `<div class="opp-card" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
-      ${scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c')}
+      ${showScore ? scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c') : ''}
       <div style="min-width:0">
-        <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">fit IA ${fit.fit}/100</span>` : ''}</div>
-        <div class="ti">${esc(o.title ?? '')}</div>
+        <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">adequação IA ${fit.fit}/100</span>` : ''}</div>
+        <div class="ti">${escTitle(o.title ?? '')}</div>
         <div class="su">${esc(o.entity ?? '—')}${o.value != null ? ' · ' + fmtCompact(o.value) : ''}</div>
       </div>
       <div class="opp-actions">
-        <a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>
+        ${showIa
+          ? `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Analisar com IA</a>`
+          : `<a class="btn primary" href="${esc(o.internal_url ?? '#')}" onclick="event.stopPropagation()">Ver concurso</a>`}
         <a class="btn ghost" href="${esc(o.basegov_url ?? '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ver peças</a>
       </div></div>`;
   };
   const prepRow = (o) => `<div class="prep-row" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
     ${scoreDonut(o.score, '#c99a3c', 44)}
-    <div><div class="ti">${esc(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
+    <div><div class="ti">${escTitle(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
     <div class="cd">contactar até<br><b>${contactar(o.key_date)}</b></div>
     <div class="vl">${fmtCompact(o.value)}</div></div>`;
 
@@ -1823,23 +3396,26 @@ async function renderHoje() {
       </div>`;
 
   app.innerHTML = `
-    <div class="hoje-head">
+    <div class="hoje-head" data-guide="hoje-head">
       <div>
         <div class="day">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
-        <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : 'Sem prazos urgentes esta semana.'}</h1>
+        <h1>${greet}, ${firstName}. ${agir.length ? `Há <span class="u">${agir.length} oportunidade${agir.length === 1 ? '' : 's'}</span> para agir.` : recolhaPendente ? 'A primeira recolha ainda está a decorrer.' : 'Sem prazos urgentes esta semana.'}</h1>
+        ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
+        ${recolhaPendente ? '<p class="hint" style="margin:.5rem 0 0">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>' : ''}
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex:none">
-        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+        <select id="ctx-select" data-guide="hoje-ctx" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
-        <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>
+        <button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>
       </div>
     </div>
     <div class="hoje-grid">
       <div class="hoje-col">
+        ${pipeHtml}
         <div>
           <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
-          <div class="opp-cards">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem oportunidades com prazo nos próximos 30 dias.</p></div>'}</div>
+          <div class="opp-cards" data-guide="hoje-agir">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem prazos nos próximos 30 dias.</p></div>'}</div>
         </div>
         <div>
           <div class="sec-head"><span class="sd" style="background:#c99a3c"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
@@ -1847,21 +3423,21 @@ async function renderHoje() {
         </div>
         ${monitorizar.length ? `<div>
           <div class="sec-head"><span class="sd" style="background:#9aa6a0"></span><span class="st">Monitorizar</span><a class="sh" href="#/radar/opportunities">${monitorizar.length} oportunidade${monitorizar.length === 1 ? '' : 's'} a mais de 6 meses · ver todas →</a></div>
-          <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${esc((o.title ?? '').slice(0, 44))} · ${fmtCompact(o.value)}</span>`).join('')}</div>
+          <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${escTitleMax(o.title ?? '', 44)} · ${fmtCompact(o.value)}</span>`).join('')}</div>
         </div>` : ''}
       </div>
       <div class="hoje-col hoje-right" style="gap:14px">
-        <div class="injogo-card">
+        <div class="injogo-card" data-guide="hoje-injogo">
           <div class="k">EM JOGO · PRÓXIMOS 90 DIAS</div>
           <div class="big">${fmtCompact(jogoTotal)}</div>
           <div class="sub">${jogo.length} procedimento${jogo.length === 1 ? '' : 's'} · ${jogoConc} concurso${jogoConc === 1 ? '' : 's'} + ${jogoRenov} renovaç${jogoRenov === 1 ? 'ão' : 'ões'}</div>
           <div class="injogo-stats">
             <div><div class="n">${totals.open_announcements ?? jogoConc}</div><div class="l">concursos abertos</div></div>
             <div><div class="n">${nRenov12}</div><div class="l">renovações 12m</div></div>
-            <div><div class="n">${(totals.n_contracts ?? 0).toLocaleString('pt-PT')}</div><div class="l">contratos</div></div>
+            <div><div class="n">${formatKpiCount(totals.n_contracts ?? active.n_contracts ?? 0, totals.contracts_truncated || active.contracts_truncated)}</div><div class="l">contratos</div></div>
           </div>
         </div>
-        ${money ? `<div class="mini-card">
+        ${money ? `<div class="mini-card" data-guide="hoje-mapa">
           <div class="head"><span class="t">Onde está o dinheiro</span><a href="#/radar/map">ver mapa →</a></div>
           ${money}
         </div>` : ''}
@@ -1871,6 +3447,165 @@ async function renderHoje() {
 
   const sel = document.getElementById('ctx-select');
   if (sel) sel.onchange = (e) => { setCtx(e.target.value); renderHoje(); };
+  if (!opts.silent) {
+    await maybeOnboarding();
+    if (window.BRGuide?.maybeSplash) await window.BRGuide.maybeSplash();
+    if (onHojeHash()) notifyGuide('hoje');
+  }
+
+  const stillRunning = recolhaPendente;
+  if (stillRunning && !(window.BRGuide && window.BRGuide.isRunning && window.BRGuide.isRunning())) {
+    stopPolling();
+    pollTimer = setInterval(async () => {
+      if (!onHojeHash()) { stopPolling(); return; }
+      try {
+        const data = await api('/api/profiles');
+        const p = data.items.find((x) => String(x.id) === pid) ?? data.items[0];
+        if (!p) { stopPolling(); return; }
+        const st = p.last_run?.status;
+        const done = st === 'completed' || st === 'completed_truncated' || st === 'failed';
+        const jumped = Number(p.n_announcements) !== Number(active.n_announcements)
+          || Number(p.n_contracts) !== Number(active.n_contracts);
+        if (done || jumped) {
+          stopPolling();
+          await renderHoje({ silent: true });
+        }
+      } catch { stopPolling(); }
+    }, 3500);
+  }
+}
+
+async function renderPipeline() {
+  showBootSplash();
+  const { items } = await api('/api/pipeline');
+  const openIds = new Set(['interessa', 'preparacao', 'submetida']);
+  const closed = (items || []).filter((i) => !openIds.has(i.status));
+  const open = (items || []).filter((i) => openIds.has(i.status));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cols = [
+    { id: 'interessa', label: 'Interessa' },
+    { id: 'preparacao', label: 'Em preparação' },
+    { id: 'submetida', label: 'Submetida' },
+  ];
+
+  function card(it) {
+    const dl = it.deadline ? new Date(it.deadline) : null;
+    const overdue = !!(dl && dl < today && it.status === 'preparacao');
+    const href = it.internal_url || (it.item_type === 'anuncio_aberto' ? `#/announcements/${it.item_id}` : `#/contracts/${it.item_id}`);
+    const tot = it.checklist?.total || 0;
+    const done = it.checklist?.checked || 0;
+    const pct = tot ? Math.round((done / tot) * 100) : 0;
+    return `<div class="pl-card${overdue ? ' overdue' : ''}" draggable="true" data-href="${esc(href)}" data-type="${esc(it.item_type)}" data-id="${it.item_id}" data-status="${esc(it.status)}">
+      <div class="ti">${escTitle(it.title) || '—'}</div>
+      <div class="su">${esc(it.entity || '—')} · ${fmtEuro0(it.value)} · prazo ${fmtDateDMY(it.deadline)}</div>
+      ${it.assignee?.name ? `<div class="su">Resp.: ${esc(it.assignee.name)}</div>` : ''}
+      ${tot ? `<div class="su">Checklist ${done}/${tot} · ${pct} %</div>` : ''}
+      ${overdue ? '<div class="pl-overdue">Prazo ultrapassado — marcar como Submetida ou Descartada</div>' : ''}
+    </div>`;
+  }
+
+  let html = `<div class="toolbar"><div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0" data-guide="pl-title">Carteira</h1>
+    <div class="muted" style="margin-top:3px">A carteira da empresa — arraste as cartas entre colunas. Os estados são partilhados pela equipa.</div></div></div>`;
+  if (!(items || []).length) {
+    html += `<p class="empty-copy">Nada na carteira. Marque anúncios ou contratos a partir de <a href="${can('score_fit') ? '#/radar/opportunities' : '#/radar/announcements'}">${can('score_fit') ? 'Oportunidades' : 'Concursos'}</a>.</p>`;
+  } else {
+    html += `<div class="pl-board" data-guide="pl-board">`;
+    for (const col of cols) {
+      const colItems = open.filter((i) => i.status === col.id);
+      const tone = plTone(col.id);
+      html += `<div class="pl-col" data-status="${col.id}"${col.id === 'interessa' ? ' data-guide="pl-col-interessa"' : ''}>
+        <h3 class="pl-col-h" style="background:${tone.bg};color:${tone.fg};border:1px solid ${tone.bd}">${esc(col.label)} <span class="pl-col-count">(${colItems.length})</span></h3>
+        <div class="pl-col-body">${colItems.map(card).join('') || '<p class="muted pl-empty">—</p>'}</div>
+      </div>`;
+    }
+    html += `</div>`;
+    html += `<details class="pl-closed" data-guide="pl-closed"><summary>Fechadas (${closed.length})</summary>
+      <div class="pl-closed-body">${closed.map(card).join('') || '<p class="muted">Nenhuma</p>'}</div></details>`;
+  }
+  app.innerHTML = html;
+  bindPipelineBoard(app);
+  notifyGuide('carteira');
+}
+
+function refreshPlColCounts() {
+  document.querySelectorAll('.pl-col').forEach((col) => {
+    const n = col.querySelectorAll('.pl-card').length;
+    const el = col.querySelector('.pl-col-count');
+    if (el) el.textContent = `(${n})`;
+    const body = col.querySelector('.pl-col-body');
+    if (!body) return;
+    const empty = body.querySelector('.pl-empty');
+    if (n === 0 && !empty) body.insertAdjacentHTML('beforeend', '<p class="muted pl-empty">—</p>');
+    if (n > 0 && empty) empty.remove();
+  });
+}
+
+function bindPipelineBoard(root) {
+  const board = (root || document).querySelector('.pl-board');
+  if (!board) return;
+  let dragging = null;
+
+  (root || document).querySelectorAll('.pl-card').forEach((el) => {
+    el.addEventListener('dragstart', (e) => {
+      dragging = el;
+      el.classList.add('dragging');
+      el.dataset.didDrag = '1';
+      const payload = JSON.stringify({ type: el.dataset.type, id: el.dataset.id, status: el.dataset.status });
+      e.dataTransfer.setData('application/x-prepbid-pipeline', payload);
+      e.dataTransfer.setData('text/plain', payload);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      document.querySelectorAll('.pl-col.drop-target').forEach((c) => c.classList.remove('drop-target'));
+      dragging = null;
+      setTimeout(() => { delete el.dataset.didDrag; }, 0);
+    });
+    el.addEventListener('click', (e) => {
+      if (el.dataset.didDrag) { e.preventDefault(); e.stopPropagation(); return; }
+      if (el.dataset.href) location.hash = el.dataset.href;
+    });
+  });
+
+  board.querySelectorAll('.pl-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('drop-target');
+    });
+    col.addEventListener('dragleave', (e) => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove('drop-target');
+    });
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drop-target');
+      let data = {};
+      try {
+        data = JSON.parse(e.dataTransfer.getData('application/x-prepbid-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
+      } catch { data = {}; }
+      const card = dragging || board.querySelector(`.pl-card[data-type="${CSS.escape(String(data.type || ''))}"][data-id="${CSS.escape(String(data.id || ''))}"]`);
+      if (!card) return;
+      const next = col.dataset.status;
+      const prev = card.dataset.status;
+      if (!next || next === prev) return;
+      const originCol = card.closest('.pl-col');
+      const originBody = originCol?.querySelector('.pl-col-body') || card.parentElement;
+      const destBody = col.querySelector('.pl-col-body') || col;
+      destBody.appendChild(card);
+      card.dataset.status = next;
+      refreshPlColCounts();
+      try {
+        await api(`/api/pipeline/${card.dataset.type}/${card.dataset.id}`, {
+          method: 'PUT', body: JSON.stringify({ status: next }),
+        });
+      } catch (err) {
+        if (originBody) originBody.appendChild(card);
+        card.dataset.status = prev;
+        refreshPlColCounts();
+        alert(err.message);
+      }
+    });
+  });
 }
 
 async function renderRadar(tab = 'opportunities') {
@@ -1881,7 +3616,7 @@ async function renderRadar(tab = 'opportunities') {
   if (profiles.length === 0) {
     app.innerHTML = `
       <div class="card" style="max-width:640px;margin:8vh auto;text-align:center">
-        <h2>Bem-vindo ao BaseRadar</h2>
+        <h2>Bem-vindo ao PrepBid</h2>
         <p class="muted">Começa por definir a tua atividade comercial (palavras-chave e códigos CPV).
         Todos os insights — oportunidades, renovações, mapa, concorrentes — serão apresentados nesse contexto,
         calculados sobre os dados já importados.</p>
@@ -1900,14 +3635,14 @@ async function renderRadar(tab = 'opportunities') {
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <div class="eyebrow">Radar comercial</div>
+        <div class="eyebrow">A sua atividade</div>
         <div class="muted">${active
           ? `Atividade: ${esc(active.name)} — ${active.terms.map(esc).join(', ')}${(active.cpv_codes ?? []).length ? ' · CPV ' + active.cpv_codes.map(esc).join(', ') : ''}`
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
-        ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Digest semanal</button>` : ''}
-        <select id="ctx-select" style="width:auto" aria-label="Atividade">
+        ${ctx ? `<button class="btn-secondary" onclick="location.hash='#/digest'">${ico('doc')} Resumo semanal</button>` : ''}
+        <select id="ctx-select" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === ctx ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="" ${ctx === '' ? 'selected' : ''}>Todos os dados</option>
         </select>
@@ -1917,17 +3652,19 @@ async function renderRadar(tab = 'opportunities') {
     ${active ? `<div class="cards" id="radar-stats"></div>` : ''}
     <div class="card" id="tab-content"><p class="muted">A carregar…</p></div>`;
 
-  document.getElementById('ctx-select').onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
+  const ctxSel = document.getElementById('ctx-select');
+  if (ctxSel) ctxSel.onchange = (e) => { setCtx(e.target.value); renderRadar(tab); };
 
   if (active) {
     const fillStats = (p) => {
       const holder = document.getElementById('radar-stats');
       if (!holder) return;
-      const running = p.runs?.[0] && p.runs[0].status !== 'completed' && p.runs[0].status !== 'failed';
+      const st = p.runs?.[0]?.status;
+      const running = runInProgress(st);
       holder.innerHTML = `
-        <div class="stat"><div class="n">${p.totals.n_contracts.toLocaleString('pt-PT')}</div><div class="l">Contratos</div></div>
+        <div class="stat"><div class="n">${formatKpiCount(p.totals.n_contracts, p.totals.contracts_truncated)}</div><div class="l">Contratos</div></div>
         <div class="stat"><div class="n">${fmtCompact(p.totals.total_value)}</div><div class="l">Valor total</div></div>
-        <div class="stat"><div class="n">${p.totals.n_announcements}</div><div class="l">Anúncios</div></div>
+        <div class="stat"><div class="n">${formatKpiCount(p.totals.n_announcements, p.totals.announcements_truncated)}</div><div class="l">Anúncios</div></div>
         <div class="stat accent"><div class="n">${p.totals.open_announcements}</div><div class="l">Concursos abertos</div></div>` +
         (p.totals.n_contracts === 0 && running
           ? `<p class="hint" style="flex-basis:100%">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>`
@@ -1940,13 +3677,286 @@ async function renderRadar(tab = 'opportunities') {
   }
 
   await renderInsightTab(document.getElementById('tab-content'), `?profile_id=${ctx}`, tab, null);
+  notifyGuide(radarGuideId(tab));
 }
 
 /* ---------- Configuração: perfis, recolhas e dados abertos ---------- */
 const CONFIG_SECTIONS = [['profiles', 'Perfis de atividade'], ['searches', 'Recolhas do site'], ['opendata', 'Dados abertos']];
 function configTabs(active) {
-  return `<div class="tabs">${CONFIG_SECTIONS.map(([k, l]) =>
+  return `<div class="tabs" data-guide="cfg-tabs">${CONFIG_SECTIONS.map(([k, l]) =>
     `<button class="${k === active ? 'active' : ''}" onclick="location.hash='#/config/${k}'">${l}</button>`).join('')}</div>`;
+}
+
+function fmtPctRange(low, high) {
+  if (low == null || high == null) return '—';
+  return `${Math.round(low * 100)}%–${Math.round(high * 100)}%`;
+}
+function gapChip(status) {
+  const map = { conforme: ['Conforme', 'gap-ok'], incompleto: ['Incompleto', 'gap-mid'], em_falta: ['Em falta', 'gap-bad'] };
+  const [label, cls] = map[status] || [status || '—', ''];
+  return `<span class="gap-chip ${cls}">${esc(label)}</span>`;
+}
+async function fileToB64(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+async function downloadBlob(url, filename) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'proposta.docx';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function renderGapReport(report) {
+  if (!report) return '';
+  const items = report.items || [];
+  return `<div class="gap-report">
+    <p style="margin:0 0 .6rem">${gapChip(report.overall)} <span>${esc(report.summary || '')}</span></p>
+    ${items.length ? `<table class="gap-table"><thead><tr><th>Requisito</th><th>Estado</th><th>Nota</th></tr></thead><tbody>
+      ${items.map((i) => `<tr><td>${esc(i.title)}${i.legal ? ' <span class="chip">legal</span>' : ''}</td>
+        <td>${gapChip(i.status)}</td><td class="muted">${esc(i.note || '')}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+  </div>`;
+}
+
+function renderForecastCard(id, payload) {
+  const f = payload.forecast || {};
+  const confLabel = { alta: 'Alta', media: 'Média', baixa: 'Baixa', insuficiente: 'Insuficiente' }[f.confidence] || f.confidence;
+  const llm = f.llm;
+  const range = f.available
+    ? `<div class="forecast-range">${fmtPctRange(f.low_pct, f.high_pct)} <span>do preço base</span></div>
+       <div class="forecast-eur">${fmtPrice(f.low_value)} – ${fmtPrice(f.high_value)}</div>`
+    : `<p class="muted" style="margin:.4rem 0 0">${esc(f.note || 'Sem estimativa.')}</p>`;
+  const llmBlock = llm
+    ? `<div class="forecast-llm">
+         <div class="k">Leitura qualificada (histórico + contexto)</div>
+         <div>${fmtPctRange(llm.low_pct, llm.high_pct)}${llm.low_value != null ? ` · ${fmtPrice(llm.low_value)} – ${fmtPrice(llm.high_value)}` : ''}</div>
+         <p class="muted" style="margin:.4rem 0 0">${esc(llm.justificacao || '')}</p>
+         ${(llm.fatores || []).length ? `<ul class="forecast-fatores">${llm.fatores.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+       </div>`
+    : (f.available ? `<p style="margin:.7rem 0 0"><button class="btn-secondary" id="forecast-qualify">${ico('search')} Qualificar com IA</button></p>` : '');
+  const used = f.used || [];
+  return `<div class="d-card forecast-card">
+    <div class="t row"><span>Previsão de fecho</span><span class="gap-chip conf-${esc(f.confidence || '')}">${esc(confLabel)}</span></div>
+    ${range}
+    ${f.available ? `<p class="muted" style="margin:.5rem 0 0;font-size:12.5px;line-height:1.5">${esc(f.note)}</p>` : ''}
+    ${f.margin_warning ? `<p class="hint" style="margin:.6rem 0 0">${esc(f.margin_warning)}</p>` : ''}
+    <p class="muted" style="margin:.5rem 0 0;font-size:11.5px">${esc(f.disclaimer || 'Estimativa baseada em histórico.')}</p>
+    ${llmBlock}
+    ${used.length ? `<details class="forecast-used" style="margin-top:.8rem"><summary>Concursos históricos usados (${used.length})</summary>
+      <table class="gap-table" style="margin-top:.5rem"><thead><tr><th>Data</th><th>Entidade</th><th>Adjudicado</th><th>Rácio</th></tr></thead><tbody>
+        ${used.map((u) => `<tr class="clickable" onclick="location.hash='${esc(u.url)}'">
+          <td>${fmtDate(u.publication_date)}</td>
+          <td>${esc((u.entity || '—').slice(0, 48))}</td>
+          <td>${fmtPrice(u.awarded)}</td>
+          <td>${Math.round((u.ratio || 0) * 100)}%</td></tr>`).join('')}
+      </tbody></table></details>` : ''}
+  </div>`;
+}
+
+async function mountCloseForecast(host, id) {
+  if (!can('previsao_fecho')) {
+    host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted" style="margin:0">Disponível no plano Business — estimativa de valor de adjudicação com base no histórico.</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted">A calcular a partir do histórico…</p></div>`;
+  try {
+    const r = await api(`/api/announcements/${id}/close-forecast`);
+    host.innerHTML = renderForecastCard(id, r);
+    const btn = document.getElementById('forecast-qualify');
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'A qualificar…';
+      try {
+        const q = await api(`/api/announcements/${id}/close-forecast/qualify`, { method: 'POST', body: '{}' });
+        loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
+        host.innerHTML = renderForecastCard(id, q);
+      } catch (err) {
+        btn.disabled = false;
+        alert(err.message);
+      }
+    };
+  } catch (err) {
+    if (err.planRequired) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="d-card"><p class="error">${esc(err.message)}</p></div>`;
+  }
+}
+
+function renderRequirementsList(checklist) {
+  if (!checklist?.length) return '<p class="muted">Sem requisitos extraídos.</p>';
+  const cat = {
+    admissao: 'Admissão', tecnico: 'Técnicos', criterio: 'Adjudicação',
+    documento: 'Documentos', formato: 'Formato', prazo: 'Prazos',
+  };
+  return `<ul class="req-list">${checklist.map((r) => `<li>
+    <span class="chip">${esc(cat[r.category] || r.category)}</span>
+    <strong>${esc(r.title)}</strong>
+    ${r.legal ? '<span class="chip">assinatura</span>' : ''}
+    ${r.detail ? `<div class="muted">${esc(r.detail)}</div>` : ''}
+  </li>`).join('')}</ul>`;
+}
+
+function renderProposalVersions(items) {
+  if (!items?.length) return '<p class="muted">Ainda sem versões. Gera um rascunho ou carrega um .docx editado.</p>';
+  return `<table class="gap-table"><thead><tr><th>V</th><th>Origem</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${items.map((v) => `<tr>
+      <td>v${v.version}</td>
+      <td>${v.kind === 'generated' ? 'Rascunho IA' : 'Upload'}<div class="muted">${esc(v.file_name)}</div></td>
+      <td>${v.gap_report ? gapChip(v.gap_report.overall) : '<span class="muted">—</span>'}</td>
+      <td style="text-align:right"><button class="btn-secondary prop-dl" data-url="${esc(v.download_url)}" data-name="${esc(v.file_name)}">${ico('download')} .docx</button></td>
+    </tr>
+    ${v.gap_report ? `<tr><td colspan="4">${renderGapReport(v.gap_report)}</td></tr>` : ''}`).join('')}
+  </tbody></table>`;
+}
+
+async function mountProposalPanel(host, id) {
+  if (!can('geracao_propostas')) {
+    host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted" style="margin:0">Geração assistida de propostas (.docx) disponível no plano Business.</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted">A carregar…</p></div>`;
+  let reqs, versions, profile;
+  try {
+    [reqs, versions, profile] = await Promise.all([
+      api(`/api/announcements/${id}/requirements`),
+      api(`/api/announcements/${id}/proposals`),
+      api('/api/company/proposal-profile').catch(() => ({ missing: [] })),
+    ]);
+  } catch (err) {
+    if (err.planRequired) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="d-card"><p class="error">${esc(err.message)}</p></div>`;
+    return;
+  }
+  const missing = (profile.missing || []).map((m) => esc(m)).join(', ');
+  let hasReqs = Boolean(reqs.extraction);
+  host.innerHTML = `<div class="d-card proposal-card">
+    <div class="t">Proposta (ciclo assistido)</div>
+    <p class="muted" style="margin:0 0 .8rem;font-size:12.5px;line-height:1.55">Extrai requisitos do caderno, gera um rascunho .docx, edita-o no Word, volta a carregar e vê o que ainda falta. A submissão no portal é sempre manual.</p>
+    <div id="prop-reqs">
+      ${reqs.extraction
+        ? renderRequirementsList(reqs.checklist)
+        : '<p class="muted">Ainda sem extração de requisitos.</p>'}
+    </div>
+    <p style="margin:.7rem 0"><button class="btn-secondary" id="prop-extract">${ico('search')} ${reqs.extraction ? 'Atualizar requisitos' : 'Extrair requisitos do caderno'}</button></p>
+    <div class="prop-gen">
+      ${missing ? `<p class="hint">Perfil incompleto (${missing}). As lacunas ficam marcadas no documento. <a href="#/conta">Completar perfil</a></p>` : ''}
+      <label>Preço a apresentar (€)</label>
+      <input type="number" id="prop-bid" min="0" step="0.01" placeholder="opcional — cruzado com a previsão de fecho">
+      <p style="margin:.7rem 0 0"><button id="prop-generate">${ico('doc')} Gerar rascunho .docx</button></p>
+    </div>
+    <h3 style="margin:1.1rem 0 .4rem;font-size:13px">Versões</h3>
+    <div id="prop-versions">${renderProposalVersions(versions.items)}</div>
+    <div class="prop-upload" style="margin-top:1rem">
+      <label>Carregar versão editada (.docx)</label>
+      <input type="file" id="prop-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <p class="muted" style="font-size:12px;margin:.3rem 0 0">A reavaliação compara o texto com a checklist e não reescreve o documento.</p>
+    </div>
+    <div id="prop-out"></div>
+  </div>`;
+
+  const extractBtn = document.getElementById('prop-extract');
+  extractBtn.onclick = async () => {
+    extractBtn.disabled = true;
+    aiModalOpen([
+      'A reunir o anúncio do DR e as peças do procedimento…',
+      'A identificar requisitos de admissão e técnicos…',
+      'A extrair critérios de adjudicação e documentos obrigatórios…',
+    ]);
+    try {
+      const r = await api(`/api/announcements/${id}/requirements`, {
+        method: 'POST',
+        body: JSON.stringify({ refresh: hasReqs }),
+      });
+      hasReqs = true;
+      document.getElementById('prop-reqs').innerHTML = renderRequirementsList(r.checklist);
+      extractBtn.innerHTML = `${ico('search')} Atualizar requisitos`;
+      extractBtn.textContent = 'Atualizar requisitos';
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      extractBtn.disabled = false;
+      aiModalClose();
+    }
+  };
+
+  document.getElementById('prop-generate').onclick = async () => {
+    const btn = document.getElementById('prop-generate');
+    btn.disabled = true;
+    aiModalOpen([
+      'A cruzar o perfil da empresa com os requisitos…',
+      'A redigir as secções da proposta…',
+      'A marcar o que falta completar…',
+      'A gerar o documento Word…',
+    ]);
+    try {
+      const bid = document.getElementById('prop-bid').value;
+      const r = await api(`/api/announcements/${id}/proposals/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ bid_price: bid === '' ? null : Number(bid) }),
+      });
+      await downloadBlob(r.download_url, r.file_name);
+      const list = await api(`/api/announcements/${id}/proposals`);
+      document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
+      wireProposalDownloads();
+      document.getElementById('prop-out').innerHTML = `<p class="hint">Rascunho v${r.version} gerado. Edita-o no Word e volta a carregá-lo para a reavaliação.</p>`;
+      loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+      aiModalClose();
+    }
+  };
+
+  document.getElementById('prop-file').onchange = async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    document.getElementById('prop-out').innerHTML = '<p class="muted">A reavaliar a proposta…</p>';
+    aiModalOpen([
+      'A ler o .docx carregado…',
+      'A comparar com a checklist de requisitos…',
+      'A classificar cada ponto: conforme, incompleto ou em falta…',
+    ]);
+    try {
+      const content_base64 = await fileToB64(file);
+      const r = await api(`/api/announcements/${id}/proposals/upload`, {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, content_base64 }),
+      });
+      const list = await api(`/api/announcements/${id}/proposals`);
+      document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
+      wireProposalDownloads();
+      document.getElementById('prop-out').innerHTML = renderGapReport(r.gap_report);
+    } catch (err) {
+      document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      ev.target.value = '';
+      aiModalClose();
+    }
+  };
+
+  function wireProposalDownloads() {
+    host.querySelectorAll('.prop-dl').forEach((b) => {
+      b.onclick = async () => {
+        try { await downloadBlob(b.dataset.url, b.dataset.name); }
+        catch (err) { alert(err.message); }
+      };
+    });
+  }
+  wireProposalDownloads();
 }
 
 /* ---------- Detalhe de anúncio ---------- */
@@ -1967,6 +3977,7 @@ async function renderAnnouncement(id) {
   const cronoHtml = crono.map((r, i) => `<div class="crono-row">
     <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
     <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${fmtDatePt(r.d)}</b> · ${r.label}</div></div>`).join('');
+  if ((location.hash.split('?')[0]) !== `#/announcements/${id}`) return;
 
   app.innerHTML = `
     <div class="dcrumb"><a href="#/hoje">Hoje</a> → <a href="#/radar/announcements">Concursos</a> → <span class="cur">Anúncio ${esc(a.announcement_number ?? '#' + a.basegov_id)}</span></div>
@@ -1978,18 +3989,15 @@ async function renderAnnouncement(id) {
           ${a.contracting_procedure_type || a.model_type ? `<span class="d-tag">${esc(String(a.model_type ?? a.contracting_procedure_type).toUpperCase())}</span>` : ''}
           ${a.contract_type ? `<span class="d-tag">${esc(String(a.contract_type).toUpperCase())}</span>` : ''}
         </div>
-        <h1>${esc(a.contract_designation ?? `Anúncio #${a.basegov_id}`)}</h1>
-      </div>
-      <div class="d-actions">
-        <button id="ai-analyze-btn">${ico('search')} Analisar com IA</button>
-        <a href="${esc(a.basegov_url)}" target="_blank" rel="noopener"><button class="btn-secondary">Ver no BASE ${ico('external')}</button></a>
+        ${fichaHeadHtml(a.contract_designation, null, `Anúncio #${a.basegov_id}`)}
       </div>
     </div>
-    <div class="d-grid">
-      <div>
-        <div class="d-card">
-          <div class="t">Partes e enquadramento</div>
-          <div class="parts">
+    <div class="d-grid ficha-layout">
+        ${fichaTabsHtml([
+          { id: 'ia', label: 'Análise IA', html: aiTabPaneHtml('announcement') },
+          {
+            id: 'enq', label: 'Enquadramento',
+            html: `<div class="parts">
             <span class="lb">Entidade adjudicante</span><span style="font-weight:600">${esc(a.contracting_entity ?? (raw.contractingEntities ?? []).map((e) => e.description).join('; ') ?? '—')}</span>
             <span class="lb">Tipo de anúncio</span><span>${esc(a.announcement_type ?? '—')}</span>
             <span class="lb">Modelo / procedimento</span><span>${esc(a.model_type ?? a.contracting_procedure_type ?? '—')}</span>
@@ -1997,11 +4005,14 @@ async function renderAnnouncement(id) {
             <span class="lb">CPV</span><span>${esc(a.cpvs ?? '—')}</span>
             <span class="lb">Peças do procedimento</span><span>${a.contracting_procedure_url ? `<a href="${esc(a.contracting_procedure_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">abrir na plataforma ↗</a>` : '—'}</span>
             <span class="lb">Publicação DR (PDF)</span><span>${a.reference_url ? `<a href="${esc(a.reference_url)}" target="_blank" rel="noopener" style="border-bottom:1px solid var(--border-btn)">ver no Diário da República ↗</a>` : '—'}${raw.dreNumber ? ` · DR n.º ${esc(raw.dreNumber)}, série ${esc(raw.dreSeries ?? '—')}` : ''}</span>
-          </div>
-        </div>
-        <div id="ai-result"></div>
-      </div>
-      <div>
+          </div>`,
+          },
+          { id: 'carteira', label: 'Carteira', html: carteiraPaneHtml('anuncio_aberto', a.id, a.pipeline_status) },
+          cronoHtml ? { id: 'crono', label: 'Cronologia', html: `<div class="crono">${cronoHtml}</div>` } : null,
+          { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(a.contracting_procedure_url) },
+          { id: 'proposta', label: 'Proposta', html: '<div id="proposal-panel"></div>' },
+        ])}
+      <div class="d-side">
         <div class="d-price">
           <div class="k">PREÇO BASE</div>
           <div class="big">${fmtPrice(a.base_price)}</div>
@@ -2011,80 +4022,41 @@ async function renderAnnouncement(id) {
             ${raw.proposalDeadline ? `<p class="est">No detalhe do BASE: ${esc(raw.proposalDeadline)}.</p>` : ''}
           </div>
         </div>
-        ${cronoHtml ? `<div class="d-card"><div class="t">Cronologia</div><div class="crono">${cronoHtml}</div></div>` : ''}
-        <div class="d-card">
-          <div class="t">Ficha de oportunidade (IA)</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Análise do anúncio contextualizada à tua atividade: critérios, requisitos de habilitação, riscos e recomendação go/no-go. O resultado fica guardado.</p>
-        </div>
+        <div id="close-forecast"></div>
       </div>
     </div>`;
 
-  document.getElementById('ai-analyze-btn').onclick = async () => {
-    const btn = document.getElementById('ai-analyze-btn');
-    const out = document.getElementById('ai-result');
-    btn.disabled = true;
-    aiModalOpen([
-      'A descarregar o anúncio publicado em Diário da República…',
-      'A extrair o texto do documento oficial…',
-      'A identificar critérios de adjudicação e ponderações…',
-      'A levantar requisitos de habilitação, cauções e prazos…',
-      'A avaliar o fit com a tua atividade…',
-      'A procurar red flags no procedimento…',
-      'A compilar a checklist e a recomendação go/no-go…',
-    ]);
-    try {
-      const pid = Number(getCtx() || 0);
-      const r = await api(`/api/announcements/${id}/analyze`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-      const docNote = r.docs_used > 0
-        ? `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`
-        : r.docs_used === 0
-          ? '<p class="hint">Peças do procedimento não acessíveis publicamente (plataforma sem descarga direta ou com registo) — análise com o anúncio do DR e dados estruturados.</p>'
-          : '';
-      out.innerHTML = `<div class="d-card aificha-card">${renderAiFicha(r.analysis, r.cached, r.model)}${docNote}
-        <p style="margin-top:0.6rem"><button class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
-        <div id="ai-template-out"></div></div>`;
-      out.scrollIntoView({ block: 'nearest' });
-      document.getElementById('ai-template-btn').onclick = async () => {
-        const tbtn = document.getElementById('ai-template-btn');
-        tbtn.disabled = true;
-        aiModalOpen([
-          'A reunir os critérios de adjudicação já extraídos…',
-          'A montar a checklist de submissão na plataforma…',
-          'A redigir a declaração do Anexo I do CCP…',
-          'A estruturar a memória descritiva alinhada aos critérios…',
-          'A preparar os placeholders da tua empresa…',
-        ]);
-        try {
-          const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
-          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
-          const url = URL.createObjectURL(blob);
-          document.getElementById('ai-template-out').innerHTML = `
-            <div class="card" style="margin-top:0.6rem">
-              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
-                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
-              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
-            </div>`;
-        } catch (err) {
-          document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
-          tbtn.disabled = false;
-        } finally { aiModalClose(); }
-      };
-    } catch (err) {
-      out.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-      btn.disabled = false;
-    } finally { aiModalClose(); }
-  };
+  bindFichaTabs(app);
+  bindPipelineChips(app);
+  wireFichaPipeline('anuncio_aberto', a.id);
+  startFichaAi({ kind: 'announcement', id });
+  mountCloseForecast(document.getElementById('close-forecast'), id);
+  mountProposalPanel(document.getElementById('proposal-panel'), id);
+  notifyGuide('ficha');
 }
 
-function renderAiFicha(an, cached, model) {
-  // recomendação → [rótulo, cor da etiqueta, classe do destaque]
+function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
   const rec = an.go_no_go?.recomendacao;
-  const badgeGo = { go: ['GO', '#2c6353', 'go'], condicional: ['CONDICIONAL', '#b26a00', 'condicional'], 'no-go': ['NO-GO', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
+  const badgeGo = { go: ['AVANÇAR', '#2c6353', 'go'], condicional: ['COM RESERVAS', '#b26a00', 'condicional'], 'no-go': ['NÃO AVANÇAR', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
+  const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
+  const habHtml = hab
+    ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${hab.map((i) => `<li>${esc(i.text)} — <strong>${esc(i.label || i.status)}</strong></li>`).join('')}</ul>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
+    : (an.requisitos_habilitacao?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
+  const checks = Array.isArray(an.checklist) ? an.checklist : [];
+  const emptyChecklistHint = (docsUsed === -1 || docsUsed === 0 || !checks.length)
+    ? '<p class="muted">A análise é do anúncio do Diário da República. A checklist de preparação precisa das peças do procedimento (caderno de encargos).</p>'
+    : '<p class="muted">Gere a análise de IA para obter a lista de verificação de preparação</p>';
+  const checkHtml = itemType && itemId
+    ? (checks.length
+      ? `<div class="check-list" data-type="${esc(itemType)}" data-id="${itemId}">${checks.map((t) => `<label><input type="checkbox" data-text="${esc(t)}"> ${esc(t)}</label>`).join('')}<p class="muted" id="ck-prog"></p></div>`
+      : emptyChecklistHint)
+    : list(an.checklist);
+  const fitScore = displayFitScore(an.fit_atividade?.score);
   return `
     <div class="ai-verdict">
       <span class="ai-badge" style="background:${badgeGo[1]}">${badgeGo[0]}</span>
-      ${an.fit_atividade ? `<span>Fit com a atividade: <strong style="color:${fitColor(an.fit_atividade.score)}">${an.fit_atividade.score}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
+      ${an.fit_atividade ? `<span>Adequação à atividade: <strong style="color:${fitColor(fitScore)}">${fitScore}/100</strong> — ${esc(an.fit_atividade.razao ?? '')}</span>` : ''}
     </div>
     ${an.go_no_go?.justificacao ? `<div class="ai-callout ${badgeGo[2]}">${esc(an.go_no_go.justificacao)}</div>` : ''}
     <dl class="detail">
@@ -2095,22 +4067,105 @@ function renderAiFicha(an, cached, model) {
       <dt>Preço base</dt><dd>${esc(an.preco_base ?? '—')}</dd>
       <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
     </dl>
-    <h3>Requisitos de habilitação</h3>${list(an.requisitos_habilitacao)}
-    <h3>Red flags</h3>${list(an.red_flags)}
-    <h3>Checklist para a proposta</h3>${list(an.checklist)}
-    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}</p>`;
+    <h3>Requisitos de habilitação</h3>${habHtml}
+    <h3>Alertas</h3>${list(an.red_flags)}
+    <h3>Checklist para a proposta</h3>${checkHtml}
+    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}${model ? ` · ${esc(model)}` : ''}</p>`;
+}
+
+async function hydrateChecklist(root) {
+  const box = root.querySelector?.('.check-list') || document.querySelector('.check-list');
+  if (!box) return;
+  const type = box.dataset.type;
+  const id = box.dataset.id;
+  try {
+    const d = await api(`/api/pipeline/${type}/${id}/checklist`);
+    const byText = new Map((d.items || []).map((i) => [i.text, i]));
+    box.querySelectorAll('input[type=checkbox]').forEach((cb, idx) => {
+      const it = byText.get(cb.dataset.text) || (d.items || [])[idx];
+      cb.checked = !!(it && it.checked);
+      const text = it?.text || cb.dataset.text;
+      cb.onchange = async () => {
+        try {
+          await api(`/api/pipeline/${type}/${id}/checklist`, {
+            method: 'PUT', body: JSON.stringify({ item_text: text, checked: cb.checked }),
+          });
+          const n = box.querySelectorAll('input:checked').length;
+          const tot = box.querySelectorAll('input[type=checkbox]').length;
+          const prog = box.querySelector('#ck-prog');
+          if (prog) prog.textContent = tot ? `${n}/${tot} · ${Math.round((n / tot) * 100)} %` : '';
+        } catch (e) { cb.checked = !cb.checked; alert(e.message); }
+      };
+    });
+    const n = box.querySelectorAll('input:checked').length;
+    const tot = box.querySelectorAll('input[type=checkbox]').length;
+    const prog = box.querySelector('#ck-prog');
+    if (prog) prog.textContent = tot ? `${n}/${tot} · ${Math.round((n / tot) * 100)} %` : '';
+  } catch { /* sem checklist ainda */ }
+}
+
+async function wireFichaPipeline(type, id) {
+  bindPipelineChips(document.getElementById('pl-ficha') || app);
+  try {
+    const [cur, hist, seats] = await Promise.all([
+      api(`/api/pipeline/${type}/${id}`),
+      api(`/api/pipeline/${type}/${id}/history`).catch(() => ({ items: [] })),
+      api('/api/seats').catch(() => ({ members: [] })),
+    ]);
+    const note = document.getElementById('pl-note');
+    if (note) note.value = cur.note || '';
+    const ass = document.getElementById('pl-assignee');
+    if (ass) {
+      ass.innerHTML = `<option value="">—</option>${(seats.members || []).map((m) =>
+        `<option value="${m.id}" ${cur.assigned_user_id === m.id ? 'selected' : ''}>${esc([m.first_name, m.last_name].filter(Boolean).join(' ') || m.email || m.username)}</option>`).join('')}`;
+    }
+    const dd = document.querySelector('#pl-ficha .pl-dd');
+    if (dd) fillPipelineDropdown(dd, cur.status || dd.dataset.cur);
+    const histEl = document.getElementById('pl-hist');
+    if (histEl) {
+      histEl.innerHTML = (hist.items || []).map((h) =>
+        `${esc(PL_LABELS[h.from_status] || h.from_status || 'Nova')} → ${esc(PL_LABELS[h.to_status] || h.to_status)} · ${esc(h.name || '')} · ${new Date(h.changed_at).toLocaleString('pt-PT')}`
+      ).join('<br>') || 'Sem histórico.';
+    }
+    const save = document.getElementById('pl-save');
+    if (save) save.onclick = async () => {
+      const dd = document.querySelector('#pl-ficha .pl-dd');
+      try {
+        await api(`/api/pipeline/${type}/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: dd?.dataset.cur || cur.status || 'interessa',
+            note: note?.value || '',
+            assigned_user_id: ass?.value ? Number(ass.value) : null,
+          }),
+        });
+        wireFichaPipeline(type, id);
+      } catch (e) { alert(e.message); }
+    };
+    hydrateChecklist(app);
+  } catch { /* nova oportunidade sem linha */ }
 }
 
 /* ---------- Digest semanal (página na app; layout de email fica no endpoint .html) ---------- */
 async function renderDigest() {
-  const ctx = getCtx();
+  const gen = _viewGen;
+  let ctx = getCtx();
+  if (!ctx) {
+    try {
+      const profilesData = await api('/api/profiles');
+      if (gen !== _viewGen || location.hash.split('?')[0] !== '#/digest') return;
+      const first = profilesData.items?.[0];
+      if (first) { ctx = String(first.id); setCtx(ctx); }
+    } catch { /* sem perfis */ }
+  }
   if (!ctx) { location.hash = '#/'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A gerar o digest da semana…</p></div>';
   const d = await api(`/api/profiles/${ctx}/digest.json`);
+  if (gen !== _viewGen || location.hash.split('?')[0] !== '#/digest') return;
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <h2 style="margin:0">Digest semanal — ${esc(d.profile.name)}</h2>
+        <h2 style="margin:0">Resumo semanal — ${esc(d.profile.name)}</h2>
         <div class="muted">Gerado a ${new Date(d.generated_at).toLocaleString('pt-PT')}</div>
       </div>
       <div>
@@ -2119,6 +4174,7 @@ async function renderDigest() {
       </div>
     </div>
     ${d.intro ? `<div class="hint">${esc(d.intro)}</div>` : ''}
+    ${d.empty ? '<p class="empty-copy">Semana sem novidades na sua atividade</p>' : ''}
     <div class="cards">
       <div class="stat"><div class="n">${d.stats.open}</div><div class="l">Concursos abertos</div></div>
       <div class="stat"><div class="n">${d.stats.new_7d}</div><div class="l">Novos (7 dias)</div></div>
@@ -2128,7 +4184,7 @@ async function renderDigest() {
       <h2>Concursos com prazo a decorrer</h2>
       ${d.open_announcements.length ? `<table><thead><tr><th>Prazo</th><th>Designação</th><th>Entidade</th><th>Preço base</th></tr></thead><tbody>
         ${d.open_announcements.map((a) => `<tr class="clickable" onclick="location.hash='#/announcements/${a.id}'">
-          <td>${fmtDate(a.deadline)}</td>
+          <td>${fmtDateDMY(a.deadline)}</td>
           <td><a href="#/announcements/${a.id}" onclick="event.stopPropagation()">${esc((a.designation ?? '').slice(0, 100))}</a></td>
           <td>${esc(a.entity ?? '—')}</td><td>${fmtPrice(a.base_price)}</td></tr>`).join('')}</tbody></table>`
         : '<p class="muted">Sem concursos abertos neste momento.</p>'}
@@ -2137,13 +4193,15 @@ async function renderDigest() {
       <h2>Renovações a preparar (próximos 90 dias)</h2>
       ${d.renewals.length ? `<table><thead><tr><th>Termina</th><th>Entidade</th><th>Objeto</th><th>Valor</th></tr></thead><tbody>
         ${d.renewals.map((r) => `<tr class="clickable" onclick="location.hash='#/contracts/${r.id}'">
-          <td>${fmtDate(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
+          <td>${fmtDateDMY(r.end_date)} <span class="muted">(${r.days_left}d)</span></td>
           <td>${esc(r.entity ?? '—')}</td>
           <td><a href="#/contracts/${r.id}" onclick="event.stopPropagation()">${esc((r.object ?? '').slice(0, 90))}</a></td>
           <td>${fmtPrice(r.value)}</td></tr>`).join('')}</tbody></table>`
         : '<p class="muted">Sem renovações no horizonte de 90 dias.</p>'}
     </div>
     <p class="muted">Fonte: Portal BASE — IMPIC / dados.gov.pt</p>`;
+  const ctxSel = document.getElementById('ctx-select');
+  if (ctxSel) ctxSel.onchange = (e) => { setCtx(e.target.value); renderDigest(); };
 }
 
 /* ---------- Dados abertos (histórico oficial IMPIC) ---------- */
@@ -2212,20 +4270,26 @@ async function renderOpendata() {
 
 /* ---------- Entidades (lista) ---------- */
 async function renderEntities(role = 'contracting', q = '') {
-  const d = await api(`/api/entities?role=${role}&q=${encodeURIComponent(q)}&size=50`);
+  let pid = getCtx();
+  if (!pid) {
+    const profilesData = await api('/api/profiles').catch(() => ({ items: [] }));
+    pid = profilesData.items[0] ? String(profilesData.items[0].id) : '';
+    if (pid) setCtx(pid);
+  }
+  const d = await api(`/api/entities?role=${role}&q=${encodeURIComponent(q)}&size=50${pid ? `&profile_id=${pid}` : ''}`);
   app.innerHTML = `
     <div class="toolbar">
       <div><h1 style="font-size:24px;font-weight:700;letter-spacing:-0.02em;margin:0">Entidades</h1>
         <div class="muted" style="margin-top:3px">Compradores públicos e fornecedores com histórico na base.</div></div>
-      <div class="ent-toggle">
+      <div class="ent-toggle" data-guide="ent-tabs">
         <button class="${role === 'contracting' ? 'on' : ''}" onclick="renderEntities('contracting')">Adjudicantes</button>
         <button class="${role === 'contracted' ? 'on' : ''}" onclick="renderEntities('contracted')">Adjudicatárias</button>
       </div>
     </div>
-    <form class="opp-search" id="ent-search" style="margin:0 0 12px">
+    <form class="opp-search" id="ent-search" data-guide="ent-search" style="margin:0 0 12px">
       ${ico('search', 14)}<input type="text" name="q" placeholder="Pesquisar por nome ou NIF" value="${esc(q)}">
     </form>
-    <div class="ent-list">
+    <div class="ent-list" data-guide="ent-table">
       <div class="ent-row head"><span>NOME</span><span class="nifh">NIF</span><span class="r">CONTRATOS</span><span class="r th">VALOR TOTAL</span><span class="r uh">ÚLTIMO CONTRATO</span></div>
       ${d.items.map((e) => `<div class="ent-row body" onclick="location.hash='#/entities/${e.id}'">
         <span class="nm">${esc(e.name)}</span>
@@ -2239,12 +4303,14 @@ async function renderEntities(role = 'contracting', q = '') {
     e.preventDefault();
     renderEntities(role, new FormData(e.target).get('q'));
   };
+  notifyGuide('entidades');
 }
 window.renderEntities = renderEntities;
 
 /* ---------- Entidade (ficha) ---------- */
 async function renderEntity(id) {
-  const e = await api(`/api/entities/${id}`);
+  const pid = getCtx();
+  const e = await api(`/api/entities/${id}${pid ? `?profile_id=${pid}` : ''}`);
   const isBuyer = (e.as_contracting?.n_contracts ?? 0) >= (e.as_contracted?.n_contracts ?? 0);
   const r = isBuyer ? e.as_contracting : e.as_contracted;
   const roleLabel = isBuyer ? 'comprador público' : 'fornecedor';
@@ -2277,7 +4343,7 @@ async function renderEntity(id) {
 
   const recent = (r.recent_contracts ?? []).slice(0, 8).map((c) => `<div class="row" onclick="location.hash='#/contracts/${c.id}'">
     <span class="pub">${fmtDate(c.publication_date)}</span>
-    <span class="obj">${esc(c.object_brief_description ?? '—')}</span>
+    <span class="obj">${escTitle(c.object_brief_description) || '—'}</span>
     <span class="val">${fmtCompact(c.initial_contractual_price)}</span>
     <span class="ter">${c.end_date ? fmtDate(c.end_date) : '—'}</span>
   </div>`).join('') || '<div class="row"><span class="muted" style="grid-column:1/-1">Sem contratos.</span></div>';
@@ -2327,17 +4393,30 @@ async function renderEntity(id) {
 
 /* ---------- Router ---------- */
 /* ---------- Admin: gestão de utilizadores, planos e utilização ---------- */
-const AI_KIND_LABEL = { fit: 'Fit IA', analise_anuncio: 'Análise de anúncio', analise_contrato: 'Análise de contrato', dossier: 'Dossier de resposta' };
+const AI_KIND_LABEL = {
+  fit: 'Fit IA',
+  analise_anuncio: 'Análise de anúncio',
+  analise_contrato: 'Análise de contrato',
+  dossier: 'Dossier de resposta',
+  requisitos: 'Extração de requisitos',
+  proposta: 'Geração de proposta',
+  reeavaliacao: 'Reavaliação de proposta',
+  previsao_fecho: 'Previsão de fecho',
+};
 const STATUS_LABEL = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' };
 
 async function renderAdmin() {
   topbar.hidden = false;
   if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let stats, companies, feedback;
+  let stats, companies, feedback, notif, aiFb;
   try {
-    [stats, companies, feedback] = await Promise.all([
-      api('/api/admin/stats'), api('/api/admin/companies'), api('/api/admin/feedback').catch(() => ({ items: [] })),
+    [stats, companies, feedback, notif, aiFb] = await Promise.all([
+      api('/api/admin/stats'),
+      api('/api/admin/companies'),
+      api('/api/admin/feedback').catch(() => ({ items: [] })),
+      api('/api/admin/notifications').catch(() => ({ items: [] })),
+      api('/api/admin/ai-feedback').catch(() => ({ by_reason: [], by_cpv: [], items: [] })),
     ]);
   } catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
 
@@ -2347,14 +4426,23 @@ async function renderAdmin() {
     <div class="asv">${value}</div><div class="asl">${esc(label)}</div>${note ? `<div class="asn">${esc(note)}</div>` : ''}</div>`;
 
   const planBreak = (stats.companies_by_plan || []).map((r) => `${PLAN_LABEL[r.plan] || r.plan}: <strong>${r.n}</strong>`).join(' · ');
-  const aiKinds = (stats.ai_usage?.by_kind || []).map((r) => `<div class="admin-row"><span>${esc(AI_KIND_LABEL[r.kind] || r.kind)}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem análises este mês.</p>';
-  const searchKinds = (stats.searches_by_kind || []).map((r) => `<div class="admin-row"><span>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem pesquisas.</p>';
+  const aiKinds = (stats.ai_usage?.by_kind || []).map((r) => `<div class="admin-row"><span>${esc(AI_KIND_LABEL[r.kind] || r.kind)}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem análises nos últimos 30 dias.</p>';
+  const searchKinds = (stats.searches?.by_kind || stats.searches_by_kind || []).map((r) => `<div class="admin-row"><span>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem pesquisas.</p>';
+  const searchCo = (stats.searches?.by_company || []).map((r) => `<div class="admin-row"><span>${esc(r.name)}</span><strong>${r.n}</strong></div>`).join('');
+  const searchRecent = (stats.searches?.recent || []).map((s) => `<tr>
+      <td class="muted" style="white-space:nowrap">${s.created_at ? new Date(s.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+      <td>${esc(s.kind === 'anuncios' ? 'Anúncios' : 'Contratos')}</td>
+      <td>${esc(s.term || '—')}</td>
+      <td>${esc(s.status || '—')}</td>
+      <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+    </tr>`).join('');
 
   const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
   const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
   const userLine = (u) => `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}${
-        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}</span>
+        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}${
+        u.ai_used != null ? ` · IA ${u.ai_used}${u.ai_reset_at ? ` · reset ${new Date(u.ai_reset_at).toLocaleDateString('pt-PT')}` : ''}` : ''}</span>
       <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(u.email || u.username)}">repor password</button></div>`;
   const compRows = (companies.items || []).map((c) => `
     <tr data-id="${c.id}">
@@ -2363,6 +4451,7 @@ async function renderAdmin() {
       <td>${c.n_users}</td>
       <td>${c.n_profiles}</td>
       <td>${c.ai_month ?? 0}</td>
+      <td>${c.searches_30d ?? 0}</td>
       <td><select class="adm-plan">${planOpts(normalizeAdminPlan(c.plan))}</select></td>
       <td><select class="adm-status">${statusOpts(c.subscription_status)}</select></td>
       <td>${new Date(c.created_at).toLocaleDateString('pt-PT')}</td>
@@ -2381,7 +4470,8 @@ async function renderAdmin() {
   app.innerHTML = `
     <div class="admin-wrap">
       <div class="eyebrow" style="color:var(--brand)">Administração</div>
-      <h2 style="margin:.3rem 0 1rem">Utilização do BaseRadar</h2>
+      <h2 style="margin:.3rem 0 .6rem">Operação do PrepBid</h2>
+      ${adminTabs('ops')}
 
       <div class="admin-stats">
         ${stat('Empresas', t.companies ?? 0, `${stats.signups?.last7 ?? 0} novas (7d)`)}
@@ -2389,14 +4479,16 @@ async function renderAdmin() {
         ${stat('Em trial', sub.trialing ?? 0, 'Pro 7 dias')}
         ${stat('Free / inativas', sub.free_inactive ?? 0, null)}
         ${stat('Receita (mês)', ((stats.payments?.cents_month ?? 0) / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }), `${stats.payments?.n_month ?? 0} pagamento(s)`)}
-        ${stat('Análises IA (mês)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
+        ${stat('Análises IA (30d)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
+        ${stat('Pesquisas (30d)', stats.searches?.last30 ?? 0, `${stats.searches?.last7 ?? 0} nos últimos 7 dias`)}
       </div>
 
       <div class="admin-grid2">
         <div class="card"><h3 style="margin:0 0 .6rem">Distribuição de planos</h3><p class="muted" style="margin:0 0 .8rem">${planBreak || '—'}</p>
           <div class="admin-row"><span>Faturas Moloni (mês)</span><strong>${stats.payments?.invoiced ?? 0}${stats.payments?.invoice_errors ? ` · ${stats.payments.invoice_errors} erro(s)` : ''}</strong></div>
-          <h4 style="margin:.8rem 0 .4rem">Análises de IA por tipo (mês)</h4>${aiKinds}</div>
-        <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo</h3>${searchKinds}
+          <h4 style="margin:.8rem 0 .4rem">Análises de IA por tipo (30 dias)</h4>${aiKinds}</div>
+        <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo (30 dias)</h3>${searchKinds}
+          ${searchCo ? `<h4 style="margin:.8rem 0 .4rem">Por empresa</h4>${searchCo}` : ''}
           <h4 style="margin:.8rem 0 .4rem">Recolhas (profile runs)</h4>
           <div class="admin-row"><span>Total</span><strong>${stats.profile_runs?.total ?? 0}</strong></div>
           <div class="admin-row"><span>Últimos 30 dias</span><strong>${stats.profile_runs?.last30 ?? 0}</strong></div>
@@ -2404,9 +4496,17 @@ async function renderAdmin() {
       </div>
 
       <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Últimas pesquisas</h3>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Quando</th><th>Tipo</th><th>Termo</th><th>Estado</th><th>Quem</th></tr></thead>
+          <tbody>${searchRecent || '<tr><td colspan="5" class="muted">Sem pesquisas.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .8rem">Empresas</h3>
         <div style="overflow-x:auto"><table class="admin-table">
-          <thead><tr><th>Empresa</th><th>Utils</th><th>Perfis</th><th>IA/mês</th><th>Plano</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
+          <thead><tr><th>Empresa</th><th>Utils</th><th>Perfis</th><th>IA/30d</th><th>Pesq/30d</th><th>Plano</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
           <tbody id="admin-companies">${compRows}</tbody>
         </table></div>
       </div>
@@ -2451,6 +4551,27 @@ async function renderAdmin() {
           <tbody id="admin-feedback">${fbRows}</tbody>
         </table></div>
       </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Notificações (últimas 200)</h3>
+        <p><button class="btn-secondary" id="force-tick">Forçar tick</button></p>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Quando</th><th>User</th><th>Tipo</th><th>Ref</th><th>Estado</th></tr></thead>
+          <tbody>${(notif?.items || []).map((n) => `<tr>
+            <td>${fmtDateDMY(n.created_at)}</td><td>${esc(n.email || n.username || n.user_id)}</td>
+            <td>${esc(n.kind)}</td><td class="muted">${esc(n.ref)}</td><td>${esc(n.status)}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="muted">Sem envios.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Feedback IA por motivo/CPV</h3>
+        <p class="muted">${(aiFb?.items || []).length} votos recentes · ${(aiFb?.by_reason || []).reduce((s, r) => s + (r.n || 0), 0)} 👎 com motivo</p>
+        <p class="muted">Por motivo</p>
+        <ul>${(aiFb?.by_reason || []).map((r) => `<li>${esc(r.reason_code || '—')}: ${r.n}</li>`).join('') || '<li>—</li>'}</ul>
+        <p class="muted">Por CPV (top 👎)</p>
+        <ul>${(aiFb?.by_cpv || []).filter((r) => r.cpv).map((r) => `<li>${esc(r.cpv)}: ${r.n}</li>`).join('') || '<li>—</li>'}</ul>
+      </div>
     </div>`;
 
   app.querySelectorAll('.rp-user').forEach((btn) => btn.onclick = async () => {
@@ -2479,7 +4600,7 @@ async function renderAdmin() {
         <div class="admin-row"><span>APP_URL</span><strong>${okMark(st.stripe.app_url)}</strong></div>
         ${st.stripe.secret_key ? `<div class="admin-row"><span>Stripe — MB WAY / Multibanco activos</span><strong>${okMark(mb)} / ${okMark(mbc)}</strong></div>` : ''}
         <div class="admin-row"><span>Moloni — pronto a faturar</span><strong>${okMark(st.moloni.ready)}${st.moloni.ready ? (st.moloni.finalize ? ' (finaliza)' : ' (rascunho)') : ''}</strong></div>
-        <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}</strong></div>`;
+        <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}${st.mail.provider ? ` · ${esc(st.mail.provider)}` : ''}${st.mail.from ? ` · ${esc(st.mail.from)}` : ''}</strong></div>`;
     } catch (e) { box.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   })();
 
@@ -2537,19 +4658,154 @@ async function renderAdmin() {
     try { await api(`/api/admin/feedback/${btn.dataset.id}/handled`, { method: 'POST', body: JSON.stringify({ handled }) }); renderAdmin(); }
     catch (e) { alert(e.message); }
   });
+  const tickBtn = document.getElementById('force-tick');
+  if (tickBtn) tickBtn.onclick = async () => {
+    try {
+      const r = await api('/api/admin/notifications/run', { method: 'POST', body: '{}' });
+      alert(`Tick: ${r.digests ?? 0} digest(s), ${r.reminders ?? 0} lembrete(s), ${r.quota_resets ?? 0} reset(s) de teto IA, hora ${r.hour}`);
+      renderAdmin();
+    } catch (e) { alert(e.message); }
+  };
 }
+function adminTabs(active) {
+  return `<div class="admin-tabs">
+    <a href="#/admin" class="${active === 'ops' ? 'on' : ''}">Operação</a>
+    <a href="#/admin/uso" class="${active === 'uso' ? 'on' : ''}">Utilização</a>
+  </div>`;
+}
+
+async function renderUsageAdmin() {
+  topbar.hidden = false;
+  if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
+  const daysRaw = new URLSearchParams((location.hash.split('?')[1] || '')).get('d') || '30';
+  const days = daysRaw === '7' || daysRaw === '90' ? daysRaw : '30';
+  app.innerHTML = '<div class="card"><p class="muted">A carregar utilização…</p></div>';
+  let data;
+  try { data = await api(`/api/admin/usage?days=${days}`); }
+  catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
+
+  const k = data.kpis || {};
+  const stat = (label, value, note) => `<div class="admin-stat">
+    <div class="asv">${value ?? 0}</div><div class="asl">${esc(label)}</div>${note ? `<div class="asn">${esc(note)}</div>` : ''}</div>`;
+  const period = (d, label) => `<a class="admin-period-btn${d === days ? ' on' : ''}" href="#/admin/uso?d=${d}">${label}</a>`;
+  const maxMod = Math.max(1, ...(data.modules || []).map((r) => r.n));
+  const bars = (data.modules || []).slice(0, 12).map((r) => `
+    <div class="usage-hbar">
+      <span class="lbl" title="${esc(r.label)}">${esc(r.label)}</span>
+      <span class="track"><i style="width:${Math.round((r.n / maxMod) * 100)}%"></i></span>
+      <span class="n">${r.n}</span>
+    </div>`).join('') || '<p class="muted">Ainda não há páginas vistas neste período.</p>';
+
+  const table = (headers, rows, empty) => `<div style="overflow-x:auto"><table class="admin-table">
+    <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="${headers.length}" class="muted">${empty}</td></tr>`}</tbody>
+  </table></div>`;
+
+  const modRows = (data.modules || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td><td>${r.users}</td></tr>`).join('');
+  const actRows = (data.actions || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td></tr>`).join('');
+  const oriRows = (data.origins || []).map((r) => `<tr><td>${esc(r.label)}</td><td>${r.n}</td><td>${r.visitors}</td></tr>`).join('');
+  const coRows = (data.companies || []).map((c) => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(PLAN_LABEL[c.plan] || c.plan)}</td><td>${c.n}</td>
+    <td class="muted">${c.last_at ? new Date(c.last_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+  </tr>`).join('');
+  const recRows = (data.recent || []).map((e) => `<tr>
+    <td class="muted" style="white-space:nowrap">${e.created_at ? new Date(e.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+    <td>${e.kind === 'action' ? 'Acção' : 'Página'}</td>
+    <td>${esc(e.module)}</td>
+    <td class="muted">${esc(e.action || e.path || '')}</td>
+    <td>${esc(e.origin || '—')}</td>
+    <td>${esc(e.company || '—')}${e.username ? `<div class="muted" style="font-size:.8rem">${esc(e.username)}</div>` : ''}</td>
+  </tr>`).join('');
+  const sk = data.searches?.kpis || {};
+  const sKindRows = (data.searches?.by_kind || []).map((r) => `<tr>
+    <td>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</td>
+    <td>${r.n}</td><td>${r.done ?? '—'}</td><td>${r.failed ?? '—'}</td>
+  </tr>`).join('');
+  const sCoRows = (data.searches?.by_company || []).map((c) => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(PLAN_LABEL[c.plan] || c.plan)}</td><td>${c.n}</td>
+    <td class="muted">${c.last_at ? new Date(c.last_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+  </tr>`).join('');
+  const sRecRows = (data.searches?.recent || []).map((s) => `<tr>
+    <td class="muted" style="white-space:nowrap">${s.created_at ? new Date(s.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+    <td>${esc(s.kind === 'anuncios' ? 'Anúncios' : 'Contratos')}</td>
+    <td>${esc(s.term || '—')}</td>
+    <td>${esc(s.status || '—')}</td>
+    <td>${s.total_scraped ?? '—'} / ${s.total_reported ?? '—'}</td>
+    <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+  </tr>`).join('');
+
+  app.innerHTML = `
+    <div class="admin-wrap wide">
+      <div class="eyebrow" style="color:var(--brand)">Administração</div>
+      <h2 style="margin:.3rem 0 .6rem">Utilização</h2>
+      ${adminTabs('uso')}
+      <div class="admin-period">${period('7', '7 dias')}${period('30', '30 dias')}${period('90', '90 dias')}</div>
+      <p class="muted" style="margin:.4rem 0 1rem;font-size:.85rem">Páginas, módulos, o que fazem, e de onde chegam (referrer / UTM). A tua navegação em Admin não entra aqui.</p>
+
+      <div class="admin-stats admin-stats-5">
+        ${stat('Páginas', k.pageviews ?? 0, `${days} dias`)}
+        ${stat('Visitantes', k.visitors ?? 0, 'únicos (cookie)')}
+        ${stat('Utilizadores', k.users ?? 0, 'com sessão')}
+        ${stat('Empresas', k.companies ?? 0, 'com actividade')}
+        ${stat('Acções', k.actions ?? 0, 'análises, carteira…')}
+        ${stat('Pesquisas', sk.n ?? 0, `${sk.anuncios ?? 0} anúncios · ${sk.contratos ?? 0} contratos`)}
+      </div>
+
+      <div class="usage-trend card">
+        <h3 style="margin:0 0 .4rem">Actividade por dia</h3>
+        ${data.trend_svg || '<p class="muted">Sem série.</p>'}
+      </div>
+
+      <div class="admin-grid2">
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">Módulos / páginas</h3>
+          ${bars}
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">De onde vêm</h3>
+          ${table(['Origem', 'Eventos', 'Visitantes'], oriRows, 'Sem origem registada ainda.')}
+        </div>
+      </div>
+
+      <div class="admin-grid2" style="margin-top:1.2rem">
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">Módulos (tabela)</h3>
+          ${table(['Módulo', 'Vistas', 'Pessoas'], modRows, 'Sem páginas.')}
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .6rem">O que fazem</h3>
+          ${table(['Acção', 'Vezes'], actRows, 'Ainda sem acções (análise, proposta, carteira, checkout…).')}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Empresas mais activas</h3>
+        ${table(['Empresa', 'Plano', 'Eventos', 'Última'], coRows, 'Nenhuma empresa autenticada neste período.')}
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Pesquisas (BASE.gov)</h3>
+        ${table(['Tipo', 'Corridas', 'Concluídas', 'Falhas'], sKindRows, 'Sem pesquisas neste período.')}
+        <h4 style="margin:1rem 0 .4rem">Por empresa</h4>
+        ${table(['Empresa', 'Plano', 'Pesquisas', 'Última'], sCoRows, 'Nenhuma empresa com pesquisas neste período.')}
+        <h4 style="margin:1rem 0 .4rem">Últimas pesquisas</h4>
+        ${table(['Quando', 'Tipo', 'Termo', 'Estado', 'Itens', 'Quem'], sRecRows, 'Sem pesquisas.')}
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Últimos eventos</h3>
+        ${table(['Quando', 'Tipo', 'Módulo', 'Detalhe', 'Origem', 'Quem'], recRows, 'Sem eventos.')}
+      </div>
+    </div>`;
+}
+
 function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
 
-/* Liga "Admin" à navegação lateral (só para administradores). */
+/* Liga o grupo Admin à navegação lateral (só para administradores). */
 function ensureAdminNav() {
-  const nav = document.querySelector('#topbar nav');
-  if (!nav) return;
-  const existing = nav.querySelector('a[href="#/admin"]');
-  if (!window._me?.is_admin) { existing?.remove(); return; }
-  if (existing) return;
-  const a = document.createElement('a');
-  a.href = '#/admin'; a.textContent = 'Admin';
-  nav.appendChild(a);
+  const group = document.getElementById('nav-admin');
+  if (!group) return;
+  group.hidden = !window._me?.is_admin;
 }
 
 /* ---------- Feedback / ajuda: botão flutuante + modal ---------- */
@@ -2569,12 +4825,22 @@ function openFeedbackModal() {
     <div class="modal-box">
       <button class="modal-x" aria-label="Fechar">×</button>
       <h3 style="margin:0 0 .3rem">Como podemos ajudar?</h3>
-      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o BaseRadar.</p>
+      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o PrepBid.</p>
       <div class="fb-tabs">
-        <button class="fb-tab active" data-kind="help">Pedir ajuda</button>
+        <button class="fb-tab active" data-kind="manual">Manual</button>
+        <button class="fb-tab" data-kind="help">Pedir ajuda</button>
         <button class="fb-tab" data-kind="feedback">Sugestão / feedback</button>
       </div>
-      <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem"></textarea>
+      <div id="fb-manual">
+        <p class="muted" style="margin:.6rem 0 .5rem;font-size:.88rem">Capítulos do manual e a demonstração dos menus.</p>
+        <div class="help-actions">
+          <button type="button" id="fb-tour">Ver demonstração dos menus</button>
+          <button type="button" class="btn-secondary" id="fb-screen">Explicar este ecrã</button>
+          <a class="btn-secondary" href="#/ajuda" id="fb-full">Abrir o manual</a>
+        </div>
+        <ul id="fb-toc" style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.88rem"></ul>
+      </div>
+      <textarea id="fb-msg" rows="5" placeholder="Escreva a sua mensagem…" style="width:100%;margin-top:.6rem;display:none"></textarea>
       <div class="error" id="fb-error" style="margin-top:.4rem"></div>
       <div id="fb-ok" class="hint" style="margin-top:.4rem;display:none">Obrigado! A sua mensagem foi registada.</div>
       <div class="inline" style="justify-content:flex-end;gap:.5rem;margin-top:.8rem">
@@ -2583,15 +4849,47 @@ function openFeedbackModal() {
       </div>
     </div>`;
   document.body.appendChild(wrap);
-  let kind = 'help';
+  let kind = 'manual';
   const close = () => wrap.remove();
+  const syncKind = () => {
+    const isMail = kind === 'help' || kind === 'feedback';
+    wrap.querySelector('#fb-manual').style.display = isMail ? 'none' : 'block';
+    wrap.querySelector('#fb-msg').style.display = isMail ? 'block' : 'none';
+    wrap.querySelector('#fb-send').style.display = isMail ? '' : 'none';
+  };
   wrap.querySelector('.modal-x').onclick = close;
   wrap.querySelector('#fb-cancel').onclick = close;
   wrap.onclick = (e) => { if (e.target === wrap) close(); };
+  const toc = window.BRHelpManualToc?.chapters || [];
+  wrap.querySelector('#fb-toc').innerHTML = toc.map((c) =>
+    `<li><a href="#/ajuda/${esc(c.slug)}">${esc(c.title)}</a></li>`).join('');
+  wrap.querySelector('#fb-full').onclick = close;
+  wrap.querySelector('#fb-toc').onclick = (e) => { if (e.target.closest('a')) close(); };
+  wrap.querySelector('#fb-tour').onclick = () => {
+    close();
+    window.BRGuide?.replayMenuTour?.();
+  };
+  wrap.querySelector('#fb-screen').onclick = () => {
+    close();
+    const hash = (location.hash.split('?')[0] || '#/hoje');
+    let id = 'hoje';
+    if (hash === '#/pipeline') id = 'carteira';
+    else if (hash.startsWith('#/announcements/') || hash.startsWith('#/contracts/')) id = 'ficha';
+    else if (hash.startsWith('#/conta')) id = 'conta';
+    else if (hash.startsWith('#/config') || hash.startsWith('#/profiles')) id = 'config';
+    else if (hash.startsWith('#/entities')) id = 'entidades';
+    else {
+      const m = hash.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+      if (m) id = radarGuideId(m[1] || 'opportunities');
+    }
+    window.BRGuide?.replayScreen?.(id);
+  };
   wrap.querySelectorAll('.fb-tab').forEach((tb) => tb.onclick = () => {
     kind = tb.dataset.kind;
     wrap.querySelectorAll('.fb-tab').forEach((x) => x.classList.toggle('active', x === tb));
+    syncKind();
   });
+  syncKind();
   wrap.querySelector('#fb-send').onclick = async () => {
     const message = wrap.querySelector('#fb-msg').value.trim();
     const err = wrap.querySelector('#fb-error');
@@ -2606,64 +4904,219 @@ function openFeedbackModal() {
   };
 }
 
+function setAppNavOpen(open) {
+  if (!topbar) return;
+  topbar.classList.toggle('nav-open', open);
+  document.body.classList.toggle('nav-open', open);
+  const btn = document.getElementById('nav-toggle');
+  const scrim = document.getElementById('nav-scrim');
+  if (btn) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+  }
+  if (scrim) scrim.hidden = !open;
+}
+
+function bindAppNav() {
+  hydrateNavIcons();
+  const btn = document.getElementById('nav-toggle');
+  const scrim = document.getElementById('nav-scrim');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    setAppNavOpen(!topbar.classList.contains('nav-open'));
+  };
+  if (scrim) scrim.onclick = () => setAppNavOpen(false);
+  topbar.querySelector('nav')?.addEventListener('click', (e) => {
+    if (e.target.closest('a')) setAppNavOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (window.BRGuide && window.BRGuide.isRunning && window.BRGuide.isRunning()) return;
+    setAppNavOpen(false);
+  });
+}
+
+window.setAppNavOpen = setAppNavOpen;
+
+async function renderAjuda(slug) {
+  const toc = window.BRHelpManualToc || { title: 'Manual', intro: '', chapters: [] };
+  const groups = [];
+  for (const ch of toc.chapters || []) {
+    const last = groups[groups.length - 1];
+    if (!last || last.name !== ch.group) groups.push({ name: ch.group, items: [ch] });
+    else last.items.push(ch);
+  }
+  const current = slug ? (toc.chapters || []).find((c) => c.slug === slug) : null;
+  const tocHtml = groups.map((g) =>
+    `<div class="g">${esc(g.name)}</div>` + g.items.map((c) =>
+      `<a href="#/ajuda/${esc(c.slug)}" class="${current && current.slug === c.slug ? 'active' : ''}">${esc(c.title)}${c.pro ? ' <span class="muted">Pro</span>' : ''}</a>`
+    ).join('')
+  ).join('');
+  app.innerHTML = `<div class="help-layout">
+    <aside class="help-toc">
+      <a href="#/ajuda"><strong>${esc(toc.title)}</strong></a>
+      ${tocHtml}
+      ${window._me?.is_admin ? `<div class="g">Validação</div>
+      <a href="#/qa">Checklist clicável</a>` : ''}
+    </aside>
+    <div class="card" id="help-main"><p class="muted">A carregar…</p></div>
+  </div>`;
+  const main = document.getElementById('help-main');
+  const actions = `<div class="help-actions">
+      <button type="button" id="help-tour">Ver demonstração dos menus</button>
+      <button type="button" class="btn-secondary" id="help-replay">Explicar este ecrã</button>
+      <button type="button" class="btn-secondary" id="help-optout">Não voltar a mostrar guias</button>
+      <button type="button" class="btn-secondary" id="help-reset">Repor guias</button>
+    </div>`;
+  if (!slug) {
+    main.innerHTML = `<h1 style="margin:0 0 .4rem">${esc(toc.title)}</h1>
+      <p class="lead">${esc(toc.intro)}</p>${actions}
+      <p>Escolha um capítulo à esquerda.${window._me?.is_admin ? ' A <a href="#/qa">checklist de validação</a> confirma o produto ecrã a ecrã.' : ''}</p>`;
+  } else if (!current) {
+    main.innerHTML = `<p>Capítulo não encontrado.</p><p><a href="#/ajuda">Voltar ao índice</a></p>`;
+  } else {
+    try {
+      const html = await fetch(current.html).then((r) => { if (!r.ok) throw new Error('em falta'); return r.text(); });
+      main.innerHTML = actions + html;
+    } catch {
+      main.innerHTML = `${actions}<p class="error">Não foi possível carregar este capítulo.</p>`;
+    }
+  }
+  document.getElementById('help-tour')?.addEventListener('click', () => window.BRGuide?.replayMenuTour?.());
+  document.getElementById('help-replay')?.addEventListener('click', () => window.BRGuide?.replayScreen?.(current?.slug || 'hoje'));
+  document.getElementById('help-optout')?.addEventListener('click', () => {
+    window.BRGuide?.setOptOut?.(true);
+    alert('Os guias ficam desligados neste browser.');
+  });
+  document.getElementById('help-reset')?.addEventListener('click', () => {
+    window.BRGuide?.resetGuides?.();
+    alert('Os guias voltam a aparecer na próxima visita a cada ecrã.');
+  });
+}
+
+function qaStorageKey() {
+  return 'br_qa:' + (window._me?.user_id ?? 'anon');
+}
+function loadQaChecks() {
+  try { return JSON.parse(localStorage.getItem(qaStorageKey()) || '{}') || {}; } catch { return {}; }
+}
+function saveQaChecks(map) {
+  try { localStorage.setItem(qaStorageKey(), JSON.stringify(map)); } catch { /* ignore */ }
+}
+
+function renderQaChecklist() {
+  if (!window._me?.is_admin) {
+    app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>';
+    return;
+  }
+  const data = window.BRQaChecklist || { title: 'Checklist', intro: '', groups: [] };
+  const done = loadQaChecks();
+  const groups = (data.groups || []).map((g) => {
+    const items = (g.items || []).map((it) => `
+      <div class="qa-item">
+        <input type="checkbox" id="qa-${esc(it.id)}" data-qa="${esc(it.id)}" ${done[it.id] ? 'checked' : ''}>
+        <div>
+          <label for="qa-${esc(it.id)}">${esc(it.label)}</label>
+          <div class="expect">${esc(it.expect || '')}</div>
+          <div><a href="${esc(it.href)}">Abrir ecrã →</a></div>
+        </div>
+      </div>`).join('');
+    return `<section class="qa-group"><h2>${esc(g.title)}</h2>${items}</section>`;
+  }).join('');
+  app.innerHTML = `<div class="toolbar"><div>
+      <div class="eyebrow">Validação</div>
+      <h1 style="margin:0">${esc(data.title)}</h1>
+      <p class="muted" style="max-width:640px">${esc(data.intro)}</p>
+    </div>
+    <a class="btn-secondary" href="#/ajuda">Manual</a></div>
+    ${groups}`;
+  app.querySelectorAll('input[data-qa]').forEach((cb) => {
+    cb.onchange = () => {
+      const map = loadQaChecks();
+      if (cb.checked) map[cb.dataset.qa] = true;
+      else delete map[cb.dataset.qa];
+      saveQaChecks(map);
+    };
+  });
+}
+
 async function route() {
   stopPolling();
+  stopBootPhrases();
   hideMatrixTip();
+  const guideNav = window.BRGuide && window.BRGuide.isNavigating && window.BRGuide.isNavigating();
+  if (!guideNav) {
+    setAppNavOpen(false);
+    window.BRGuide?.stop?.({ navigated: true });
+  }
+  _viewGen++;
+  _fichaAiGen++;
   const hash = location.hash || '#/';
-  document.body.classList.toggle('login-bg', hash === '#/login' || hash === '#/registo' || hash.startsWith('#/recuperar') || hash.startsWith('#/repor-password'));
-  // Estado ativo da navegação lateral. A raiz mapeia para Oportunidades.
-  const navHash = (hash === '#/' || hash === '') ? '#/hoje' : hash;
+  const hashBase = hash.split('?')[0];
+  document.body.classList.toggle('login-bg', hashBase === '#/login' || hashBase === '#/registo' || hashBase === '#/recuperar' || hashBase === '#/repor-password');
+  const navHash = (hashBase === '#/' || hashBase === '') ? '#/hoje' : hashBase;
   document.querySelectorAll('#topbar nav a').forEach((a) => {
     const href = a.getAttribute('href');
     let on = false;
     if (href === '#/hoje') on = navHash === '#/hoje';
-    else if (href.startsWith('#/radar/')) on = navHash === href;
+    else if (href === '#/pipeline') on = navHash === '#/pipeline';
+    else if (href.startsWith('#/radar/')) on = navHash === href || navHash.startsWith(href + '/');
     else if (href === '#/entities') on = navHash.startsWith('#/entities');
     else if (href === '#/config') on = navHash.startsWith('#/config') || navHash.startsWith('#/profiles');
+    else if (href === navHash) on = true;
     a.classList.toggle('active', on);
   });
-  if (hash === '#/login') { window._me = null; return renderLogin(); }
-  if (hash.split('?')[0] === '#/recuperar') { window._me = null; return renderForgot(); }
-  if (hash.split('?')[0] === '#/repor-password') { window._me = null; return renderReset(); }
-  if (hash === '#/registo') { window._me = null; return renderRegister(); }
+  if (hashBase === '#/login') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderLogin(); }
+  if (hashBase === '#/recuperar') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderForgot(); }
+  if (hashBase === '#/repor-password') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderReset(); }
+  if (hashBase === '#/registo') { clearClientSession(); trackUsage('page_view', { path: hashBase }); return renderRegister(); }
   const invite = hash.match(/^#\/aceitar-convite\?token=(.+)$/);
-  if (invite) { window._me = null; return renderAcceptInvite(decodeURIComponent(invite[1])); }
+  if (invite) { clearClientSession(); return renderAcceptInvite(decodeURIComponent(invite[1])); }
 
   // Sessão em cache: evita uma ida ao servidor por cada mudança de página.
   // Se expirar, a primeira chamada api() da vista devolve 401 e redireciona.
   if (!window._me) {
+    showBootSplash();
     try {
       window._me = await api('/api/auth/me');
     } catch {
       return; /* api() já redirecionou para login */
     }
   }
-  loadCaps().then(applyNavGating);   // capabilities em 2.º plano (não bloqueia a navegação)
+  await loadCaps();
+  applyNavGating();
   topbar.hidden = false;
+  window.BRGuide?.bind?.({ can, getUserId: () => window._me?.user_id });
   const planPill = window._me.plan && window._me.plan !== 'free'
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
   whoami.innerHTML = `<a href="#/conta"><span class="nm">${esc(window._me.username)}</span><span class="co"><span class="co-nm">${esc(window._me.company?.name ?? '')}</span>${planPill}</span></a>`;
   renderTrialBanner(window._me);
+  renderAiQuotaBanner(window._caps, window._me);
   updateSidebar();
   ensureHelpButton();
   ensureAdminNav();
-  const hashBase = hash.split('?')[0];
+  trackUsage('page_view', { path: hashBase });
   if (hashBase === '#/subscrever' || hashBase === '#/planos') return renderPlans();
   if (hashBase === '#/conta') return renderAccount();
   if (hashBase === '#/admin') return renderAdmin();
-  // Feedback imediato ao navegar — o conteúdo real substitui quando os dados chegam.
-  app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-
+  if (hashBase === '#/admin/uso') return renderUsageAdmin();
+  const ajuda = hashBase.match(/^#\/ajuda(?:\/([\w-]+))?$/);
+  if (ajuda) return renderAjuda(ajuda[1] || '');
+  if (hashBase === '#/qa') return renderQaChecklist();
+  showBootSplash();
   const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
-  const contract = hash.match(/^#\/contracts\/(\d+)$/);
-  const profile = hash.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
-  const entity = hash.match(/^#\/entities\/(\d+)$/);
-  const radar = hash.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
-  const config = hash.match(/^#\/config(?:\/(\w+))?$/);
-  const announcement = hash.match(/^#\/announcements\/(\d+)$/);
+  const contract = hashBase.match(/^#\/contracts\/(\d+)$/);
+  const profile = hashBase.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
+  const entity = hashBase.match(/^#\/entities\/(\d+)$/);
+  const radar = hashBase.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+  const config = hashBase.match(/^#\/config(?:\/(\w+))?$/);
+  const announcement = hashBase.match(/^#\/announcements\/(\d+)$/);
   document.querySelector('main')?.classList.remove('wide');
   try {
-    if (hash === '#/hoje') return await renderHoje();
+    if (hashBase === '#/hoje' || hashBase === '#/') return await renderHoje();
+    if (hashBase === '#/pipeline') return await renderPipeline();
     if (results) return await renderResults(Number(results[1]), Number(results[2] ?? 0));
     if (contract) return await renderContract(Number(contract[1]));
     if (profile) return await renderProfile(Number(profile[1]), profile[2] || 'opportunities');
@@ -2674,25 +5127,35 @@ async function route() {
       if (section === 'opendata') return await renderOpendata();
       return await renderProfiles();
     }
-    // rotas antigas → novos destinos
-    if (hash === '#/profiles') return await renderProfiles();
-    if (hash === '#/opendata') return await renderOpendata();
-    if (hash === '#/digest') return await renderDigest();
+    if (hashBase === '#/profiles') return await renderProfiles();
+    if (hashBase === '#/opendata') return await renderOpendata();
+    if (hashBase === '#/digest') return await renderDigest();
     if (entity) return await renderEntity(Number(entity[1]));
-    if (hash === '#/entities') return await renderEntities();
+    if (hashBase === '#/entities') return await renderEntities();
     if (announcement) return await renderAnnouncement(Number(announcement[1]));
     return await renderHoje();
   } catch (err) {
-    if (err.planRequired) { app.innerHTML = upgradePanel(err.planRequired); return; }
+    if (err.planRequired) {
+      app.innerHTML = upgradePanel(err.planRequired);
+      if (hashBase === '#/pipeline') notifyGuide('carteira');
+      else if (hashBase.startsWith('#/entities')) notifyGuide('entidades');
+      else {
+        const r = hashBase.match(/^#\/(?:radar|insights)(?:\/(\w+))?$/);
+        if (r) notifyGuide(radarGuideId(r[1] || 'opportunities'));
+      }
+      return;
+    }
     if (err.message !== 'unauthorized') app.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   }
 }
 
 document.getElementById('logout-btn').onclick = async () => {
-  window._me = null;
+  clearClientSession();
+  setAppNavOpen(false);
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   location.hash = '#/login';
 };
 
+bindAppNav();
 window.addEventListener('hashchange', route);
 route();

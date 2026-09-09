@@ -2,11 +2,20 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, auth } from './auth.js';
 import { requirePlan } from './plans.js';
-import { recordUsage } from './aiUsage.js';
+import { isAiCapped, recordUsage, rejectIfAiCapped } from './aiUsage.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
 import { aiEnabled, analyzeAnnouncement, analyzeContract, digestIntro, fitScores, FitItem, responseTemplate } from './ai.js';
 import { searchTed } from './ted.js';
+import { listFilters, PlanRequiredError } from './filters.js';
+import { statusesForCompany } from './pipeline.js';
+import { digestData as loadDigest, digestStatsText, digestIsEmpty } from './digest.js';
+import { fmtDatePT } from './mail.js';
+import { loadCompanyProfile } from './company-profile.js';
+import { overlayHabilitacao } from './habilitacao.js';
+import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
+import { announcementDistrictSql } from './districts.js';
+import { Plan } from './plans.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -65,6 +74,36 @@ async function ensureProfile(req: FastifyRequest, reply: FastifyReply, profileId
   return false;
 }
 
+function sendPlanRequired(reply: FastifyReply, plan: Plan): FastifyReply {
+  return reply.code(403).send({
+    error: {
+      code: 'plan_required',
+      message: 'Esta funcionalidade requer o plano PRO.',
+      feature: 'filtros_avancados',
+      required_plan: 'pro',
+      current_plan: plan,
+    },
+  });
+}
+
+async function overlayAnalysis(analysis: unknown, companyId: number | null): Promise<unknown> {
+  if (companyId == null) return overlayHabilitacao(analysis, []);
+  const p = await loadCompanyProfile(companyId);
+  return overlayHabilitacao(analysis, p?.certifications ?? []);
+}
+
+async function withPipelineStatus<T>(
+  companyId: number | null,
+  items: T[],
+  keyOf: (it: T) => string,
+): Promise<(T & { pipeline_status: string | null })[]> {
+  if (companyId == null || items.length === 0) {
+    return items.map((it) => ({ ...it, pipeline_status: null }));
+  }
+  const map = await statusesForCompany(companyId);
+  return items.map((it) => ({ ...it, pipeline_status: map.get(keyOf(it)) ?? null }));
+}
+
 export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- Perfis ----------
   app.get('/api/profiles', { preHandler: requireAuth }, async (req) => {
@@ -77,10 +116,23 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         (SELECT count(*) FROM (${PROFILE_CONTRACTS.replace('$1', 'p.id')}) x) AS n_contracts,
         (SELECT count(*) FROM (${PROFILE_ANNOUNCEMENTS.replace('$1', 'p.id')}) x) AS n_announcements,
         (SELECT row_to_json(r) FROM (
-           SELECT id, status, new_contracts, new_announcements, started_at, finished_at
+           SELECT id, status, new_contracts, new_announcements, started_at, finished_at,
+             EXISTS (SELECT 1 FROM searches s WHERE s.profile_run_id = profile_runs.id AND s.kind = 'contratos' AND s.status = 'completed_truncated') AS contracts_truncated,
+             EXISTS (SELECT 1 FROM searches s WHERE s.profile_run_id = profile_runs.id AND s.kind = 'anuncios' AND s.status = 'completed_truncated') AS announcements_truncated
            FROM profile_runs WHERE profile_id = p.id ORDER BY created_at DESC LIMIT 1) r) AS last_run
       FROM profiles p ${where} ORDER BY p.name`, params);
-    return { items: rows.map((p) => ({ ...p, n_contracts: Number(p.n_contracts), n_announcements: Number(p.n_announcements) })) };
+    return {
+      items: rows.map((p) => {
+        const last = p.last_run as Record<string, unknown> | null;
+        return {
+          ...p,
+          n_contracts: Number(p.n_contracts),
+          n_announcements: Number(p.n_announcements),
+          contracts_truncated: Boolean(last?.contracts_truncated),
+          announcements_truncated: Boolean(last?.announcements_truncated),
+        };
+      }),
+    };
   });
 
   app.post('/api/profiles', { preHandler: requireAuth }, async (req, reply) => {
@@ -88,9 +140,11 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       name?: string; terms?: string[]; cpv_codes?: string[]; schedule?: string;
       include_announcements?: boolean; fetch_documents?: boolean; run_now?: boolean;
     };
-    const cpvCodes = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
+    const rawCpvs = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
     const name = body.name?.trim();
-    const terms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const rawTerms = (body.terms ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const terms = refineActivityTerms(rawTerms);
+    const cpvCodes = mergeCpvHints(rawTerms, rawCpvs);
     const schedule = ['manual', 'daily', 'weekly'].includes(body.schedule ?? '') ? body.schedule : 'manual';
     if (!name || terms.length === 0) {
       return reply.code(400).send({ error: { code: 'invalid_profile', message: 'name e terms[] são obrigatórios' } });
@@ -138,6 +192,9 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
            WHERE a.proposal_deadline_date >= CURRENT_DATE) AS open_announcements`,
       [id]
     );
+    const latestSearches = (runs[0]?.searches ?? []) as { kind?: string; status?: string }[];
+    const truncatedKind = (kind: string) =>
+      latestSearches.some((s) => s.kind === kind && s.status === 'completed_truncated');
     return {
       ...rows[0],
       runs,
@@ -146,6 +203,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         total_value: Number(totals.total_value),
         n_announcements: Number(totals.n_announcements),
         open_announcements: Number(totals.open_announcements),
+        contracts_truncated: truncatedKind('contratos'),
+        announcements_truncated: truncatedKind('anuncios'),
       },
     };
   });
@@ -206,13 +265,21 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      const r = await analyzeAnnouncement(id, profileId);
-      // R4: regista utilização só quando houve chamada real ao modelo (não em cache).
+      const force = Boolean((req.body as { force?: boolean })?.force);
+      if (!force) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
+          [id, profileId],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
+      const r = await analyzeAnnouncement(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
         await recordUsage({ companyId, userId, kind: 'analise_anuncio', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
       }
-      return r;
+      const { companyId } = auth(req);
+      return { ...r, analysis: await overlayAnalysis(r.analysis, companyId) };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
@@ -224,12 +291,21 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
     try {
-      const r = await analyzeContract(id, profileId);
+      const force = Boolean((req.body as { force?: boolean })?.force);
+      if (!force) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
+          [id, profileId],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
+      const r = await analyzeContract(id, profileId, { force });
       if (!r.cached) {
         const { companyId, userId } = auth(req);
         await recordUsage({ companyId, userId, kind: 'analise_contrato', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
       }
-      return r;
+      const { companyId } = auth(req);
+      return { ...r, analysis: await overlayAnalysis(r.analysis, companyId) };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
@@ -241,6 +317,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const id = Number((req.params as { id: string }).id);
     const profileId = Number((req.body as { profile_id?: number })?.profile_id ?? 0) || 0;
     if (!(await ensureProfile(req, reply, profileId))) return;
+    if (await rejectIfAiCapped(req, reply)) return;
     try {
       const r = await responseTemplate(id, profileId);
       const { companyId, userId } = auth(req);
@@ -254,10 +331,11 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   app.post('/api/profiles/:id/fit-scores', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {
     const profileId = Number((req.params as { id: string }).id);
     if (!(await ensureProfile(req, reply, profileId))) return;
-    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
     const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
     try {
-      const { scores, usage } = await fitScores(profileId, items);
+      const a = auth(req);
+      const capped = !a.isAdmin && await isAiCapped(a.userId, a.plan);
+      const { scores, usage } = await fitScores(profileId, items, { capped });
       // Só conta quando houve chamada real (fit calculado, não vindo todo da cache).
       if (usage.tokens_in > 0 || usage.tokens_out > 0) {
         const { companyId, userId } = auth(req);
@@ -270,46 +348,23 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // Dados do digest (partilhados pela página da app e pelo layout de email)
-  async function digestData(profileId: number) {
-    const { rows: profRows } = await pool.query('SELECT * FROM profiles WHERE id = $1', [profileId]);
-    if (profRows.length === 0) return null;
-    const profile = profRows[0];
-
-    const { rows: newAnns } = await pool.query(
-      `SELECT a.* FROM announcements a JOIN (${PROFILE_ANNOUNCEMENTS}) s ON s.id = a.id
-       WHERE a.created_at >= now() - interval '7 days' ORDER BY a.proposal_deadline_date NULLS LAST`,
-      [profileId]
-    );
-    const { rows: openAnns } = await pool.query(
-      `SELECT a.* FROM announcements a JOIN (${PROFILE_ANNOUNCEMENTS}) s ON s.id = a.id
-       WHERE a.proposal_deadline_date >= CURRENT_DATE ORDER BY a.proposal_deadline_date`,
-      [profileId]
-    );
-    const { rows: renewals } = await pool.query(
-      `SELECT c.id, c.object_brief_description, c.initial_contractual_price,
-         ${END_DATE} AS end_date, (${END_DATE} - CURRENT_DATE) AS days_left,
-         (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
-           WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
-       FROM contracts c JOIN (${PROFILE_CONTRACTS}) s ON s.id = c.id
-       WHERE ${HAS_END} AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '90 days'
-       ORDER BY end_date LIMIT 12`,
-      [profileId]
-    );
-
-    const statsText0 = `Novos anúncios (7 dias): ${newAnns.length}. Concursos com prazo a decorrer: ${openAnns.length}. Contratos a terminar nos próximos 90 dias (oportunidades de renovação): ${renewals.length}. Detalhe renovações: ${renewals.map((r) => `${r.contracting} (${Number(r.initial_contractual_price ?? 0).toFixed(0)} EUR, termina ${String(r.end_date).slice(0, 10)})`).slice(0, 6).join('; ')}`;
-    const intro0 = aiEnabled() ? await digestIntro(profile.name, statsText0) : '';
-    return { profile, newAnns, openAnns, renewals, intro: intro0 };
+  async function digestPayload(profileId: number) {
+    const d = await loadDigest(profileId);
+    if (!d) return null;
+    const intro = aiEnabled() ? await digestIntro(d.profile.name, digestStatsText(d)) : '';
+    return { ...d, intro };
   }
 
   // Digest como dados JSON (página da app)
   app.get('/api/profiles/:id/digest.json', { preHandler: requireAuth }, async (req, reply) => {
     const pid = Number((req.params as { id: string }).id);
     if (!(await ensureProfile(req, reply, pid))) return;
-    const d = await digestData(pid);
+    const d = await digestPayload(pid);
     if (!d) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
     return {
       profile: { id: d.profile.id, name: d.profile.name },
       intro: d.intro,
+      empty: digestIsEmpty(d),
       generated_at: new Date().toISOString(),
       stats: { open: d.openAnns.length, new_7d: d.newAnns.length, renewals_90d: d.renewals.length },
       open_announcements: d.openAnns.slice(0, 15).map((a: Record<string, unknown>) => ({
@@ -328,7 +383,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   app.get('/api/profiles/:id/digest.html', { preHandler: requireAuth }, async (req, reply) => {
     const profileId = Number((req.params as { id: string }).id);
     if (!(await ensureProfile(req, reply, profileId))) return;
-    const data = await digestData(profileId);
+    const data = await digestPayload(profileId);
     if (!data) return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
     const { profile, newAnns, openAnns, renewals, intro } = data;
 
@@ -343,16 +398,17 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const section = (title: string, body: string) =>
       `<h2 style="font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#0f172a;margin:28px 0 8px">${title}</h2>${body}`;
 
-    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>BaseRadar — Digest ${esc(profile.name)}</title></head>
+    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>PrepBid — Digest ${esc(profile.name)}</title></head>
 <body style="margin:0;background:#f6f8fb;font-family:Arial,Helvetica,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
 <tr><td style="padding:22px 28px;border-bottom:1px solid #e2e8f0">
   <span style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.5px">Base<span style="color:#2563eb">Radar</span></span>
-  <span style="font-size:11px;color:#64748b;letter-spacing:0.08em;text-transform:uppercase">&nbsp;&nbsp;Digest semanal — ${esc(profile.name)}</span>
+  <span style="font-size:11px;color:#64748b;letter-spacing:0.08em;text-transform:uppercase">&nbsp;&nbsp;Resumo semanal — ${esc(profile.name)}</span>
 </td></tr>
 <tr><td style="padding:24px 28px">
   ${intro ? `<p style="font-size:14px;line-height:1.55;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin:0 0 8px">${esc(intro)}</p>` : ''}
+  ${digestIsEmpty(data) ? `<p style="font-size:14px;color:#334155">Semana sem novidades na sua atividade</p>` : ''}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
     ${[[String(openAnns.length), 'Concursos abertos'], [String(newAnns.length), 'Novos (7 dias)'], [String(renewals.length), 'Renovações 90 dias']]
       .map(([n, l]) => `<td align="center" style="padding:10px;border:1px solid #e2e8f0;border-radius:8px"><div style="font-size:22px;font-weight:700;color:#1e3a8a">${n}</div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b">${l}</div></td><td width="8"></td>`).join('')}
@@ -360,16 +416,16 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   ${section('Concursos com prazo a decorrer', openAnns.length
     ? `<table width="100%" cellpadding="0" cellspacing="0">${th(['Prazo', 'Designação', 'Entidade', 'Preço base'])}
-       ${openAnns.slice(0, 10).map((a) => row([String(a.proposal_deadline_date).slice(0, 10), esc(a.contract_designation).slice(0, 90), esc(a.contracting_entity), fmtEur(a.base_price)])).join('')}</table>`
+       ${openAnns.slice(0, 10).map((a) => row([fmtDatePT(a.proposal_deadline_date), esc(a.contract_designation).slice(0, 90), esc(a.contracting_entity), fmtEur(a.base_price)])).join('')}</table>`
     : '<p style="font-size:13px;color:#64748b">Sem concursos abertos neste momento.</p>')}
 
   ${section('Renovações a preparar (próximos 90 dias)', renewals.length
     ? `<table width="100%" cellpadding="0" cellspacing="0">${th(['Termina', 'Entidade', 'Objeto', 'Valor'])}
-       ${renewals.map((r) => row([`${String(r.end_date).slice(0, 10)} (${r.days_left}d)`, esc(r.contracting), esc(r.object_brief_description).slice(0, 80), fmtEur(r.initial_contractual_price)])).join('')}</table>`
+       ${renewals.map((r) => row([`${fmtDatePT(r.end_date)} (${r.days_left}d)`, esc(r.contracting), esc(r.object_brief_description).slice(0, 80), fmtEur(r.initial_contractual_price)])).join('')}</table>`
     : '<p style="font-size:13px;color:#64748b">Sem renovações no horizonte de 90 dias.</p>')}
 </td></tr>
 <tr><td style="padding:16px 28px;border-top:1px solid #e2e8f0">
-  <p style="font-size:11px;color:#94a3b8;margin:0">Gerado por BaseRadar · Fonte: Portal BASE — IMPIC / dados.gov.pt · ${new Date().toLocaleDateString('pt-PT')}</p>
+  <p style="font-size:11px;color:#94a3b8;margin:0">Gerado por PrepBid · Fonte: Portal BASE — IMPIC / dados.gov.pt · ${new Date().toLocaleDateString('pt-PT')}</p>
 </td></tr>
 </table></td></tr></table></body></html>`;
 
@@ -411,6 +467,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- Anúncios ----------
   app.get('/api/announcements', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
+    const { companyId, plan } = auth(req);
     const profileId = parseProfileId(q);
     if (!(await ensureProfile(req, reply, profileId))) return;
     const onlyOpen = q.open === '1';
@@ -420,25 +477,93 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       params.push(profileId);
       join = `JOIN (${PROFILE_ANNOUNCEMENTS}) scope ON scope.id = a.id`;
     }
-    const where = onlyOpen ? `WHERE a.proposal_deadline_date >= CURRENT_DATE` : '';
+    const extraWhere: string[] = [];
+    if (onlyOpen) extraWhere.push('a.proposal_deadline_date >= CURRENT_DATE');
+    let lf;
+    try {
+      lf = listFilters(q, plan, 'announcements', 'a', params.length);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) return sendPlanRequired(reply, plan);
+      throw err;
+    }
+    extraWhere.push(...lf.where);
+    params.push(...lf.params);
+    if (q.only_new === '1' && companyId != null) {
+      params.push(companyId);
+      extraWhere.push(`NOT EXISTS (SELECT 1 FROM opportunity_status os WHERE os.company_id = $${params.length} AND os.item_type = 'anuncio_aberto' AND os.item_id = a.id)`);
+    }
+    const where = extraWhere.length ? `WHERE ${extraWhere.join(' AND ')}` : '';
     const page = Math.max(0, Number(q.page ?? 0) || 0);
     const size = Math.min(200, Math.max(1, Number(q.size ?? 50) || 50));
     params.push(size, page * size);
     const { rows } = await pool.query(
       `SELECT a.*, count(*) OVER() AS full_count FROM announcements a ${join} ${where}
-       ORDER BY a.proposal_deadline_date DESC NULLS LAST, a.dr_publication_date DESC
+       ORDER BY ${lf.orderBy}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    const mapped = rows.map(({ full_count: _fc, raw_list_json: _rl, raw_detail_json: _rd, ...a }) => ({
+      ...a,
+      basegov_id: Number(a.basegov_id),
+      base_price: a.base_price != null ? Number(a.base_price) : null,
+      basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=anuncios&id=${a.basegov_id}`,
+    }));
+    const items = await withPipelineStatus(companyId, mapped, (a) => `anuncio_aberto:${a.id}`);
     return {
       total: rows.length ? Number(rows[0].full_count) : 0,
       page, size,
-      items: rows.map(({ full_count: _fc, raw_list_json: _rl, raw_detail_json: _rd, ...a }) => ({
-        ...a,
-        basegov_id: Number(a.basegov_id),
-        base_price: a.base_price != null ? Number(a.base_price) : null,
-        basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=anuncios&id=${a.basegov_id}`,
-      })),
+      excluded_no_value: lf.excludedNoValue,
+      items,
+    };
+  });
+
+  app.get('/api/announcements/facets', { preHandler: requireAuth }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const { plan } = auth(req);
+    const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
+    const onlyOpen = q.open === '1';
+    const qNoDist = { ...q, district: undefined, 'district[]': undefined };
+    const params: unknown[] = [];
+    let join = '';
+    if (profileId != null) {
+      params.push(profileId);
+      join = `JOIN (${PROFILE_ANNOUNCEMENTS}) scope ON scope.id = a.id`;
+    }
+    const extraWhere: string[] = [];
+    if (onlyOpen) extraWhere.push('a.proposal_deadline_date >= CURRENT_DATE');
+    let lf;
+    try {
+      lf = listFilters(qNoDist, plan, 'announcements', 'a', params.length);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) return sendPlanRequired(reply, plan);
+      throw err;
+    }
+    extraWhere.push(...lf.where);
+    params.push(...lf.params);
+    const where = extraWhere.length ? `WHERE ${extraWhere.join(' AND ')}` : '';
+    const distExpr = announcementDistrictSql('a.contracting_entity');
+    const { rows: distRows } = await pool.query(
+      `SELECT coalesce(${distExpr}, '__unknown__') AS district, count(*)::int AS n
+         FROM announcements a ${join} ${where}
+        GROUP BY 1 ORDER BY n DESC`,
+      params
+    );
+    const { rows: procRows } = await pool.query(
+      `SELECT coalesce(a.contracting_procedure_type, '—') AS procedure, count(*)::int AS n
+         FROM announcements a ${join} ${where}
+        GROUP BY 1 ORDER BY n DESC`,
+      params
+    );
+    const unknown = distRows.find((r) => r.district === '__unknown__');
+    const districts = distRows
+      .filter((r) => r.district !== '__unknown__')
+      .map((r) => ({ value: r.district as string, n: Number(r.n) }));
+    return {
+      districts,
+      unknown: unknown ? { label: `Sem localização (${unknown.n})`, n: Number(unknown.n) } : null,
+      procedures: procRows.map((r) => ({ value: r.procedure as string, n: Number(r.n) })),
+      excluded_no_value: lf.excludedNoValue,
     };
   });
 
@@ -448,12 +573,15 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [id]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Anúncio não encontrado' } });
     const a = rows[0];
+    const { companyId } = auth(req);
+    const [piped] = await withPipelineStatus(companyId, [{ id: a.id }], (x) => `anuncio_aberto:${x.id}`);
     return {
       ...(raw ? a : { ...a, raw_list_json: undefined, raw_detail_json: undefined }),
       basegov_id: Number(a.basegov_id),
       base_price: a.base_price != null ? Number(a.base_price) : null,
       basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=anuncios&id=${a.basegov_id}`,
       is_open: a.proposal_deadline_date != null && new Date(a.proposal_deadline_date) >= new Date(new Date().toISOString().slice(0, 10)),
+      pipeline_status: piped.pipeline_status,
     };
   });
 
@@ -520,12 +648,27 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- Insights: renovações ----------
   app.get('/api/insights/renewals', { preHandler: [requireAuth, requirePlan('renovacoes')] }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
+    const { companyId, plan } = auth(req);
     const profileId = parseProfileId(q);
     if (!(await ensureProfile(req, reply, profileId))) return;
     const months = Math.min(24, Math.max(1, Number(q.months ?? 6) || 6));
     const scope = contractScope(profileId);
-    const params = [...scope.params, months];
+    let lf;
+    try {
+      lf = listFilters(q, plan, 'contracts', 'c', scope.params.length);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) return sendPlanRequired(reply, plan);
+      throw err;
+    }
+    const params = [...scope.params, ...lf.params];
+    const extra: string[] = [...lf.where];
+    if (q.only_new === '1' && companyId != null) {
+      params.push(companyId);
+      extra.push(`NOT EXISTS (SELECT 1 FROM opportunity_status os WHERE os.company_id = $${params.length} AND os.item_type = 'renovacao' AND os.item_id = c.id)`);
+    }
+    params.push(months);
     const m = `$${params.length}`;
+    const extraSql = extra.length ? `AND ${extra.join(' AND ')}` : '';
     const { rows } = await pool.query(
       `SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
          c.signing_date, c.execution_deadline, c.execution_place, ${END_DATE} AS end_date,
@@ -537,23 +680,22 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
        FROM contracts c ${scope.join}
        WHERE ${HAS_END}
          AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + (${m} || ' months')::interval
-       ORDER BY end_date
+         ${extraSql}
+       ORDER BY ${lf.orderBy}
        LIMIT 500`,
       params
     );
-    return {
-      months,
-      items: rows.map((r) => ({
-        ...r,
-        basegov_id: Number(r.basegov_id),
-        initial_contractual_price: r.initial_contractual_price != null ? Number(r.initial_contractual_price) : null,
-        // 4 meses antes do fim do contrato, nunca no passado
-        suggested_contact_date: r.end_date
-          ? new Date(Math.max(Date.now(), new Date(r.end_date).getTime() - 120 * 86400000)).toISOString().slice(0, 10)
-          : null,
-        basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=contratos&id=${r.basegov_id}`,
-      })),
-    };
+    const mapped = rows.map((r) => ({
+      ...r,
+      basegov_id: Number(r.basegov_id),
+      initial_contractual_price: r.initial_contractual_price != null ? Number(r.initial_contractual_price) : null,
+      suggested_contact_date: r.end_date
+        ? new Date(Math.max(Date.now(), new Date(r.end_date).getTime() - 120 * 86400000)).toISOString().slice(0, 10)
+        : null,
+      basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=contratos&id=${r.basegov_id}`,
+    }));
+    const items = await withPipelineStatus(companyId, mapped, (r) => `renovacao:${r.id}`);
+    return { months, excluded_no_value: lf.excludedNoValue, items };
   });
 
   // ---------- Insights: sazonalidade ----------
@@ -652,10 +794,21 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- Entidades ----------
-  app.get('/api/entities', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req) => {
+  app.get('/api/entities', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
+    const profileId = parseProfileId(q);
+    if (!(await ensureProfile(req, reply, profileId))) return;
+    const { companyId, isAdmin } = auth(req);
+    if (profileId == null && companyId != null && !isAdmin) {
+      return reply.code(400).send({ error: { code: 'invalid_profile', message: 'profile_id é obrigatório' } });
+    }
     const role = q.role === 'contracted' ? 'contracted' : 'contracting';
     const params: unknown[] = [role];
+    let scopeJoin = '';
+    if (profileId != null) {
+      params.push(profileId);
+      scopeJoin = `JOIN (${PROFILE_CONTRACTS.replace('$1', '$2')}) scope ON scope.id = c.id`;
+    }
     let filter = '';
     if (q.q) {
       params.push(`%${q.q}%`);
@@ -673,6 +826,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
        FROM entities e
        JOIN contract_entities ce ON ce.entity_id = e.id AND ce.role = $1
        JOIN contracts c ON c.id = ce.contract_id
+       ${scopeJoin}
        WHERE true ${filter}
        GROUP BY e.id
        ORDER BY total_value DESC
@@ -690,41 +844,54 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
 
   app.get('/api/entities/:id', { preHandler: [requireAuth, requirePlan('entidades')] }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
+    const profileId = parseProfileId(req.query as Record<string, unknown>);
+    if (!(await ensureProfile(req, reply, profileId))) return;
     const { rows: ent } = await pool.query('SELECT * FROM entities WHERE id = $1', [id]);
     if (ent.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Entidade não encontrada' } });
 
     const asRole = async (role: string) => {
+      const profileJoin = profileId != null
+        ? `JOIN (${PROFILE_CONTRACTS.replace('$1', '$3')}) scope ON scope.id = c.id`
+        : '';
+      const scoped = profileId != null ? [id, role, profileId] : [id, role];
       const { rows: [agg] } = await pool.query(
         `SELECT count(DISTINCT c.id) AS n, coalesce(sum(c.initial_contractual_price),0) AS total,
                 coalesce(avg(c.initial_contractual_price),0) AS avg
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         WHERE ce.entity_id = $1 AND ce.role = $2`, [id, role]);
+         ${profileJoin}
+         WHERE ce.entity_id = $1 AND ce.role = $2`, scoped);
       const { rows: byYear } = await pool.query(
         `SELECT extract(year FROM c.publication_date)::int AS year, count(*) AS n,
                 coalesce(sum(c.initial_contractual_price),0) AS total
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
+         ${profileJoin}
          WHERE ce.entity_id = $1 AND ce.role = $2 AND c.publication_date IS NOT NULL
-         GROUP BY 1 ORDER BY 1 DESC LIMIT 8`, [id, role]);
+         GROUP BY 1 ORDER BY 1 DESC LIMIT 8`, scoped);
       const { rows: procedures } = await pool.query(
         `SELECT c.contracting_procedure_type AS type, count(*) AS n
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         WHERE ce.entity_id = $1 AND ce.role = $2 GROUP BY 1 ORDER BY n DESC`, [id, role]);
+         ${profileJoin}
+         WHERE ce.entity_id = $1 AND ce.role = $2 GROUP BY 1 ORDER BY n DESC`, scoped);
       const counterRole = role === 'contracting' ? 'contracted' : 'contracting';
+      const counterParams = profileId != null ? [id, role, profileId, counterRole] : [id, role, counterRole];
+      const counterPh = profileId != null ? '$4' : '$3';
       const { rows: counterparts } = await pool.query(
         `SELECT e2.id, e2.name, e2.nif, count(DISTINCT c.id) AS n,
                 coalesce(sum(c.initial_contractual_price),0) AS total
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
-         JOIN contract_entities ce2 ON ce2.contract_id = c.id AND ce2.role = $3
+         ${profileJoin}
+         JOIN contract_entities ce2 ON ce2.contract_id = c.id AND ce2.role = ${counterPh}
          JOIN entities e2 ON e2.id = ce2.entity_id
          WHERE ce.entity_id = $1 AND ce.role = $2
-         GROUP BY e2.id ORDER BY total DESC LIMIT 10`, [id, role, counterRole]);
+         GROUP BY e2.id ORDER BY total DESC LIMIT 10`, counterParams);
       const { rows: contracts } = await pool.query(
         `SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
                 c.publication_date, c.signing_date, c.execution_deadline, c.contracting_procedure_type,
                 CASE WHEN ${HAS_END} THEN ${END_DATE} ELSE NULL END AS end_date
          FROM contract_entities ce JOIN contracts c ON c.id = ce.contract_id
+         ${profileJoin}
          WHERE ce.entity_id = $1 AND ce.role = $2
-         ORDER BY c.publication_date DESC NULLS LAST LIMIT 25`, [id, role]);
+         ORDER BY c.publication_date DESC NULLS LAST LIMIT 25`, scoped);
       return {
         n_contracts: Number(agg.n),
         total_value: Number(agg.total),
@@ -856,32 +1023,54 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   // ---------- Insights: oportunidades (scoring) ----------
   app.get('/api/insights/opportunities', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {
     const query = req.query as Record<string, unknown>;
+    const { companyId, plan } = auth(req);
     const profileId = parseProfileId(query);
     if (!(await ensureProfile(req, reply, profileId))) return;
-    const textFilter = String(query.q ?? '').trim().toLowerCase();
     const scope = contractScope(profileId);
 
-    // Anúncios abertos no scope
     let annJoin = '';
     const annParams: unknown[] = [];
     if (profileId != null) {
       annParams.push(profileId);
       annJoin = `JOIN (${PROFILE_ANNOUNCEMENTS}) scope ON scope.id = a.id`;
     }
+    let annLf;
+    try {
+      annLf = listFilters(query, plan, 'opportunities', 'a', annParams.length);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) return sendPlanRequired(reply, plan);
+      throw err;
+    }
+    const annWhere = ['a.proposal_deadline_date >= CURRENT_DATE', ...annLf.where];
+    annParams.push(...annLf.params);
+    if (query.only_new === '1' && companyId != null) {
+      annParams.push(companyId);
+      annWhere.push(`NOT EXISTS (SELECT 1 FROM opportunity_status os WHERE os.company_id = $${annParams.length} AND os.item_type = 'anuncio_aberto' AND os.item_id = a.id)`);
+    }
     const { rows: open } = await pool.query(
       `SELECT a.id, a.basegov_id, a.contract_designation, a.contracting_entity, a.base_price,
               a.proposal_deadline_date, (a.proposal_deadline_date - CURRENT_DATE) AS days_left
        FROM announcements a ${annJoin}
-       WHERE a.proposal_deadline_date >= CURRENT_DATE
+       WHERE ${annWhere.join(' AND ')}
        ORDER BY a.proposal_deadline_date`,
       annParams
     );
 
-    // Renovações nos próximos 12 meses — a mesma janela do separador Renovações
-    // e do fit IA automático, para as contagens baterem certo entre vistas.
-    // Recorrência = nº de contratos registados da entidade adjudicante (lookup
-    // direto por índice; contar dentro do scope completo degenerava em planos
-    // de segundos com 100k+ contratos).
+    let conLf;
+    try {
+      conLf = listFilters(query, plan, 'opportunities', 'c', scope.params.length);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) return sendPlanRequired(reply, plan);
+      throw err;
+    }
+    const conParams = [...scope.params, ...conLf.params];
+    const conExtra = [...conLf.where];
+    if (query.only_new === '1' && companyId != null) {
+      conParams.push(companyId);
+      conExtra.push(`NOT EXISTS (SELECT 1 FROM opportunity_status os WHERE os.company_id = $${conParams.length} AND os.item_type = 'renovacao' AND os.item_id = c.id)`);
+    }
+    const conExtraSql = conExtra.length ? `AND ${conExtra.join(' AND ')}` : '';
+
     const { rows: renewals } = await pool.query(
       `WITH win AS (
          SELECT c.id, c.basegov_id, c.object_brief_description, c.initial_contractual_price,
@@ -889,6 +1078,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
          FROM contracts c ${scope.join}
          WHERE ${HAS_END}
            AND ${END_DATE} BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '12 months'
+           ${conExtraSql}
          ORDER BY ${END_DATE} LIMIT 300
        )
        SELECT w.*,
@@ -902,21 +1092,20 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
              GROUP BY ce2.entity_id) t), 1) AS entity_recurrence
        FROM win w
        ORDER BY w.end_date`,
-      scope.params
+      conParams
     );
 
-    // Scoring 0-100: valor (log), urgência/proximidade e recorrência da entidade.
     const valueScore = (v: number | null) => Math.min(35, v && v > 0 ? Math.log10(v) * 7 : 0);
-    const opportunities = [
+    let opportunities = [
       ...open.map((a) => {
         const value = a.base_price != null ? Number(a.base_price) : null;
         const days = Number(a.days_left);
-        const urgency = Math.max(0, 40 - days); // quanto mais perto o prazo, mais urgente
+        const urgency = Math.max(0, 40 - days);
         const score = Math.round(Math.min(100, 25 + valueScore(value) + urgency));
         return {
-          type: 'anuncio_aberto',
+          type: 'anuncio_aberto' as const,
           announcement_id: a.id,
-          recurrence: null,
+          recurrence: null as number | null,
           internal_url: `#/announcements/${a.id}`,
           score,
           title: a.contract_designation,
@@ -932,11 +1121,11 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       ...renewals.map((c) => {
         const value = c.initial_contractual_price != null ? Number(c.initial_contractual_price) : null;
         const days = Number(c.days_left);
-        const proximity = Math.max(0, 30 - days / 6); // fim mais próximo → contactar já
+        const proximity = Math.max(0, 30 - days / 6);
         const recurrence = Math.min(15, Number(c.entity_recurrence) * 3);
         const score = Math.round(Math.min(100, valueScore(value) + proximity + recurrence));
         return {
-          type: 'renovacao',
+          type: 'renovacao' as const,
           contract_id: c.id,
           recurrence: Number(c.entity_recurrence),
           internal_url: `#/contracts/${c.id}`,
@@ -951,11 +1140,36 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
           basegov_url: `https://www.base.gov.pt/Base4/pt/detalhe/?type=contratos&id=${c.basegov_id}`,
         };
       }),
-    ]
-      .filter((o) => !textFilter ||
-        `${o.title ?? ''} ${o.entity ?? ''}`.toLowerCase().includes(textFilter))
-      .sort((a, b) => b.score - a.score);
+    ];
 
-    return { items: opportunities.slice(0, 100) };
+    const sort = String(query.sort ?? 'score');
+    const dir = String(query.order ?? 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    switch (sort) {
+      case 'value':
+        opportunities.sort((a, b) => dir * ((a.value ?? -Infinity) - (b.value ?? -Infinity)));
+        break;
+      case 'deadline':
+        opportunities.sort((a, b) => {
+          const da = a.key_date ? new Date(a.key_date as string).getTime() : Infinity;
+          const db = b.key_date ? new Date(b.key_date as string).getTime() : Infinity;
+          return dir * (da - db);
+        });
+        break;
+      case 'fit':
+      case 'score':
+        opportunities.sort((a, b) => dir * (a.score - b.score));
+        break;
+      default:
+        opportunities.sort((a, b) => b.score - a.score);
+        break;
+    }
+
+    const sliced = opportunities.slice(0, 100);
+    const items = await withPipelineStatus(
+      companyId,
+      sliced,
+      (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`,
+    );
+    return { items, excluded_no_value: annLf.excludedNoValue || conLf.excludedNoValue };
   });
 }

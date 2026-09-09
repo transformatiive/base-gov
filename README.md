@@ -1,14 +1,14 @@
-# BASE.gov Robot
+# PrepBid
 
-Robot de pesquisa e arquivo de contratos públicos do Portal BASE (https://www.base.gov.pt).
+Inteligência comercial de concursos públicos em Portugal. Cruza o histórico do Portal BASE (IMPIC / dados.gov.pt) com o perfil da empresa — CPV, distritos e valor — para mostrar que contratos vale a pena concorrer, e a tempo.
 
-A partir de um termo de pesquisa, percorre a listagem paginada de contratos do BASE (via a API JSON do portal — sem browser na v1), extrai o detalhe de cada contrato, descarrega os documentos anexos e guarda tudo em PostgreSQL (documentos em `BYTEA`). Inclui UI web simples e API REST para integrações externas.
+O repositório inclui o robot de arquivo de contratos do Portal BASE (https://www.base.gov.pt): a partir de um termo de pesquisa, percorre a listagem paginada (API JSON do portal), extrai o detalhe de cada contrato, descarrega os documentos anexos e guarda tudo em PostgreSQL.
 
 Especificação completa: [SPEC.md](./SPEC.md).
 
 ## Funcionalidades v2 — radar comercial
 
-- **Perfis de pesquisa** multi-termo (ex.: "pirotecnia, fogo de artifício") com deduplicação automática, execução manual/diária/semanal e contagem de novidades por run.
+- **Perfis de pesquisa** multi-termo (ex.: "reabilitação, cobertura, fachadas") com deduplicação automática, execução manual/diária/semanal e contagem de novidades por run.
 - **Anúncios DR** (concursos abertos) via `search_anuncios`/`detail_anuncios`, com prazo de propostas.
 - **Radar de renovações**: data prevista de fim de cada contrato (celebração + prazo) e data sugerida de contacto (4 meses antes).
 - **Oportunidades com scoring** (0-100): concursos abertos + renovações, ponderando valor, urgência e recorrência da entidade.
@@ -54,8 +54,17 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `SCRAPE_DELAY_MS` | `500` | Pausa entre pedidos ao BASE |
 | `MAX_RESULTS_PER_SEARCH` | `5000` | Limite de segurança por pesquisa |
 | `OPENROUTER_API_KEY` | vazio | Chave OpenRouter (análises de IA) |
+| `AI_CAP_ENABLED` | `true` | Teto de análises IA (40 Pro / 250 Business por utilizador / 30 dias). `false` desliga o bloqueio. |
 | `IVA_RATE` | `0.23` | Taxa de IVA aplicada aos preços dos planos |
-| `AI_SOFT_CAP_ENABLED` | `false` | Teto de IA em modo aviso (não bloqueia) |
+| `DIGEST_HOUR` | `8` | Hora de Lisboa para o digest (segunda-feira) e lembretes |
+| `REMINDER_DAYS` | `7,2` | Dias de antecedência dos lembretes de prazo (Pro) |
+| `CLOUDFLARE_ACCOUNT_ID` | vazio | Conta Cloudflare (envio de email + setup do domínio) |
+| `CLOUDFLARE_API_TOKEN` | vazio | Token com Email Sending: Edit (digest, lembretes, convites) |
+| `RESEND_API_KEY` | vazio | Fallback legado se Cloudflare ainda não estiver configurado |
+| `MAIL_FROM` | vazio | Remetente, ex. `PrepBid <noreply@prepbid.com>` |
+| `SUPPORT_EMAIL` | vazio | Destino dos pedidos de ajuda e destino de reencaminhamento |
+
+O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`. Para comprar `prepbid.com` e activar Email Routing: `node scripts/setup-concursivo-cloudflare.mjs --register`.
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 

@@ -2,11 +2,15 @@ import { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, verifyCredentials, SESSION_COOKIE, auth, companyFilter } from './auth.js';
 import { capabilitiesFor, seatLimit, aiCap, requirePlan } from './plans.js';
+import { seatsUsed } from './seats.js';
 import { aiUsageSummary } from './aiUsage.js';
 import { buildSearchWorkbook } from './excel.js';
 import { getDocument } from './storage.js';
 import { config } from './config.js';
 import { sendMail, layout, esc } from './mail.js';
+import { listFilters, PlanRequiredError } from './filters.js';
+import { statusesForCompany } from './pipeline.js';
+import { PROFILE_CONTRACTS } from './digest.js';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
@@ -208,15 +212,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const url = `${config.appBaseUrl}/app#/repor-password?token=${token}`;
     await sendMail({
       to: user.email,
-      subject: 'BaseRadar — repor a sua password',
+      subject: 'PrepBid — repor a sua password',
       html: layout({
         title: 'Repor a sua password',
         body: `<p>Olá${user.first_name ? ' ' + esc(user.first_name) : ''},</p>
-               <p>Recebemos um pedido para repor a password da sua conta BaseRadar. Clique no botão abaixo para escolher uma nova. <strong>A ligação é válida durante 1 hora.</strong></p>`,
+               <p>Recebemos um pedido para repor a password da sua conta PrepBid. Clique no botão abaixo para escolher uma nova. <strong>A ligação é válida durante 1 hora.</strong></p>`,
         cta: { label: 'Repor password', url },
         footnote: 'Se não foi você que pediu, ignore este email — a sua password actual continua válida.',
       }),
-      text: `Reponha a sua password do BaseRadar (válido 1 hora): ${url}`,
+      text: `Reponha a sua password do PrepBid (válido 1 hora): ${url}`,
     });
     return reply.send(generic);
   });
@@ -245,7 +249,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
-    const { username, companyId, isAdmin, plan } = auth(req);
+    const { username, companyId, isAdmin, plan, userId, firstName, lastName } = auth(req);
     let company = null;
     if (companyId != null) {
       const { rows } = await pool.query(
@@ -258,24 +262,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       company = rows[0] ?? null;
     }
     // plan aqui é o plano EFETIVO (resolvido no backend) — não o valor bruto da coluna.
-    return { username, is_admin: isAdmin, plan, company };
+    return { username, is_admin: isAdmin, plan, company, user_id: userId, first_name: firstName, last_name: lastName };
   });
 
   // Capabilities: fonte única para o frontend espelhar o gating (o backend é
   // sempre a verdade — 403 nas rotas fora do plano, independentemente disto).
   app.get('/api/me/capabilities', { preHandler: requireAuth }, async (req) => {
-    const { companyId, isAdmin, plan } = auth(req);
+    const { companyId, isAdmin, plan, userId } = auth(req);
     // Admin/acesso global: plano efetivo business (tudo desbloqueado).
     const effPlan = isAdmin ? 'business' : plan;
-    const [seatUsed] = companyId != null
-      ? (await pool.query('SELECT count(*)::int AS n FROM users WHERE company_id = $1', [companyId])).rows
-      : [{ n: 0 }];
-    const ai = await aiUsageSummary(companyId, effPlan);
+    const seatUsed = companyId != null ? await seatsUsed(companyId) : 0;
+    const ai = await aiUsageSummary(isAdmin ? null : userId, effPlan);
     return {
       plan: effPlan,
       capabilities: capabilitiesFor(effPlan),
       ai_usage: ai,
-      seats: { used: seatUsed.n, max: seatLimit(effPlan) },
+      seats: { used: seatUsed, max: seatLimit(effPlan) },
       caps: { ai_cap: aiCap(effPlan) },
     };
   });
@@ -408,11 +410,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- Contracts ----
-  app.get('/api/contracts', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/contracts', { preHandler: requireAuth }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { page, size } = paging(q);
+    const { companyId, plan, isAdmin } = auth(req);
     const conditions: string[] = [];
     const params: unknown[] = [];
+    let scopeJoin = '';
+    const profileIdRaw = q.profile_id;
+    const profileId = profileIdRaw == null || profileIdRaw === '' ? null : Number(profileIdRaw);
+    if (profileId != null && Number.isFinite(profileId) && profileId > 0) {
+      if (companyId != null) {
+        const owned = await pool.query('SELECT 1 FROM profiles WHERE id = $1 AND company_id = $2', [profileId, companyId]);
+        if (owned.rows.length === 0) {
+          return reply.code(404).send({ error: { code: 'not_found', message: 'Perfil não encontrado' } });
+        }
+      }
+      params.push(profileId);
+      scopeJoin = `JOIN (${PROFILE_CONTRACTS.replace('$1', `$${params.length}`)}) scope ON scope.id = c.id`;
+    } else if (!q.search_id && companyId != null && !isAdmin) {
+      return reply.code(400).send({
+        error: { code: 'invalid_profile', message: 'profile_id é obrigatório' },
+      });
+    }
     if (q.term) {
       params.push(`%${q.term}%`);
       conditions.push(`(c.object_brief_description ILIKE $${params.length} OR c.description ILIKE $${params.length})`);
@@ -422,30 +442,62 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       conditions.push(`EXISTS (SELECT 1 FROM search_results sr WHERE sr.contract_id = c.id AND sr.search_id = $${params.length})`);
     }
     conditions.push(...dateFilters(q, params));
+    try {
+      const lf = listFilters(q, plan, 'contracts', 'c', params.length);
+      conditions.push(...lf.where);
+      params.push(...lf.params);
+    } catch (err) {
+      if (err instanceof PlanRequiredError) {
+        return reply.code(403).send({
+          error: {
+            code: 'plan_required',
+            message: err.message,
+            feature: 'filtros_avancados',
+            required_plan: 'pro',
+            current_plan: plan,
+          },
+        });
+      }
+      throw err;
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(size, page * size);
     const { rows } = await pool.query(
-      `SELECT c.*, count(*) OVER() AS full_count FROM contracts c ${where}
+      `SELECT c.*, count(*) OVER() AS full_count FROM contracts c ${scopeJoin} ${where}
        ORDER BY c.publication_date DESC NULLS LAST LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    const items = rows.map((c) => contractToJson(c));
+    if (companyId != null && items.length) {
+      const map = await statusesForCompany(companyId);
+      for (const it of items) {
+        (it as { pipeline_status?: string | null }).pipeline_status = map.get(`renovacao:${it.id}`) ?? null;
+      }
+    }
     return {
       total: rows.length ? Number(rows[0].full_count) : 0,
       page,
       size,
-      items: rows.map((c) => contractToJson(c)),
+      items,
     };
   });
 
   app.get('/api/contracts/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const raw = (req.query as Record<string, unknown>).raw === '1';
+    const { companyId } = auth(req);
     const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [id]);
     if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Contrato não encontrado' } });
     const c = rows[0];
+    let pipeline_status: string | null = null;
+    if (companyId != null) {
+      const map = await statusesForCompany(companyId);
+      pipeline_status = map.get(`renovacao:${id}`) ?? null;
+    }
     return contractToJson(c, {
       entities: await contractEntities(id),
       documents: await contractDocuments(id),
+      pipeline_status,
       ...(raw ? { raw_detail: c.raw_detail_json, raw_list: c.raw_list_json } : {}),
     });
   });

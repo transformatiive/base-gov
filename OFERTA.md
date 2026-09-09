@@ -1,6 +1,6 @@
-# BaseRadar — Oferta
+# PrepBid — Oferta
 
-> **Inteligência comercial de contratos públicos.** O BaseRadar transforma os dados oficiais do Portal BASE, do Diário da República e do TED num radar de vendas: diz a uma empresa **que contratos públicos vai poder ganhar, quando, por quanto — e o que preparar para vencer**, antes de o concurso abrir.
+> **Inteligência comercial de contratos públicos.** O PrepBid transforma os dados oficiais do Portal BASE, do Diário da República e do TED num assistente para ganhar concursos: diz a uma empresa **que contratos públicos vai poder ganhar, quando, por quanto — e o que preparar para vencer**, antes de o concurso abrir.
 
 ---
 
@@ -10,13 +10,15 @@ Uma aplicação web que cruza o histórico completo da contratação pública po
 
 ## 2. Para quem é (ICP)
 
-PME e empresas que **vendem ao Estado** (municípios, hospitais, universidades, empresas públicas) e que hoje descobrem os concursos tarde, um a um, sem contexto:
+O produto serve **qualquer empresa que concorra a contratos públicos**. O primeiro sector a atacar é o **responsável por concursos de uma construtora de classe média** (alvará, pessoa comercial, orçamento de ferramentas) — não a micro de 3 operários, não a Mota-Engil. A seguir: energia/ambiente e dispositivos médicos / farmácia hospitalar.
 
-- Fornecedores de bens e serviços recorrentes a autarquias e entidades públicas.
-- Empresas com equipa comercial pequena que não consegue vigiar o BASE/DR todos os dias.
-- Setores com forte componente de **renovação** (contratos plurianuais que voltam a concurso).
+| Ordem | Sector | Porquê paga |
+|---|---|---|
+| 1 | **Obras / reabilitação municipal** | Ticket alto; já paga Vortal; as reabilitações da câmara **repetem-se** (o «4 meses antes» encaixa). |
+| 2 | Dispositivos médicos / farmácia hospitalar | Consumo contínuo SNS. |
+| 3 | Energia / ambiente | Contratos gordos, plurianuais. |
 
-Exemplos de atividade: pirotecnia e eventos, construção e manutenção, material médico, limpeza, catering, TI, formação, etc. — qualquer atividade descritível por **palavras-chave** e **códigos CPV**.
+Não é o ICP: limpeza, cantinas, festas — barato de adquirir, caro de converter. O Pro a 29 € é isco; o dinheiro está no **Business a 99 €** (até 10 lugares, rascunho de proposta .docx e previsão de fecho).
 
 ## 3. O problema que resolve
 
@@ -30,7 +32,7 @@ Exemplos de atividade: pirotecnia e eventos, construção e manutenção, materi
 
 1. **Antecipar** — prever renovações meses antes de o concurso reabrir ("antes do concurso abrir").
 2. **Priorizar** — um score 0-100 por oportunidade (valor, urgência, recorrência) e um *fit* por IA face à atividade da empresa.
-3. **Preparar** — a IA lê o caderno de encargos e devolve go/no-go, critérios, requisitos, red flags e um dossier de resposta.
+3. **Preparar** — a IA lê o caderno de encargos e devolve go/no-go, critérios, requisitos, red flags e um dossier de resposta (Pro). No Business gera um rascunho .docx da proposta (o que faltar fica `[A COMPLETAR]`, nunca inventado) e estima o valor de fecho a partir do histórico.
 4. **Competir melhor** — inteligência sobre concorrentes e compradores para escolher onde atacar.
 
 ---
@@ -76,11 +78,17 @@ Por concurso ou renovação, a IA produz uma **ficha de oportunidade**:
 - Recomendação **GO / CONDICIONAL / NO-GO** com justificação destacada.
 - Fit com a atividade (0-100), resumo, **critérios de adjudicação**, prazos, preço base, cauções.
 - **Requisitos de habilitação**, **red flags** e **checklist** para a proposta.
-- **Dossier de resposta** gerado por IA (documento com placeholders da empresa).
-- A análise é **fundamentada nos documentos reais** — a IA descarrega as **peças do procedimento** (caderno de encargos/programa) da plataforma e o **texto oficial do anúncio no DR**. O resultado fica guardado (só paga uma vez por análise).
+- **Dossier de resposta** (Pro) — template com placeholders da empresa, declarações do CCP e checklist de submissão, para copiar e completar.
+- A análise é **fundamentada nos documentos reais** — a IA descarrega as **peças do procedimento** (caderno de encargos/programa) da plataforma e o **texto oficial do anúncio no DR**. O resultado fica em cache: reabrir a ficha não volta a contar para o teto.
 
-### 5.10 Digest semanal
-Resumo por email (rascunho no Gmail / versão web): novos concursos, renovações a entrar na janela de contacto e o essencial da semana.
+### 5.10 Rascunho de proposta e previsão de fecho (Business)
+- **Rascunho assistido (.docx)** — extrai requisitos do caderno e gera um Word com o perfil da empresa (memória descritiva, capacidade técnica, equipa, referências, preço). O que faltar fica marcado `[A COMPLETAR]`; a IA não inventa. Edita no Word, volta a carregar, e vê o que ainda falta. A submissão no portal (Vortal, acinGov, etc.) é sempre manual.
+- **Previsão de valor de fecho** — estima o intervalo de adjudicação a partir do histórico de contratos semelhantes (não é um palpite genérico).
+
+### 5.11 Digest semanal e carteira de concursos
+- **Digest** — segunda-feira às 08:00 (Europa/Lisboa), no email: novos concursos de obras e reabilitações a entrar na janela de contacto. Grátis. Opt-out num clique.
+- **Pipeline de propostas** (grátis) — Nova → Interessa → Em preparação → Submetida → Ganha/Perdida, partilhado pela equipa.
+- **Lembretes de prazo** (Pro) — 7 e 2 dias antes, para o que está marcado Interessa / Em preparação.
 
 ---
 
@@ -107,7 +115,7 @@ Multi-empresa: cada conta vê **apenas os seus** perfis e dados; o corpus públi
 
 - Backend Node/TypeScript (Fastify), Postgres; scraper resiliente ao anti-bot do BASE (retries).
 - SPA vanilla-JS com routing por hash; mapa MapLibre GL.
-- IA via OpenRouter (modelos Claude) para análise, fit e dossiers.
+- IA via OpenRouter (modelos Claude) para análise, fit, dossiers e rascunho de proposta.
 - Sessão por cookie assinado; isolamento de dados por empresa; gating de subscrição.
 - Deploy contínuo (Railway).
 
@@ -115,22 +123,22 @@ Multi-empresa: cada conta vê **apenas os seus** perfis e dados; o corpus públi
 
 ## 9. Planos e preço
 
-Três planos, todos sem compromisso — comece grátis e suba quando precisar. Pagamento nacional (Multibanco, MB WAY ou cartão) via **Easypay**; cancele quando quiser.
+Três planos, todos sem compromisso — comece grátis e suba quando precisar. Pagamento nacional (cartão, MB WAY ou Multibanco) via **Stripe**; cancele quando quiser.
 
 | Plano | Preço (sem IVA) | Inclui |
 |---|---|---|
-| **Grátis** | 0 € | Concursos abertos, mapa por distrito, sazonalidade e digest semanal. 1 utilizador. |
-| **Pro** | 29 € / mês | Tudo do Grátis + oportunidades com **score e fit IA**, radar de **renovações**, concursos europeus (**TED**), **análise IA** do caderno de encargos + dossier de resposta, **concorrentes** e **entidades**, exportação Excel. **2 utilizadores**. |
-| **Business** | 99 € / mês | Tudo do Pro + **equipa até 10 utilizadores** (seats), **uso elevado de IA** e **exportação avançada**. |
+| **Grátis** | 0 € | Concursos abertos, mapa, sazonalidade, digest (segunda 08:00), **carteira de propostas**, perfil da empresa (alvará, distritos, valor). **1 utilizador**. |
+| **Pro** | 29 € / mês (isco, 7 dias grátis) | Tudo do Grátis + **score e fit IA**, radar de **renovações**, **TED**, **análise IA** + dossier de resposta (placeholders), **lembretes de prazo** (7 e 2 dias), **concorrentes** e **entidades**, Excel. **40 análises de IA / 30 dias por utilizador**. **2 utilizadores**. |
+| **Business** | 99 € / mês (**plano da equipa**) | Tudo do Pro + **até 10 utilizadores**, **carteira partilhada**, **rascunho assistido de proposta (.docx)**, **previsão de valor de fecho**, **250 análises de IA / 30 dias por utilizador**, apoio prioritário. Sem conector CRM — a carteira vive no PrepBid. |
 
 - **Experimente o Pro 7 dias grátis, sem cartão** — ao fim do período, a conta volta ao plano Grátis se não subscrever.
-- O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade).
-- O uso de IA é contabilizado por conta (com visibilidade no painel da conta); a contagem é informativa e não bloqueia.
+- O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade). O rascunho .docx e a previsão de fecho são **Business**; o dossier com placeholders fica no **Pro**.
+- O teto de IA é **por utilizador, a cada 30 dias**, a contar da inscrição dessa pessoa, com reset às 00:00 de Lisboa. A 80% aparece aviso; a 90% o aviso fica vermelho; no teto as análises novas ficam bloqueadas até ao reset. Reabrir uma ficha já analisada (cache) não conta.
 
 ## 10. Diferenciadores
 
 - **Renovações previsíveis** — o radar não mostra só o que já abriu; prevê o que vai abrir.
-- **IA fundamentada em documentos reais** — go/no-go com critérios e requisitos citados do caderno de encargos, não só dos metadados.
+- **IA fundamentada em documentos reais** — go/no-go com critérios e requisitos citados do caderno de encargos, não só dos metadados. O rascunho Business não inventa o que falta: marca `[A COMPLETAR]`.
 - **Score + fit** combinam relevância comercial e encaixe na atividade.
 - **Inteligência competitiva consolidada por NIF**, com sinais de vulnerabilidade do incumbente.
 - **Cobertura nacional + europeia** (BASE + DR + TED) e sinalização de **acordos-quadro**.

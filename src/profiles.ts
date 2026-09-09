@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { noveltyCounts } from './profile-run-policy.js';
 
 /** Cria um profile_run e as pesquisas filhas (contratos + anúncios por termo). */
 export async function createProfileRun(profileId: number, createdBy: number | null): Promise<number> {
@@ -45,22 +46,34 @@ export async function reconcileProfileRuns(): Promise<void> {
   for (const run of runs) {
     const { rows: [counts] } = await pool.query(
       `SELECT
+         (SELECT count(DISTINCT sr.contract_id) FROM search_results sr
+            JOIN searches s ON s.id = sr.search_id AND s.profile_run_id = $1) AS matched_contracts,
+         (SELECT count(DISTINCT sa.announcement_id) FROM search_announcements sa
+            JOIN searches s ON s.id = sa.search_id AND s.profile_run_id = $1) AS matched_announcements,
          (SELECT count(DISTINCT c.id) FROM search_results sr
             JOIN searches s ON s.id = sr.search_id AND s.profile_run_id = $1
             JOIN contracts c ON c.id = sr.contract_id
-           WHERE c.created_at >= $2) AS new_contracts,
+           WHERE c.created_at >= $2) AS created_contracts,
          (SELECT count(DISTINCT a.id) FROM search_announcements sa
             JOIN searches s ON s.id = sa.search_id AND s.profile_run_id = $1
             JOIN announcements a ON a.id = sa.announcement_id
-           WHERE a.created_at >= $2) AS new_announcements,
+           WHERE a.created_at >= $2) AS created_announcements,
          (SELECT bool_or(s.status = 'failed') FROM searches s WHERE s.profile_run_id = $1) AS any_failed`,
       [run.id, run.run_started ?? new Date(0)]
     );
+    // profile_run é match local (sem scrape ao vivo) — «novidades» = cruzados neste run.
+    const novelty = noveltyCounts({
+      origin: 'profile_run',
+      matchedContracts: Number(counts.matched_contracts),
+      matchedAnnouncements: Number(counts.matched_announcements),
+      createdAfterStartContracts: Number(counts.created_contracts),
+      createdAfterStartAnnouncements: Number(counts.created_announcements),
+    });
     await pool.query(
       `UPDATE profile_runs SET status = $2, new_contracts = $3, new_announcements = $4, finished_at = now(),
          started_at = COALESCE(started_at, $5)
        WHERE id = $1`,
-      [run.id, counts.any_failed ? 'failed' : 'completed', counts.new_contracts, counts.new_announcements, run.run_started]
+      [run.id, counts.any_failed ? 'failed' : 'completed', novelty.new_contracts, novelty.new_announcements, run.run_started]
     );
     await pool.query('UPDATE profiles SET last_run_at = now() WHERE id = $1', [run.profile_id]);
   }

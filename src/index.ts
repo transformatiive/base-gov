@@ -8,17 +8,27 @@ import { migrateAndSeed } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerRoutesV2 } from './routes-v2.js';
 import { registerAccountRoutes } from './routes-account.js';
+import { registerProposalRoutes } from './routes-proposals.js';
 import { registerSeatRoutes } from './seats.js';
+import { registerPipelineRoutes } from './pipeline.js';
+import { registerCompanyProfileRoutes } from './company-profile.js';
+import { registerNotificationRoutes } from './notifications.js';
+import { registerAiFeedbackRoutes } from './ai-feedback.js';
+import { registerGuideAgentRoutes, registerPublicGuideRoutes } from './routes-guides.js';
+import { ingestPublicPage, registerUsageRoutes } from './routes-usage.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
+import { startScheduler } from './scheduler.js';
 import { ensureCpvCatalog } from './cpv.js';
+import { rollAiQuotaPeriods } from './aiUsage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   await migrateAndSeed();
+  await rollAiQuotaPeriods().catch((e) => console.warn('[ai-quota] backfill inicial falhou:', e));
 
-  const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+  const app = Fastify({ logger: true, bodyLimit: 16 * 1024 * 1024 });
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   // Sem cache agressiva: garante que o browser recebe sempre a versão atual da SPA.
   // index:false → a raiz não serve automaticamente o index.html da SPA; a landing
@@ -33,10 +43,20 @@ async function main(): Promise<void> {
   });
 
   // Landing comercial na raiz do domínio.
-  app.get('/', (_req, reply) => reply.sendFile('landing.html'));
-  // Páginas legais (públicas).
-  app.get('/privacidade', (_req, reply) => reply.sendFile('privacidade.html'));
-  app.get('/termos', (_req, reply) => reply.sendFile('termos.html'));
+  app.get('/', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/');
+    return reply.sendFile('landing.html');
+  });
+  // Páginas legais (públicas) e guias indexáveis (SEO / LLMs).
+  app.get('/privacidade', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/privacidade');
+    return reply.sendFile('privacidade.html');
+  });
+  app.get('/termos', async (req, reply) => {
+    await ingestPublicPage(req, reply, '/termos');
+    return reply.sendFile('termos.html');
+  });
+  await registerPublicGuideRoutes(app);
   // Aplicação (SPA com routing por hash) servida em /app.
   const sendApp = (_req: unknown, reply: import('fastify').FastifyReply) => reply.sendFile('index.html');
   app.get('/app', sendApp);
@@ -56,13 +76,21 @@ async function main(): Promise<void> {
   await registerRoutes(app);
   await registerRoutesV2(app);
   await registerAccountRoutes(app);
+  await registerProposalRoutes(app);
   await registerSeatRoutes(app);
+  await registerPipelineRoutes(app);
+  await registerCompanyProfileRoutes(app);
+  await registerNotificationRoutes(app);
+  await registerAiFeedbackRoutes(app);
+  await registerGuideAgentRoutes(app);
+  await registerUsageRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
   startWorker();
   startOpendataWorker();
+  startScheduler();
   ensureCpvCatalog();
 }
 

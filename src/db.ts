@@ -1,6 +1,7 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { config } from './config.js';
+import { GUIDE_SEED, markdownToHtml, parseGuidePayload } from './guides.js';
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_company_id_fkey;
+ALTER TABLE users ADD CONSTRAINT users_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email       TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name  TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name   TEXT;
@@ -41,6 +45,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email)) WHERE 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version     TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip          TEXT;
+-- Ciclo de teto de IA: 30 dias a partir da inscrição, reset às 00:00 Lisboa.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_period_start TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_period_end   TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_ai_period_end ON users (ai_period_end)
+  WHERE ai_period_end IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS searches (
   id             SERIAL PRIMARY KEY,
@@ -137,6 +146,9 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL D
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cpv_codes TEXT[] NOT NULL DEFAULT '{}';
 -- Multi-tenant: perfis pertencem a uma empresa; nome único por empresa (não global).
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_company_id_fkey;
+ALTER TABLE profiles ADD CONSTRAINT profiles_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_name_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_company_name ON profiles (company_id, lower(name));
 CREATE INDEX IF NOT EXISTS idx_profiles_company ON profiles (company_id);
@@ -160,6 +172,12 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
+ALTER TABLE searches DROP CONSTRAINT IF EXISTS searches_company_id_fkey;
+ALTER TABLE searches ADD CONSTRAINT searches_company_id_fkey
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE searches DROP CONSTRAINT IF EXISTS searches_created_by_fkey;
+ALTER TABLE searches ADD CONSTRAINT searches_created_by_fkey
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_searches_company ON searches (company_id);
 
 -- v2: anúncios de procedimento (concursos abertos)
@@ -265,8 +283,8 @@ UPDATE companies SET plan = 'pro' WHERE plan = 'baseradar';
 -- Empresas sem plano reconhecido (nulo/vazio/desconhecido) resolvem como free.
 UPDATE companies SET plan = 'free' WHERE plan IS NULL OR plan NOT IN ('free', 'pro', 'business');
 
--- Registo de utilização de IA (uma linha por análise BEM-SUCEDIDA). Conta e regista;
--- NÃO bloqueia (o teto é soft, controlado por flag). Falhas não contam.
+-- Registo de utilização de IA (uma linha por análise BEM-SUCEDIDA). Falhas e
+-- resultados em cache não contam. O teto por utilizador bloqueia novas chamadas.
 CREATE TABLE IF NOT EXISTS ai_usage_events (
   id             SERIAL PRIMARY KEY,
   company_id     INT REFERENCES companies(id) ON DELETE CASCADE,
@@ -279,6 +297,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_events (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_usage_company_month ON ai_usage_events (company_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created ON ai_usage_events (user_id, created_at);
 
 -- Convites de utilizadores por empresa (seats). Limite por plano validado na app.
 CREATE TABLE IF NOT EXISTS company_invites (
@@ -322,6 +341,7 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_payments_company ON payments (company_id, created_at DESC);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS moloni_number TEXT;  -- série + número Moloni (ex.: IVCX 12)
 
 -- Eventos Stripe já processados (idempotência do webhook; Stripe reenvia).
 CREATE TABLE IF NOT EXISTS stripe_events (
@@ -357,7 +377,60 @@ CREATE TABLE IF NOT EXISTS contract_history_agg (
 );
 CREATE INDEX IF NOT EXISTS idx_history_agg_entity ON contract_history_agg (entity_id, role);
 
+-- Propostas assistidas e previsão de valor de fecho
+-- project_references: não usar o identificador "references" (palavra reservada no PostgreSQL).
+CREATE TABLE IF NOT EXISTS proposal_company_profiles (
+  company_id              INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  legal_name              TEXT,
+  nif                     TEXT,
+  cae                     TEXT,
+  certifications          TEXT[] NOT NULL DEFAULT '{}',
+  technical_capabilities  TEXT,
+  portfolio               TEXT,
+  project_references      JSONB NOT NULL DEFAULT '[]',
+  key_team                JSONB NOT NULL DEFAULT '[]',
+  min_margin_pct          NUMERIC(5,2),
+  notes                   TEXT,
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by              INT REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS announcement_requirements (
+  announcement_id INT PRIMARY KEY REFERENCES announcements(id) ON DELETE CASCADE,
+  extraction      JSONB NOT NULL,
+  model           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS proposal_versions (
+  id              SERIAL PRIMARY KEY,
+  company_id      INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  announcement_id INT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  version         INT NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN ('generated','uploaded')),
+  file_name       TEXT NOT NULL,
+  content_type    TEXT NOT NULL DEFAULT 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  content         BYTEA NOT NULL,
+  extracted_text  TEXT,
+  gap_report      JSONB,
+  created_by      INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, announcement_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_proposal_versions_ann ON proposal_versions (company_id, announcement_id, version DESC);
+
+CREATE TABLE IF NOT EXISTS close_forecasts (
+  announcement_id INT PRIMARY KEY REFERENCES announcements(id) ON DELETE CASCADE,
+  fingerprint     TEXT NOT NULL,
+  llm             JSONB,
+  model           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_announcements_deadline ON announcements(proposal_deadline_date);
+CREATE INDEX IF NOT EXISTS idx_announcements_text ON announcements USING gin (to_tsvector('portuguese', coalesce(contract_designation,'') || ' ' || coalesce(contracting_entity,'')));
 CREATE INDEX IF NOT EXISTS idx_contracts_text ON contracts USING gin (to_tsvector('portuguese', coalesce(object_brief_description,'') || ' ' || coalesce(description,'')));
 CREATE INDEX IF NOT EXISTS idx_ce_entity_role ON contract_entities(entity_id, role);
 CREATE INDEX IF NOT EXISTS idx_ce_role_contract ON contract_entities(role, contract_id);
@@ -366,10 +439,158 @@ CREATE INDEX IF NOT EXISTS idx_contracts_end_date ON contracts ((signing_date + 
   WHERE signing_date IS NOT NULL AND execution_deadline ~ '\\d+';
 CREATE INDEX IF NOT EXISTS idx_search_announcements_search ON search_announcements(search_id);
 CREATE INDEX IF NOT EXISTS idx_searches_profile_run ON searches(profile_run_id);
+
+-- A. Pipeline
+CREATE TABLE IF NOT EXISTS opportunity_status (
+  id            SERIAL PRIMARY KEY,
+  company_id    INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  item_type     TEXT NOT NULL CHECK (item_type IN ('anuncio_aberto','renovacao')),
+  item_id       INT  NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('interessa','preparacao','submetida','ganha','perdida','descartada')),
+  note          TEXT,
+  assigned_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_by    INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitted_at  TIMESTAMPTZ,
+  decided_at    TIMESTAMPTZ,
+  UNIQUE (company_id, item_type, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_opp_status_company ON opportunity_status (company_id, status);
+
+CREATE TABLE IF NOT EXISTS opportunity_status_history (
+  id          SERIAL PRIMARY KEY,
+  status_id   INT NOT NULL REFERENCES opportunity_status(id) ON DELETE CASCADE,
+  from_status TEXT, to_status TEXT NOT NULL,
+  changed_by  INT REFERENCES users(id) ON DELETE SET NULL,
+  changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS opportunity_checklist (
+  company_id     INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  item_type      TEXT NOT NULL, item_id INT NOT NULL,
+  item_text_hash TEXT NOT NULL,
+  checked        BOOLEAN NOT NULL DEFAULT true,
+  checked_by     INT REFERENCES users(id) ON DELETE SET NULL,
+  checked_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, item_type, item_id, item_text_hash)
+);
+
+-- B. Perfil da empresa
+CREATE TABLE IF NOT EXISTS company_profiles (
+  company_id        INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  description       TEXT,
+  certifications    TEXT[] NOT NULL DEFAULT '{}',
+  districts         TEXT[] NOT NULL DEFAULT '{}',
+  value_min         NUMERIC(15,2), value_max NUMERIC(15,2),
+  excluded_terms    TEXT[] NOT NULL DEFAULT '{}',
+  excluded_entities TEXT[] NOT NULL DEFAULT '{}',
+  version           INT NOT NULL DEFAULT 1,
+  updated_by        INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (value_min IS NULL OR value_max IS NULL OR value_max > value_min)
+);
+ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS profile_version INT NOT NULL DEFAULT 0;
+ALTER TABLE ai_fit_scores ADD COLUMN IF NOT EXISTS rule_hits JSONB NOT NULL DEFAULT '[]';
+
+-- D. Notificações
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_digest    BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_reminders BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_version   INT NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS notification_log (
+  id          SERIAL PRIMARY KEY,
+  kind        TEXT NOT NULL,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ref         TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'pending',
+  attempts    INT NOT NULL DEFAULT 0,
+  provider_id TEXT, error TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(), sent_at TIMESTAMPTZ,
+  UNIQUE (kind, user_id, ref)
+);
+
+CREATE TABLE IF NOT EXISTS reminder_log (
+  company_id INT NOT NULL, item_type TEXT NOT NULL, item_id INT NOT NULL,
+  kind TEXT NOT NULL, deadline DATE NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, item_type, item_id, kind, deadline)
+);
+
+-- E. Feedback IA
+CREATE TABLE IF NOT EXISTS ai_feedback (
+  id          SERIAL PRIMARY KEY,
+  company_id  INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('fit','analysis')),
+  item_type   TEXT NOT NULL, item_id INT NOT NULL,
+  verdict     TEXT NOT NULL CHECK (verdict IN ('up','down')),
+  reason_code TEXT CHECK (reason_code IN ('fora_atividade','fora_geografia','requisito_impossivel','valor_desadequado','outro')),
+  comment     TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, user_id, target_type, item_type, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_company ON ai_feedback (company_id, verdict, created_at DESC);
+
+-- C. Índices de filtros (pg_trgm fica no migrateAndSeed com fallback)
+CREATE INDEX IF NOT EXISTS idx_ann_procedure ON announcements (contracting_procedure_type);
+CREATE INDEX IF NOT EXISTS idx_ann_base_price ON announcements (base_price);
+CREATE INDEX IF NOT EXISTS idx_contracts_procedure ON contracts (contracting_procedure_type);
+CREATE INDEX IF NOT EXISTS idx_contracts_price ON contracts (initial_contractual_price);
+CREATE INDEX IF NOT EXISTS idx_contracts_district ON contracts (
+  (NULLIF(btrim(split_part(split_part(execution_place,'|',1),',',2)),''))
+);
+
+-- Guias públicos (SEO / LLMs). Fonte de verdade: Postgres, não ficheiros estáticos.
+CREATE TABLE IF NOT EXISTS guide_articles (
+  slug          TEXT PRIMARY KEY,
+  title         TEXT NOT NULL,
+  description   TEXT NOT NULL,
+  lede          TEXT NOT NULL,
+  intent        TEXT NOT NULL CHECK (intent IN ('informativa','comercial')),
+  markdown      TEXT NOT NULL,
+  body_html     TEXT NOT NULL,
+  faq           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
+  published_at  TIMESTAMPTZ,
+  author_agent  TEXT NOT NULL DEFAULT 'human' CHECK (author_agent IN ('claude','grok','grok-bot','human')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_guide_articles_status ON guide_articles (status, published_at DESC);
+
+-- Utilização do produto (páginas, módulos, acções, origem). Sem IP.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id            BIGSERIAL PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN ('page_view','action')),
+  path          TEXT NOT NULL,
+  module        TEXT NOT NULL,
+  action        TEXT,
+  origin        TEXT NOT NULL,
+  referrer_host TEXT,
+  utm_source    TEXT,
+  utm_medium    TEXT,
+  utm_campaign  TEXT,
+  visitor_id    TEXT,
+  landing       TEXT,
+  user_id       INT REFERENCES users(id) ON DELETE SET NULL,
+  company_id    INT REFERENCES companies(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_module ON usage_events (created_at DESC, module);
+CREATE INDEX IF NOT EXISTS idx_usage_origin ON usage_events (created_at DESC, origin);
 `;
 
 export async function migrateAndSeed(): Promise<void> {
   await pool.query(SCHEMA);
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_ann_entity_trgm ON announcements USING gin (lower(contracting_entity) gin_trgm_ops)`
+    );
+  } catch (err) {
+    console.warn('[migrate] pg_trgm indisponível — filtros usam ILIKE:', String(err).slice(0, 180));
+  }
 
   // Recuperação pós-restart (single replica): trabalho que ficou 'running'
   // quando o processo morreu é órfão — volta à fila (processamento idempotente).
@@ -407,4 +628,47 @@ export async function migrateAndSeed(): Promise<void> {
   // Todos os perfis/pesquisas sem dono passam para a empresa interna (dados legados).
   await pool.query('UPDATE profiles SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
   await pool.query('UPDATE searches SET company_id = $1 WHERE company_id IS NULL', [defaultCompanyId]);
+
+  // GTM: o perfil interno de pirotecnia contradiz a oferta (obras / saúde / energia).
+  const dropped = await pool.query(
+    `DELETE FROM profiles
+      WHERE company_id = $1
+        AND (name ILIKE '%pirotecnia%' OR name ILIKE '%fogo de artifício%' OR name ILIKE '%fogo de artificio%')
+      RETURNING id, name`,
+    [defaultCompanyId]
+  );
+  if (dropped.rowCount) {
+    console.log(`[seed] perfil GTM removido: ${dropped.rows.map((r: { name: string }) => r.name).join(', ')}`);
+  }
+
+  await seedGuides();
+}
+
+/** Insere os guias iniciais. ON CONFLICT DO NOTHING para não sobrescrever edições do agente. */
+export async function seedGuides(): Promise<void> {
+  for (const seed of GUIDE_SEED) {
+    const parsed = parseGuidePayload(seed.slug, seed);
+    if (!parsed.ok) {
+      throw new Error(`[seed] guia inválido ${seed.slug}: ${parsed.error}`);
+    }
+    const html = markdownToHtml(parsed.value.markdown);
+    const ins = await pool.query(
+      `INSERT INTO guide_articles
+         (slug, title, description, lede, intent, markdown, body_html, faq, status, published_at, author_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'published', now(), 'human')
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING slug`,
+      [
+        parsed.value.slug,
+        parsed.value.title,
+        parsed.value.description,
+        parsed.value.lede,
+        parsed.value.intent,
+        parsed.value.markdown,
+        html,
+        JSON.stringify(parsed.value.faq),
+      ],
+    );
+    if (ins.rowCount) console.log(`[seed] guia publicado: ${parsed.value.slug}`);
+  }
 }

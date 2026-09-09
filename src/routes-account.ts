@@ -5,12 +5,21 @@ import { config } from './config.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { createProfileRun } from './profiles.js';
 import { normalize } from './cpv.js';
-import { stripeConfigured, createCheckout, constructStripeEvent, handleStripeEvent, grossCents,
+import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
+import { stripeConfigured, createCheckout, createBillingPortal, classifyPortalError,
+         constructStripeEvent, handleStripeEvent, grossCents, cancelStripeSubscription,
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
-import { discoverMoloniConfig, moloniStatus } from './moloni.js';
+import { discoverMoloniConfig, getMoloniInvoicePdf, moloniStatus, MoloniPdfError } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
-import { sendMail, layout, esc, mailEnabled } from './mail.js';
+import { sendMail, layout, esc, mailEnabled, mailDisabledHint, mailProvider } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
+import {
+  billingSnapshot, invoiceDownloadable, invoicePdfUnavailableMessage,
+  mapPaymentToInvoice, pdfFilename,
+} from './billing.js';
+import {
+  confirmRequested, downgradeCompanyToFree, deleteCompanyAccount,
+} from './account-lifecycle.js';
 
 /** IP do cliente, respeitando o proxy à frente da aplicação. */
 function clientIp(req: { headers: Record<string, unknown>; ip?: string }): string {
@@ -79,11 +88,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         [email, hash, company.id, firstName, lastName || null, phone, config.termsVersion, clientIp(req)]
       );
       // Perfil inicial pré-configurado com a atividade escolhida.
-      const profileTerms = terms.length ? terms : [companyName];
+      const profileTerms = refineActivityTerms(terms.length ? terms : [companyName]);
+      const profileCpvs = mergeCpvHints(terms.length ? terms : profileTerms, cpvCodes);
       const { rows: [profile] } = await client.query(
         `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, company_id)
-         VALUES ($1, $2, $3, 'weekly', true, $4) RETURNING id`,
-        ['A minha atividade', profileTerms, cpvCodes, company.id]
+         VALUES ($1, $2, $3, 'daily', true, $4) RETURNING id`,
+        ['A minha atividade', profileTerms, profileCpvs, company.id]
       );
       await client.query('COMMIT');
       // Popula o radar do perfil a partir do corpus já recolhido (fora da transação).
@@ -150,10 +160,23 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     if (companyId != null) {
       const { rows } = await pool.query(
         `SELECT name, nif, plan, subscription_status, trial_ends_at, renewal_at, access_until,
+           (stripe_customer_id IS NOT NULL) AS has_stripe_customer,
+           (stripe_subscription_id IS NOT NULL) AS has_stripe_subscription,
            CASE WHEN subscription_status = 'trialing' AND trial_ends_at IS NOT NULL
                 THEN GREATEST(0, ceil(extract(epoch FROM (trial_ends_at - now())) / 86400)::int) END AS trial_days_left
          FROM companies WHERE id = $1`, [companyId]);
       company = rows[0] ?? null;
+    }
+    const billing = billingSnapshot(company, { billingEnabled: stripeConfigured() });
+    if (company) {
+      delete company.has_stripe_customer;
+      delete company.has_stripe_subscription;
+    }
+    let members = 0;
+    if (companyId != null) {
+      const { rows: mc } = await pool.query(
+        'SELECT count(*)::int AS n FROM users WHERE company_id = $1', [companyId]);
+      members = Number(mc[0]?.n ?? 0);
     }
     return {
       plan,   // plano efetivo
@@ -161,7 +184,83 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       price: `${priceEur} € (c/ IVA) / mês`,
       billing_enabled: stripeConfigured(),
       company,
+      billing,
+      members,
     };
+  });
+
+  // Faturas Moloni da empresa (uma por pagamento Stripe).
+  app.get('/api/billing/invoices', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const { rows } = await pool.query(
+      `SELECT id, created_at, kind, plan, amount_cents, currency,
+              moloni_document_id, moloni_status, moloni_number
+         FROM payments WHERE company_id = $1
+         ORDER BY created_at DESC LIMIT 100`,
+      [companyId]);
+    return { items: rows.map(mapPaymentToInvoice) };
+  });
+
+  app.get('/api/billing/invoices/:id/pdf', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return reply.code(400).send({ error: { code: 'invalid', message: 'Fatura inválida.' } });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, moloni_document_id, moloni_status, moloni_number
+         FROM payments WHERE id = $1 AND company_id = $2`,
+      [id, companyId]);
+    const row = rows[0] as {
+      id: number; moloni_document_id: number | string | null; moloni_status: string | null; moloni_number: string | null;
+    } | undefined;
+    if (!row) return reply.code(404).send({ error: { code: 'not_found', message: 'Fatura não encontrada.' } });
+    const docId = row.moloni_document_id == null ? null : Number(row.moloni_document_id);
+    if (docId == null || !invoiceDownloadable(row.moloni_status, docId)) {
+      return reply.code(409).send({
+        error: { code: 'pdf_unavailable', message: invoicePdfUnavailableMessage(row.moloni_status) },
+      });
+    }
+    try {
+      const { bytes } = await getMoloniInvoicePdf(docId);
+      const filename = pdfFilename(row.moloni_number, row.id);
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .header('Cache-Control', 'private, no-store')
+        .send(bytes);
+    } catch (err) {
+      if (err instanceof MoloniPdfError) {
+        const http = err.code === 'skipped' ? 503 : err.code === 'fetch_failed' ? 502 : 409;
+        return reply.code(http).send({ error: { code: err.code, message: err.message } });
+      }
+      console.error('[billing] pdf:', err);
+      return reply.code(502).send({ error: { code: 'pdf_failed', message: 'Não foi possível descarregar a fatura.' } });
+    }
+  });
+
+  // Customer Portal Stripe: cartão, cancelar, método de pagamento.
+  app.post('/api/billing/portal', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    if (!stripeConfigured()) {
+      return reply.code(503).send({ error: { code: 'billing_disabled', message: 'Pagamentos ainda não configurados. Contacte o suporte.' } });
+    }
+    const { rows } = await pool.query('SELECT stripe_customer_id FROM companies WHERE id = $1', [companyId]);
+    const customerId = rows[0]?.stripe_customer_id as string | null | undefined;
+    if (!customerId) {
+      return reply.code(409).send({
+        error: { code: 'no_customer', message: 'Ainda não há um método de pagamento associado a esta conta.' },
+      });
+    }
+    try {
+      return { ok: true, ...(await createBillingPortal(customerId)) };
+    } catch (err) {
+      const mapped = classifyPortalError(err);
+      return reply.code(mapped.http).send({ error: { code: mapped.code, message: mapped.message } });
+    }
   });
 
   // Inicia o trial Pro de 7 dias, sem cartão (R6). Só a partir do free e uma vez.
@@ -215,6 +314,65 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
+  // Passar para Grátis: cancela a subscrição Stripe (já) e fica a conta.
+  app.post('/api/billing/downgrade-free', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) {
+      return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    }
+    if (!confirmRequested(req.body)) {
+      return reply.code(400).send({
+        error: { code: 'confirm_required', message: 'Confirme que quer passar para o plano Grátis.' },
+      });
+    }
+    try {
+      const result = await downgradeCompanyToFree(companyId, {
+        query: (sql, params) => pool.query(sql, params),
+        cancelSubscription: cancelStripeSubscription,
+        billingReady: stripeConfigured(),
+      });
+      if (!result.ok) {
+        return reply.code(result.http).send({ error: { code: result.code, message: result.message } });
+      }
+      return { ok: true, plan: result.plan };
+    } catch (err) {
+      console.error('[billing] downgrade-free:', err);
+      return reply.code(502).send({
+        error: { code: 'downgrade_failed', message: 'Não foi possível passar para o plano Grátis. Tente de novo ou contacte o suporte.' },
+      });
+    }
+  });
+
+  // Cancelar = apagar a conta (empresa + utilizadores). Exige confirmação no corpo.
+  app.post('/api/account/delete', { preHandler: requireAuth }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) {
+      return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    }
+    if (!confirmRequested(req.body)) {
+      return reply.code(400).send({
+        error: { code: 'confirm_required', message: 'Confirme que quer apagar a conta.' },
+      });
+    }
+    try {
+      const result = await deleteCompanyAccount(companyId, {
+        query: (sql, params) => pool.query(sql, params),
+        cancelSubscription: cancelStripeSubscription,
+        billingReady: stripeConfigured(),
+      });
+      if (!result.ok) {
+        return reply.code(result.http).send({ error: { code: result.code, message: result.message } });
+      }
+    } catch (err) {
+      console.error('[account] delete:', err);
+      return reply.code(502).send({
+        error: { code: 'delete_failed', message: 'Não foi possível apagar a conta. Tente de novo ou contacte o suporte.' },
+      });
+    }
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true, deleted: true };
+  });
+
   // Webhook do Stripe (público). Regra inviolável: a assinatura é verificada
   // ANTES de qualquer mutação de estado; sem verificação, nada muda.
   app.post('/api/billing/webhook', async (req, reply) => {
@@ -260,8 +418,19 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
          (SELECT count(*) FROM users u WHERE u.company_id = c.id) AS n_users,
          (SELECT count(*) FROM profiles p WHERE p.company_id = c.id) AS n_profiles,
          (SELECT count(*) FROM ai_usage_events ae WHERE ae.company_id = c.id
-            AND ae.created_at >= date_trunc('month', now())) AS ai_month,
-         (SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin, 'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version) ORDER BY u.id)
+            AND ae.created_at >= now() - interval '30 days') AS ai_month,
+         (SELECT count(*) FROM searches s WHERE s.company_id = c.id
+            AND s.created_at >= now() - interval '30 days') AS searches_30d,
+         (SELECT json_agg(json_build_object(
+            'id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin,
+            'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version,
+            'created_at', u.created_at, 'ai_reset_at', u.ai_period_end,
+            'ai_used', (SELECT count(*) FROM ai_usage_events ae
+                         WHERE ae.user_id = u.id
+                           AND u.ai_period_start IS NOT NULL
+                           AND ae.created_at >= u.ai_period_start
+                           AND (u.ai_period_end IS NULL OR ae.created_at < u.ai_period_end))
+          ) ORDER BY u.id)
             FROM users u WHERE u.company_id = c.id) AS users
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);
     return { items: rows };
@@ -291,21 +460,21 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/test-email', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
     if (!mailEnabled()) {
-      return reply.code(503).send({ error: { code: 'mail_disabled', message: 'Email não configurado (falta RESEND_API_KEY ou MAIL_FROM).' } });
+      return reply.code(503).send({ error: { code: 'mail_disabled', message: mailDisabledHint() } });
     }
     const body = (req.body ?? {}) as { to?: string };
     const to = String(body.to ?? config.mail.supportEmail ?? '').trim();
     if (!to) return reply.code(400).send({ error: { code: 'no_recipient', message: 'Indique o destinatário.' } });
     const r = await sendMail({
       to,
-      subject: 'BaseRadar — teste de configuração de email',
+      subject: 'PrepBid — teste de configuração de email',
       html: layout({
         title: 'Configuração de email validada',
-        body: `<p>Se está a ler isto, o envio de email do BaseRadar está a funcionar.</p>
+        body: `<p>Se está a ler isto, o envio de email do PrepBid está a funcionar.</p>
                <p>Remetente: <strong>${esc(config.mail.from)}</strong></p>
                <p>Ficam operacionais os convites de equipa, a recuperação de password e as confirmações de pagamento.</p>`,
       }),
-      text: 'Teste de configuração de email do BaseRadar — está a funcionar.',
+      text: 'Teste de configuração de email do PrepBid — está a funcionar.',
     });
     if (!r.ok) return reply.code(502).send({ error: { code: 'send_failed', message: r.error ?? 'Falha no envio.' } });
     return { ok: true, id: r.id, from: config.mail.from, to };
@@ -318,7 +487,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return {
       stripe: await stripeStatus(),
       moloni: moloniStatus(),
-      mail: { enabled: mailEnabled(), from: config.mail.from || null },
+      mail: { enabled: mailEnabled(), provider: mailProvider(), from: config.mail.from || null },
       app_base_url: config.appBaseUrl || null,
     };
   });
@@ -561,7 +730,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   // ---------- Admin: estatísticas de utilização ----------
   app.get('/api/admin/stats', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
-    const [byPlan, byStatus, totals, split, aiByKind, aiTotals, searchesByKind, runs] = await Promise.all([
+    const [byPlan, byStatus, totals, split, aiByKind, aiTotals, searchesByKind, searchTotals, searchesByCompany, recentSearches, runs] = await Promise.all([
       pool.query(`SELECT plan, count(*)::int AS n FROM companies GROUP BY plan`),
       pool.query(`SELECT subscription_status AS status, count(*)::int AS n FROM companies GROUP BY subscription_status`),
       pool.query(`SELECT
@@ -574,11 +743,27 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           count(*) FILTER (WHERE plan = 'free' OR subscription_status IN ('canceled','past_due'))::int AS free_inactive
         FROM companies`),
       pool.query(`SELECT kind, count(*)::int AS n FROM ai_usage_events
-          WHERE created_at >= date_trunc('month', now()) GROUP BY kind ORDER BY n DESC`),
+          WHERE created_at >= now() - interval '30 days' GROUP BY kind ORDER BY n DESC`),
       pool.query(`SELECT count(*)::int AS n_month, coalesce(sum(cost_estimate),0)::float AS cost_month,
           (SELECT count(*)::int FROM ai_usage_events) AS n_total
-        FROM ai_usage_events WHERE created_at >= date_trunc('month', now())`),
-      pool.query(`SELECT coalesce(kind,'contratos') AS kind, count(*)::int AS n FROM searches GROUP BY kind ORDER BY n DESC`),
+        FROM ai_usage_events WHERE created_at >= now() - interval '30 days'`),
+      pool.query(`SELECT coalesce(kind,'contratos') AS kind, count(*)::int AS n FROM searches
+          WHERE created_at >= now() - interval '30 days' GROUP BY kind ORDER BY n DESC`),
+      pool.query(`SELECT count(*)::int AS n_total,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30
+        FROM searches`),
+      pool.query(`SELECT c.id, c.name, c.plan, count(*)::int AS n, max(s.created_at) AS last_at
+           FROM searches s JOIN companies c ON c.id = s.company_id
+          WHERE s.created_at >= now() - interval '30 days'
+          GROUP BY c.id, c.name, c.plan
+          ORDER BY n DESC LIMIT 20`),
+      pool.query(`SELECT s.id, s.term, s.kind, s.status, s.created_at, s.finished_at,
+              c.name AS company, u.username, u.email
+           FROM searches s
+           LEFT JOIN companies c ON c.id = s.company_id
+           LEFT JOIN users u ON u.id = s.created_by
+          ORDER BY s.created_at DESC LIMIT 30`),
       pool.query(`SELECT count(*)::int AS total,
           count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30 FROM profile_runs`),
     ]);
@@ -598,6 +783,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       companies_by_status: byStatus.rows,
       ai_usage: { by_kind: aiByKind.rows, ...aiTotals.rows[0] },
       searches_by_kind: searchesByKind.rows,
+      searches: {
+        ...searchTotals.rows[0],
+        by_kind: searchesByKind.rows,
+        by_company: searchesByCompany.rows,
+        recent: recentSearches.rows,
+      },
       profile_runs: runs.rows[0],
       signups: signups.rows[0],
       payments: payments.rows[0],

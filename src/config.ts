@@ -15,30 +15,35 @@ export const config = {
   // Subscrição / trial
   trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
   planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
-  planName: process.env.PLAN_NAME || 'BaseRadar',
+  planName: process.env.PLAN_NAME || 'PrepBid',
   // URL público da app (Checkout success/cancel e webhook). APP_URL é o contrato;
   // APP_BASE_URL mantém-se como fallback para instalações Railway já configuradas.
   appBaseUrl: (process.env.APP_URL || process.env.APP_BASE_URL || '').replace(/\/$/, ''),
   supportEmail: process.env.SUPPORT_EMAIL || '',  // destino dos pedidos de ajuda (envio a implementar)
 
   // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
-  // capability → plano mínimo; seats/tetos/preços por plano; soft cap de IA.
+  // capability → plano mínimo; seats/tetos/preços por plano; teto de IA.
   plans: {
     features: {
       // free
       concursos: 'free', digest: 'free', mapa: 'free', sazonalidade: 'free',
+      pipeline: 'free', perfil_empresa: 'free',
       // pro
       score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
       analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
+      filtros_avancados: 'pro', lembretes: 'pro', feedback_ia: 'pro',
+      // Previsão de fecho e geração de propostas: Business (custo Sonnet/Haiku
+      // de geração; a ficha go/no-go fica no Pro).
+      previsao_fecho: 'business', geracao_propostas: 'business',
       // business
       seats: 'business', export_avancada: 'business', ia_elevada: 'business', api_integration: 'business',
     } as Record<string, 'free' | 'pro' | 'business'>,
     seats: { free: 1, pro: 2, business: 10 } as Record<string, number>,
-    aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises/mês (teto; ver flag)
+    aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises / 30 dias / utilizador
     priceCents: { free: 0, pro: 2900, business: 9900 } as Record<string, number>,  // sem IVA
     order: ['free', 'pro', 'business'] as const,
-    // Soft cap de IA: quando true, AVISA (não bloqueia). Desligado por defeito.
-    aiSoftCapEnabled: (process.env.AI_SOFT_CAP_ENABLED || 'false').toLowerCase() === 'true',
+    // Teto de IA efectivo (bloqueia novas chamadas). AI_CAP_ENABLED=false desliga.
+    aiCapEnabled: (process.env.AI_CAP_ENABLED || 'true').toLowerCase() !== 'false',
   },
 
   // Taxa de IVA aplicada aos preços "sem IVA" dos planos (para cobrança e fatura).
@@ -70,15 +75,28 @@ export const config = {
     // Por segurança, por omissão fica em rascunho até confirmação.
     finalize: (process.env.MOLONI_FINALIZE || 'false').toLowerCase() === 'true',
   },
-  // Email transacional (Resend). Convites, recuperação de password,
-  // confirmações de pagamento e digest. Chave sempre por variável de ambiente.
+  // Email transacional via Cloudflare Email Service (REST). Convites, recuperação
+  // de password, confirmações de pagamento e digest de segunda-feira. Chaves
+  // sempre por variável de ambiente. RESEND_API_KEY fica como fallback legado.
   // Versão em vigor dos Termos e da Política de Privacidade. Muda sempre que o
   // conteúdo legal for alterado, para que a prova de aceitação seja rastreável.
-  termsVersion: process.env.TERMS_VERSION || '2026-07-18',
+  termsVersion: process.env.TERMS_VERSION || '2026-09-09',
 
   mail: {
-    apiKey: process.env.RESEND_API_KEY || '',
-    from: process.env.MAIL_FROM || '',            // ex.: "BaseRadar <noreply@dominio.pt>"
+    cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.MAIL_FROM || '',            // ex.: "PrepBid <noreply@prepbid.com>"
     supportEmail: process.env.SUPPORT_EMAIL || '',
   },
+
+  // Digest segunda-feira a esta hora (Europa/Lisboa). Lembretes 7/2 dias no mesmo tick.
+  digestHour: Math.min(23, Math.max(0, parseInt(process.env.DIGEST_HOUR || '8', 10) || 8)),
+  reminderDays: (() => {
+    const parsed = (process.env.REMINDER_DAYS || '7,2')
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return parsed.length ? parsed : [7, 2];
+  })(),
 };

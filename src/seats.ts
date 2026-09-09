@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { SESSION_COOKIE, requireAuth, auth } from './auth.js';
 import { seatLimit, effectivePlan } from './plans.js';
+import { occupiedSeatCount } from './seat-occupancy.js';
 import { config } from './config.js';
 import { sendMail, layout, esc } from './mail.js';
 
@@ -21,7 +22,7 @@ import { sendMail, layout, esc } from './mail.js';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Lugares ocupados = utilizadores + convites pendentes. */
-async function seatsUsed(companyId: number): Promise<number> {
+export async function seatsUsed(companyId: number): Promise<number> {
   const { rows } = await pool.query(
     `SELECT (SELECT count(*) FROM users WHERE company_id = $1)
           + (SELECT count(*) FROM company_invites WHERE company_id = $1 AND accepted_at IS NULL) AS n`,
@@ -44,7 +45,7 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
     return {
       members,
       invites,
-      seats: { used: members.length + invites.length, max: seatLimit(plan) },
+      seats: { used: occupiedSeatCount(members.length, invites.length), max: seatLimit(plan) },
     };
   });
 
@@ -92,16 +93,16 @@ export async function registerSeatRoutes(app: FastifyInstance): Promise<void> {
     const inviter = `${ctx[0]?.first_name ?? ''} ${ctx[0]?.last_name ?? ''}`.trim() || ctx[0]?.inviter_email || 'Um colega';
     const mail = await sendMail({
       to: email,
-      subject: `${inviter} convidou-o para o BaseRadar (${companyName})`,
+      subject: `${inviter} convidou-o para o PrepBid (${companyName})`,
       replyTo: ctx[0]?.inviter_email || undefined,
       html: layout({
-        title: 'Foi convidado para o BaseRadar',
-        body: `<p><strong>${esc(inviter)}</strong> convidou-o a juntar-se a <strong>${esc(companyName)}</strong> no BaseRadar — a plataforma que identifica que contratos públicos a empresa pode ganhar, quando e por quanto.</p>
+        title: 'Foi convidado para o PrepBid',
+        body: `<p><strong>${esc(inviter)}</strong> convidou-o a juntar-se a <strong>${esc(companyName)}</strong> no PrepBid — a plataforma que identifica que contratos públicos a empresa pode ganhar, quando e por quanto.</p>
                <p>Aceite o convite para criar a sua conta e aceder ao radar da equipa.</p>`,
         cta: { label: 'Aceitar convite', url: acceptUrl },
         footnote: 'Se não estava à espera deste convite, pode simplesmente ignorar este email.',
       }),
-      text: `${inviter} convidou-o para o BaseRadar (${companyName}). Aceite em: ${acceptUrl}`,
+      text: `${inviter} convidou-o para o PrepBid (${companyName}). Aceite em: ${acceptUrl}`,
     });
     return reply.code(201).send({ ok: true, email, token, accept_url: acceptPath, email_sent: mail.ok, email_error: mail.ok ? undefined : mail.error });
   });
