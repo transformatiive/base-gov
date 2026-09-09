@@ -23,8 +23,10 @@
       --alert:#c2543a; --alert-bg:#f7e9e4;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;max-width:100%;overflow-x:hidden}
-    body{background:var(--bg);color:var(--ink);font-family:'Schibsted Grotesk',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+    html{margin:0}
+    /* overflow-x:hidden no html+body faz o Safari/iOS ignorar cliques no nav sticky. */
+    body{margin:0;max-width:100%;overflow-x:clip;background:var(--bg);color:var(--ink);font-family:'Schibsted Grotesk',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+    @supports not (overflow-x: clip){ body{overflow-x:hidden} }
     /* Gutter só em padding-left/right. Classes no mesmo nó (.wrap.hero, .wrap.nav-in)
        não podem usar o shorthand `padding:` — isso anula a margem e cola o copy à borda. */
     :root{ --pad-x: 48px; }
@@ -41,7 +43,7 @@
     .btn-onlight:hover{background:var(--on)}
 
     /* Nav */
-    .nav{position:sticky;top:0;z-index:100;background:var(--panel);border-bottom:1px solid var(--line)}
+    .nav{position:sticky;top:0;z-index:400;background:var(--panel);border-bottom:1px solid var(--line);isolation:isolate}
     .nav-in{display:flex;align-items:center;justify-content:space-between;padding-top:16px;padding-bottom:16px;gap:12px;min-width:0}
     .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
     .brand .name{font-weight:700;font-size:15px;letter-spacing:-0.01em;color:var(--ink)}
@@ -49,7 +51,9 @@
     .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:var(--ink2)}
     .nav-links a{color:var(--ink2)}
     .nav-links a:hover{color:var(--brand)}
-    .nav-cta{display:flex;gap:10px;align-items:center;flex:none}
+    .nav-links .nav-auth{display:none}
+    .nav-cta{display:flex;gap:10px;align-items:center;flex:none;position:relative;z-index:2}
+    .nav-cta a,.nav-cta .btn{position:relative;z-index:2;pointer-events:auto;touch-action:manipulation}
     .nav-cta .enter{font-size:13px;font-weight:600;color:var(--brand);padding:9px 14px;border-radius:10px}
     .nav-cta .enter:hover{color:var(--brand-dark)}
     .nav-cta .start{font-size:13px;padding:9px 16px}
@@ -131,6 +135,8 @@
     .plan.hi .btn{background:var(--brand);color:#fff}
     .plan.hi .btn:hover{background:var(--brand-dark)}
     .plan .pfine{text-align:center;font-size:11.5px;color:var(--muted);min-height:16px}
+    .plan .pfine a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+    .plan .pfine a:hover{color:var(--brand)}
     .plan ul{list-style:none;margin:20px 0 0;padding:20px 0 0;border-top:1px solid var(--line2);display:flex;flex-direction:column;gap:11px;font-size:13.5px;color:var(--ink2)}
     /* Ícone absoluto: se o li for flex, o <b> vira coluna à parte
        («Oportunidades com» | «pontuação e adequação IA»). */
@@ -269,6 +275,8 @@
       .nav.nav-open .nav-links{display:flex}
       .nav-links a{padding:12px 4px;font-size:15px;color:var(--ink);border-bottom:1px solid var(--line2)}
       .nav-links a:last-child{border-bottom:0}
+      .nav-links .nav-auth{display:block;font-weight:600;color:var(--brand)}
+      .nav-links a.nav-auth-start{color:#fff;background:var(--brand);border-radius:10px;border-bottom:0;margin-top:8px;text-align:center}
       .steps{grid-template-columns:1fr}
       .feat-grid{grid-template-columns:1fr;gap:32px}
       .feat-only{grid-template-columns:1fr;gap:20px}
@@ -335,10 +343,12 @@
         <a href="#preco">Preço</a>
         <a href="/guias">Guias</a>
         <a href="#faq">Perguntas</a>
+        <a class="nav-auth" href="/app/#/login">Entrar</a>
+        <a class="nav-auth nav-auth-start" href="/app/#/registo">Começar grátis</a>
       </div>
       <div class="nav-cta">
-        <a class="enter" href="/app#/login">Entrar</a>
-        <a class="btn btn-primary start" href="/app#/registo">Começar grátis</a>
+        <a class="enter" href="/app/#/login">Entrar</a>
+        <a class="btn btn-primary start" href="/app/#/registo">Começar grátis</a>
         <button type="button" class="nav-toggle" id="land-nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="land-nav-links">
           <svg class="ico-menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
           <svg class="ico-close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
@@ -353,7 +363,7 @@
       <h1 class="hero-h">Contratos públicos, <span class="u">antes de irem a concurso</span>.</h1>
       <p class="lead">O Concursivo cruza o histórico do Portal BASE com o perfil da sua empresa — CPV, distritos e o valor em que concorre. Mostra os contratos que se repetem, se o caderno vale a pena, e se está habilitado — a tempo de montar a proposta.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
+        <a class="btn btn-primary" href="/app/#/registo">Começar grátis</a>
         <span class="fine">Sem cartão. Sem reunião comercial. A conta começa no Grátis; o teste Pro de 7 dias activa-se nos planos.</span>
       </div>
       <div class="stats">
@@ -542,7 +552,7 @@
           <div class="pname">Grátis</div>
           <div class="pprice"><span class="n">0€</span><span class="per">/ para sempre</span></div>
           <div class="ptag">Para vigiar concursos abertos na sua área, sem cartão.</div>
-          <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
+          <a class="btn btn-primary" href="/app/#/registo">Começar grátis</a>
           <div class="pfine"></div>
           <ul>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Concursos abertos</li>
@@ -561,8 +571,8 @@
           <div class="pname">Pro</div>
           <div class="pprice"><span class="n">29€</span><span class="per">/ mês + IVA</span></div>
           <div class="ptag">Radar completo para um responsável por concursos começar sozinho.</div>
-          <a class="btn btn-primary" href="/app#/registo">Começar grátis</a>
-          <div class="pfine">Experimente o Pro 7 dias grátis, sem cartão</div>
+          <a class="btn btn-primary" href="/app/#/registo">Experimentar 7 dias grátis</a>
+          <div class="pfine"><a href="/app/#/registo">Experimente o Pro 7 dias grátis, sem cartão</a></div>
           <ul>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Grátis</b></li>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Oportunidades com <b>pontuação e adequação IA</b></li>
@@ -581,7 +591,7 @@
           <div class="pname">Business</div>
           <div class="pprice"><span class="n">99€</span><span class="per">/ mês + IVA</span></div>
           <div class="ptag">O plano da equipa de concursos: até 10 lugares, previsão de fecho, rascunho de proposta e teto de IA mais alto.</div>
-          <a class="btn btn-onlight" href="/app#/registo">Começar grátis</a>
+          <a class="btn btn-onlight" href="/app/#/registo">Começar grátis</a>
           <div class="pfine">Comece no Grátis; o teste Pro de 7 dias activa-se nos planos</div>
           <ul>
             <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#173f35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> <b>Tudo do Pro</b></li>
@@ -674,8 +684,8 @@
       <a href="/guias">Guias</a>
       <a href="/privacidade">Privacidade</a>
       <a href="/termos">Termos</a>
-      <a href="/app#/login">Entrar</a>
-      <a href="/app#/registo">Começar grátis</a>
+      <a href="/app/#/login">Entrar</a>
+      <a href="/app/#/registo">Começar grátis</a>
     </div>
   </div>
 
@@ -703,7 +713,7 @@
       // (o conteúdo fica sempre visível). Revela também o que já ficou acima do
       // ecrã (ex.: saltos por âncora "Preço") para nada ficar invisível.
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      var sel = '.hero .eyebrow,.hero h1,.hero p.lead,.hero-cta,.stats,.herocard,' +
+      var sel = '.hero .eyebrow,.hero h1,.hero p.lead,.stats,.herocard,' +
         '.band .sect-eyebrow,.band h2.sect,.step,' +
         '.feat-sect .sect-eyebrow,.feat-sect h2.sect,.fcard,' +
         '.plans-sect .sect-eyebrow,.plans-sect h2.sect,.plans-sect .sub,.plan,' +

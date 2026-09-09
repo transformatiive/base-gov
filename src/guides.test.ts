@@ -115,6 +115,7 @@ test('HTML público responde na primeira frase e inclui JSON-LD FAQ', () => {
   assert.match(page, /FAQPage/);
   assert.match(page, /O valor adjudicado costuma ficar abaixo/);
   assert.match(page, /Começar grátis/);
+  assert.match(page, /href="\/app\/#\/registo"/);
   assert.doesNotMatch(page, /<script src=/);
 });
 

@@ -510,7 +510,7 @@ ${empty}
     <div class="guide-cta">
       <h2>Ver os concursos da sua área, hoje</h2>
       <p>Conta grátis, sem cartão e sem reunião comercial. O teste Pro de 7 dias activa-se depois, nos planos.</p>
-      <a class="btn" href="/app#/registo">Começar grátis</a>
+      <a class="btn" href="/app/#/registo">Começar grátis</a>
       <span class="fine">Preços públicos: Grátis 0 € · Pro 29 €/mês · Business 99 €/mês (sem IVA).</span>
     </div>
   </div>
@@ -583,7 +583,7 @@ ${faqHtml}
     <div class="guide-cta">
       <h2>Ver os concursos da sua área</h2>
       <p>Conta grátis, sem cartão e sem reunião comercial. O teste Pro de 7 dias activa-se nos planos.</p>
-      <a class="btn" href="/app#/registo">Começar grátis</a>
+      <a class="btn" href="/app/#/registo">Começar grátis</a>
       <span class="fine">Pro 29 €/mês · 7 dias de teste sem cartão.</span>
     </div>
     <p><a href="/guias">← Todos os guias</a></p>
@@ -715,11 +715,11 @@ function headChrome(): string {
 
 function navHtml(kind: 'index' | 'article'): string {
   const enter = kind === 'index'
-    ? '<a class="enter" href="/app#/login">Entrar</a>'
+    ? '<a class="enter" href="/app/#/login">Entrar</a>'
     : '<a class="enter" href="/guias">Guias</a>';
   return `<div class="legal-nav"><div class="in">
     <a class="brand" href="/"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>Concursivo</a>
-    <div class="nav-cta">${enter}<a class="start" href="/app#/registo">Começar grátis</a></div>
+    <div class="nav-cta">${enter}<a class="start" href="/app/#/registo">Começar grátis</a></div>
   </div></div>`;
 }
 
