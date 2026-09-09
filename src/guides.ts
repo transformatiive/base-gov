@@ -706,10 +706,10 @@ function inlineMarkdown(raw: string): string {
 }
 
 function headChrome(): string {
-  return `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23173f35%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2%22/%3E%3Crect x=%228%22 y=%222%22 width=%228%22 height=%224%22 rx=%221%22/%3E%3Cpath d=%22m9 14 2 2 4-4%22/%3E%3C/svg%3E">
+  return `<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%20fill=%22none%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%228%22%20fill=%22%23173f35%22/%3E%3Cpath%20fill=%22%23e9f2ee%22%20d=%22M7.4%2011.15c0-1.05.85-1.9%201.9-1.9h3.55c.4%200%20.77.18%201.02.48l.85%201.04h8.04c1.05%200%201.9.85%201.9%201.9v10.55c0%201.05-.85%201.9-1.9%201.9H9.3c-1.05%200-1.9-.85-1.9-1.9V11.15z%22/%3E%3Cpath%20fill=%22%23b7d4c4%22%20d=%22M9.3%209.25h3.55l.78%201.02H9.3V9.25z%22/%3E%3Cpath%20stroke=%22%23173f35%22%20stroke-opacity=%22.22%22%20stroke-width=%221.35%22%20stroke-linecap=%22round%22%20d=%22M10.6%2015.15h6.1M10.6%2018h4.9%22/%3E%3Ccircle%20cx=%2221.15%22%20cy=%2219.25%22%20r=%224.55%22%20fill=%22%23173f35%22/%3E%3Cpath%20d=%22M19.15%2019.3l1.32%201.42%202.78-2.98%22%20stroke=%22%23e9f2ee%22%20stroke-width=%221.7%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/legal.css">`;
 }
 
@@ -718,7 +718,7 @@ function navHtml(kind: 'index' | 'article'): string {
     ? '<a class="enter" href="/app/#/login">Entrar</a>'
     : '<a class="enter" href="/guias">Guias</a>';
   return `<div class="legal-nav"><div class="in">
-    <a class="brand" href="/"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="m9 14 2 2 4-4"></path></svg></span>PrepBid</a>
+    <a class="brand" href="/"><span class="logo"><svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#173f35"/><path fill="#e9f2ee" d="M7.4 11.15c0-1.05.85-1.9 1.9-1.9h3.55c.4 0 .77.18 1.02.48l.85 1.04h8.04c1.05 0 1.9.85 1.9 1.9v10.55c0 1.05-.85 1.9-1.9 1.9H9.3c-1.05 0-1.9-.85-1.9-1.9V11.15z"/><path fill="#b7d4c4" d="M9.3 9.25h3.55l.78 1.02H9.3V9.25z"/><path stroke="#173f35" stroke-opacity=".22" stroke-width="1.35" stroke-linecap="round" d="M10.6 15.15h6.1M10.6 18h4.9"/><circle cx="21.15" cy="19.25" r="4.55" fill="#173f35"/><path d="M19.15 19.3l1.32 1.42 2.78-2.98" stroke="#e9f2ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="wm-type">Prep<em>Bid</em></span></a>
     <div class="nav-cta">${enter}<a class="start" href="/app/#/registo">Começar grátis</a></div>
   </div></div>`;
 }

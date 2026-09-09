@@ -46,7 +46,9 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.doesNotMatch(landing, /html,body\{[^}]*overflow-x:hidden/);
   assert.doesNotMatch(landing, /var sel = '[^']*\.hero-cta/);
   assert.doesNotMatch(landing, /M4\.5 12a7\.5/);
-  assert.match(landing, /m9 14 2 2 4-4/);
+  assert.doesNotMatch(landing, /m9 14 2 2 4-4/);
+  assert.match(landing, /cx="21\.15"/);
+  assert.match(landing, /Prep<em>Bid<\/em>/);
   assert.match(landing, /Assistente para ganhar concursos/);
 });
 
