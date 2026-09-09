@@ -1,8 +1,8 @@
-# BASE.gov Robot
+# Concursivo
 
-Robot de pesquisa e arquivo de contratos públicos do Portal BASE (https://www.base.gov.pt).
+Inteligência comercial de concursos públicos em Portugal. Cruza o histórico do Portal BASE (IMPIC / dados.gov.pt) com o perfil da empresa — CPV, distritos e valor — para mostrar que contratos vale a pena concorrer, e a tempo.
 
-A partir de um termo de pesquisa, percorre a listagem paginada de contratos do BASE (via a API JSON do portal — sem browser na v1), extrai o detalhe de cada contrato, descarrega os documentos anexos e guarda tudo em PostgreSQL (documentos em `BYTEA`). Inclui UI web simples e API REST para integrações externas.
+O repositório inclui o robot de arquivo de contratos do Portal BASE (https://www.base.gov.pt): a partir de um termo de pesquisa, percorre a listagem paginada (API JSON do portal), extrai o detalhe de cada contrato, descarrega os documentos anexos e guarda tudo em PostgreSQL.
 
 Especificação completa: [SPEC.md](./SPEC.md).
 
@@ -58,8 +58,13 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `IVA_RATE` | `0.23` | Taxa de IVA aplicada aos preços dos planos |
 | `DIGEST_HOUR` | `8` | Hora de Lisboa para o digest (segunda-feira) e lembretes |
 | `REMINDER_DAYS` | `7,2` | Dias de antecedência dos lembretes de prazo (Pro) |
-| `RESEND_API_KEY` | vazio | Chave Resend (digest, lembretes, convites) |
-| `MAIL_FROM` | vazio | Remetente, ex. `BaseRadar <noreply@dominio.pt>` |
+| `CLOUDFLARE_ACCOUNT_ID` | vazio | Conta Cloudflare (envio de email + setup do domínio) |
+| `CLOUDFLARE_API_TOKEN` | vazio | Token com Email Sending: Edit (digest, lembretes, convites) |
+| `RESEND_API_KEY` | vazio | Fallback legado se Cloudflare ainda não estiver configurado |
+| `MAIL_FROM` | vazio | Remetente, ex. `Concursivo <noreply@concursivo.com>` |
+| `SUPPORT_EMAIL` | vazio | Destino dos pedidos de ajuda e destino de reencaminhamento |
+
+O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`. Para comprar `concursivo.com` e activar Email Routing: `node scripts/setup-concursivo-cloudflare.mjs --register`.
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 

@@ -40,8 +40,8 @@ export async function chat(model: string, system: Content, user: Content, maxTok
     headers: {
       Authorization: `Bearer ${config.openrouterApiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://basegov-robot-production.up.railway.app',
-      'X-Title': 'BaseRadar',
+      'HTTP-Referer': 'https://concursivo.com',
+      'X-Title': 'Concursivo',
     },
     body: JSON.stringify({
       model,

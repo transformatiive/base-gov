@@ -1,6 +1,6 @@
-# BaseRadar — Oferta
+# Concursivo — Oferta
 
-> **Inteligência comercial de contratos públicos.** O BaseRadar transforma os dados oficiais do Portal BASE, do Diário da República e do TED num radar de vendas: diz a uma empresa **que contratos públicos vai poder ganhar, quando, por quanto — e o que preparar para vencer**, antes de o concurso abrir.
+> **Inteligência comercial de contratos públicos.** O Concursivo transforma os dados oficiais do Portal BASE, do Diário da República e do TED num radar de vendas: diz a uma empresa **que contratos públicos vai poder ganhar, quando, por quanto — e o que preparar para vencer**, antes de o concurso abrir.
 
 ---
 
@@ -129,7 +129,7 @@ Três planos, todos sem compromisso — comece grátis e suba quando precisar. P
 |---|---|---|
 | **Grátis** | 0 € | Concursos abertos, mapa, sazonalidade, digest (segunda 08:00), **carteira de propostas**, perfil da empresa (alvará, distritos, valor). **1 utilizador**. |
 | **Pro** | 29 € / mês (isco, 7 dias grátis) | Tudo do Grátis + **score e fit IA**, radar de **renovações**, **TED**, **análise IA** + dossier de resposta (placeholders), **lembretes de prazo** (7 e 2 dias), **concorrentes** e **entidades**, Excel. **40 análises de IA / 30 dias por utilizador**. **2 utilizadores**. |
-| **Business** | 99 € / mês (**plano da equipa**) | Tudo do Pro + **até 10 utilizadores**, **carteira partilhada**, **rascunho assistido de proposta (.docx)**, **previsão de valor de fecho**, **250 análises de IA / 30 dias por utilizador**, apoio prioritário. Sem conector CRM — a carteira vive no BaseRadar. |
+| **Business** | 99 € / mês (**plano da equipa**) | Tudo do Pro + **até 10 utilizadores**, **carteira partilhada**, **rascunho assistido de proposta (.docx)**, **previsão de valor de fecho**, **250 análises de IA / 30 dias por utilizador**, apoio prioritário. Sem conector CRM — a carteira vive no Concursivo. |
 
 - **Experimente o Pro 7 dias grátis, sem cartão** — ao fim do período, a conta volta ao plano Grátis se não subscrever.
 - O acesso a cada funcionalidade é validado no servidor pelo plano da conta (o plano é a fonte de verdade). O rascunho .docx e a previsão de fecho são **Business**; o dossier com placeholders fica no **Pro**.

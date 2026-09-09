@@ -15,7 +15,7 @@ export const config = {
   // Subscrição / trial
   trialDays: parseInt(process.env.TRIAL_DAYS || '7', 10),
   planPriceCents: parseInt(process.env.PLAN_PRICE_CENTS || '2900', 10),  // 29,00 € (sem IVA) — plano Pro
-  planName: process.env.PLAN_NAME || 'BaseRadar',
+  planName: process.env.PLAN_NAME || 'Concursivo',
   // URL público da app (Checkout success/cancel e webhook). APP_URL é o contrato;
   // APP_BASE_URL mantém-se como fallback para instalações Railway já configuradas.
   appBaseUrl: (process.env.APP_URL || process.env.APP_BASE_URL || '').replace(/\/$/, ''),
@@ -75,15 +75,18 @@ export const config = {
     // Por segurança, por omissão fica em rascunho até confirmação.
     finalize: (process.env.MOLONI_FINALIZE || 'false').toLowerCase() === 'true',
   },
-  // Email transacional (Resend). Convites, recuperação de password,
-  // confirmações de pagamento e digest. Chave sempre por variável de ambiente.
+  // Email transacional via Cloudflare Email Service (REST). Convites, recuperação
+  // de password, confirmações de pagamento e digest de segunda-feira. Chaves
+  // sempre por variável de ambiente. RESEND_API_KEY fica como fallback legado.
   // Versão em vigor dos Termos e da Política de Privacidade. Muda sempre que o
   // conteúdo legal for alterado, para que a prova de aceitação seja rastreável.
-  termsVersion: process.env.TERMS_VERSION || '2026-07-18',
+  termsVersion: process.env.TERMS_VERSION || '2026-09-09',
 
   mail: {
-    apiKey: process.env.RESEND_API_KEY || '',
-    from: process.env.MAIL_FROM || '',            // ex.: "BaseRadar <noreply@dominio.pt>"
+    cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.MAIL_FROM || '',            // ex.: "Concursivo <noreply@concursivo.com>"
     supportEmail: process.env.SUPPORT_EMAIL || '',
   },
 

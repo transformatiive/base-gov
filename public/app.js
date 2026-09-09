@@ -1,4 +1,4 @@
-/* SPA mínima do BaseRadar — sem dependências. */
+/* SPA mínima do Concursivo — sem dependências. */
 const app = document.getElementById('app');
 const topbar = document.getElementById('topbar');
 const whoami = document.getElementById('whoami');
@@ -195,9 +195,9 @@ const ICON_PATHS = {
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
 
-/* Wordmark BaseRadar (igual ao do header). */
+/* Wordmark Concursivo (igual ao do header). */
 const wordmark = (size = 20) =>
-  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Base<span class="accent">Radar</span></span></span>`;
+  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Concur<span class="accent">sivo</span></span></span>`;
 
 /* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
 const scoreDonut = (score, color, size = 52) => {
@@ -2858,7 +2858,7 @@ function aiModalOpen(steps) {
   el.id = 'ai-modal';
   el.innerHTML = `
     <div class="ai-modal-box">
-      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'BaseRadar'}</div>
+      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'Concursivo'}</div>
       <div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>
       <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
     </div>`;
@@ -3491,7 +3491,7 @@ function bindPipelineBoard(root) {
       el.classList.add('dragging');
       el.dataset.didDrag = '1';
       const payload = JSON.stringify({ type: el.dataset.type, id: el.dataset.id, status: el.dataset.status });
-      e.dataTransfer.setData('application/x-baseradar-pipeline', payload);
+      e.dataTransfer.setData('application/x-concursivo-pipeline', payload);
       e.dataTransfer.setData('text/plain', payload);
       e.dataTransfer.effectAllowed = 'move';
     });
@@ -3521,7 +3521,7 @@ function bindPipelineBoard(root) {
       col.classList.remove('drop-target');
       let data = {};
       try {
-        data = JSON.parse(e.dataTransfer.getData('application/x-baseradar-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
+        data = JSON.parse(e.dataTransfer.getData('application/x-concursivo-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
       } catch { data = {}; }
       const card = dragging || board.querySelector(`.pl-card[data-type="${CSS.escape(String(data.type || ''))}"][data-id="${CSS.escape(String(data.id || ''))}"]`);
       if (!card) return;
@@ -3556,7 +3556,7 @@ async function renderRadar(tab = 'opportunities') {
   if (profiles.length === 0) {
     app.innerHTML = `
       <div class="card" style="max-width:640px;margin:8vh auto;text-align:center">
-        <h2>Bem-vindo ao BaseRadar</h2>
+        <h2>Bem-vindo ao Concursivo</h2>
         <p class="muted">Começa por definir a tua atividade comercial (palavras-chave e códigos CPV).
         Todos os insights — oportunidades, renovações, mapa, concorrentes — serão apresentados nesse contexto,
         calculados sobre os dados já importados.</p>
@@ -4410,7 +4410,7 @@ async function renderAdmin() {
   app.innerHTML = `
     <div class="admin-wrap">
       <div class="eyebrow" style="color:var(--brand)">Administração</div>
-      <h2 style="margin:.3rem 0 .6rem">Operação do BaseRadar</h2>
+      <h2 style="margin:.3rem 0 .6rem">Operação do Concursivo</h2>
       ${adminTabs('ops')}
 
       <div class="admin-stats">
@@ -4540,7 +4540,7 @@ async function renderAdmin() {
         <div class="admin-row"><span>APP_URL</span><strong>${okMark(st.stripe.app_url)}</strong></div>
         ${st.stripe.secret_key ? `<div class="admin-row"><span>Stripe — MB WAY / Multibanco activos</span><strong>${okMark(mb)} / ${okMark(mbc)}</strong></div>` : ''}
         <div class="admin-row"><span>Moloni — pronto a faturar</span><strong>${okMark(st.moloni.ready)}${st.moloni.ready ? (st.moloni.finalize ? ' (finaliza)' : ' (rascunho)') : ''}</strong></div>
-        <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}</strong></div>`;
+        <div class="admin-row"><span>Email transacional</span><strong>${okMark(st.mail.enabled)}${st.mail.provider ? ` · ${esc(st.mail.provider)}` : ''}${st.mail.from ? ` · ${esc(st.mail.from)}` : ''}</strong></div>`;
     } catch (e) { box.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   })();
 
@@ -4781,7 +4781,7 @@ function openFeedbackModal() {
     <div class="modal-box">
       <button class="modal-x" aria-label="Fechar">×</button>
       <h3 style="margin:0 0 .3rem">Como podemos ajudar?</h3>
-      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o BaseRadar.</p>
+      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o Concursivo.</p>
       <div class="fb-tabs">
         <button class="fb-tab active" data-kind="manual">Manual</button>
         <button class="fb-tab" data-kind="help">Pedir ajuda</button>

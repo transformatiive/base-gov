@@ -52,6 +52,8 @@ export type ParseUsageResult =
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERNAL_HOSTS = new Set([
+  'concursivo.com',
+  'www.concursivo.com',
   'basegov-robot-production.up.railway.app',
   'localhost',
   '127.0.0.1',

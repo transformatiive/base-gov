@@ -11,7 +11,7 @@ import { stripeConfigured, createCheckout, createBillingPortal, classifyPortalEr
          provisionPrices, provisionWebhook, stripeStatus } from './stripe.js';
 import { discoverMoloniConfig, getMoloniInvoicePdf, moloniStatus, MoloniPdfError } from './moloni.js';
 import { storageEnabled, putDocument, storageUsage } from './storage.js';
-import { sendMail, layout, esc, mailEnabled } from './mail.js';
+import { sendMail, layout, esc, mailEnabled, mailDisabledHint, mailProvider } from './mail.js';
 import { normalizePlan, Plan } from './plans.js';
 import {
   billingSnapshot, invoiceDownloadable, invoicePdfUnavailableMessage,
@@ -460,21 +460,21 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/test-email', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
     if (!mailEnabled()) {
-      return reply.code(503).send({ error: { code: 'mail_disabled', message: 'Email não configurado (falta RESEND_API_KEY ou MAIL_FROM).' } });
+      return reply.code(503).send({ error: { code: 'mail_disabled', message: mailDisabledHint() } });
     }
     const body = (req.body ?? {}) as { to?: string };
     const to = String(body.to ?? config.mail.supportEmail ?? '').trim();
     if (!to) return reply.code(400).send({ error: { code: 'no_recipient', message: 'Indique o destinatário.' } });
     const r = await sendMail({
       to,
-      subject: 'BaseRadar — teste de configuração de email',
+      subject: 'Concursivo — teste de configuração de email',
       html: layout({
         title: 'Configuração de email validada',
-        body: `<p>Se está a ler isto, o envio de email do BaseRadar está a funcionar.</p>
+        body: `<p>Se está a ler isto, o envio de email do Concursivo está a funcionar.</p>
                <p>Remetente: <strong>${esc(config.mail.from)}</strong></p>
                <p>Ficam operacionais os convites de equipa, a recuperação de password e as confirmações de pagamento.</p>`,
       }),
-      text: 'Teste de configuração de email do BaseRadar — está a funcionar.',
+      text: 'Teste de configuração de email do Concursivo — está a funcionar.',
     });
     if (!r.ok) return reply.code(502).send({ error: { code: 'send_failed', message: r.error ?? 'Falha no envio.' } });
     return { ok: true, id: r.id, from: config.mail.from, to };
@@ -487,7 +487,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     return {
       stripe: await stripeStatus(),
       moloni: moloniStatus(),
-      mail: { enabled: mailEnabled(), from: config.mail.from || null },
+      mail: { enabled: mailEnabled(), provider: mailProvider(), from: config.mail.from || null },
       app_base_url: config.appBaseUrl || null,
     };
   });

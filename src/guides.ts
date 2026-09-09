@@ -1,6 +1,6 @@
 /** Guias públicos (SEO / LLMs) persistidos em Postgres. Não é o manual autenticado em /app. */
 
-export const PUBLIC_SITE_FALLBACK = 'https://basegov-robot-production.up.railway.app';
+export const PUBLIC_SITE_FALLBACK = 'https://concursivo.com';
 
 export type GuideIntent = 'informativa' | 'comercial';
 export type GuideStatus = 'draft' | 'published';
@@ -108,7 +108,7 @@ Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto ex
     intent: 'comercial',
     markdown: `## Porque as palavras no título não bastam?
 
-Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. Isto aplica-se a empreitadas, energia e saúde — os objectos em que o BaseRadar se foca — não a um dump nacional de limpezas e papelaria.
+Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. Isto aplica-se a empreitadas, energia e saúde — os objectos em que o Concursivo se foca — não a um dump nacional de limpezas e papelaria.
 
 ## Como começar pelo CPV?
 
@@ -120,7 +120,7 @@ O Vocabulário Comum para Contratos Públicos (CPV) é o código de oito dígito
 
 ## Como cortar geografia e valor antes de ler o caderno?
 
-Uma construtora de classe média no Centro não precisa da lista nacional completa. Distritos onde tem alvará e logística, mais um intervalo de valor alinhado com a classe do alvará, eliminam a maior parte do ruído **antes** de gastar tempo a ler peças. No BaseRadar isto fica no perfil (distritos, valor mínimo/máximo, termos e entidades a excluir) e aplica-se às listas sem esperar por uma análise de IA.
+Uma construtora de classe média no Centro não precisa da lista nacional completa. Distritos onde tem alvará e logística, mais um intervalo de valor alinhado com a classe do alvará, eliminam a maior parte do ruído **antes** de gastar tempo a ler peças. No Concursivo isto fica no perfil (distritos, valor mínimo/máximo, termos e entidades a excluir) e aplica-se às listas sem esperar por uma análise de IA.
 
 ## Porque olhar para o que se repete, não só para o que abriu hoje?
 
@@ -171,7 +171,7 @@ A forma honesta de estimar o fecho é olhar para concursos comparáveis já publ
 4. Com menos de 5 pontos, **não mostra intervalo** — mostra a nota de amostra insuficiente.
 5. A confiança apresentada é alta / média / baixa em função do tamanho da amostra e da dispersão, não um score de um modelo treinado.
 
-O BaseRadar não apresenta uma «percentagem de confiança» de machine learning.
+O Concursivo não apresenta uma «percentagem de confiança» de machine learning.
 
 ## O que isto não é?
 
@@ -204,7 +204,7 @@ Estimativa estatística com dados públicos. Confirme sempre as peças e a sua p
 ];
 
 export const GUIDE_AGENT_SPEC = {
-  name: 'BaseRadar guias',
+  name: 'Concursivo guias',
   purpose:
     'Publicar e actualizar guias públicos em português (pt-PT) sobre contratação pública. Não é um blog. Copy para motores de busca e para LLMs: resposta na primeira frase, H2 em forma de pergunta, FAQ factual.',
   language: 'pt-PT',
@@ -315,7 +315,7 @@ export function llmsTxt(
 ): string {
   const base = origin.replace(/\/$/, '');
   const lines = [
-    '# BaseRadar',
+    '# Concursivo',
     '',
     '> Radar de concursos públicos para obras, energia e saúde em Portugal. Conta grátis, sem cartão e sem reunião comercial.',
     '',
@@ -491,10 +491,10 @@ ${s.items.map(guideCard).join('\n')}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Guias de concursos públicos — BaseRadar</title>
+  <title>Guias de concursos públicos — Concursivo</title>
   <meta name="description" content="Respostas práticas sobre tipos de procedimento, filtrar concursos relevantes e estimar o valor de adjudicação. Sem reunião comercial.">
   <link rel="canonical" href="${escapeHtml(base)}/guias">
-  <meta property="og:title" content="Guias de concursos públicos — BaseRadar">
+  <meta property="og:title" content="Guias de concursos públicos — Concursivo">
   <meta property="og:description" content="Respostas práticas sobre tipos de procedimento e como filtrar concursos relevantes para a sua empresa.">
   <meta property="og:type" content="website">
   ${headChrome()}
@@ -561,7 +561,7 @@ ${guide.faq
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>${escapeHtml(guide.title)} — BaseRadar</title>
+  <title>${escapeHtml(guide.title)} — Concursivo</title>
   <meta name="description" content="${escapeHtml(guide.description)}">
   <link rel="canonical" href="${escapeHtml(url)}">
   <meta property="og:title" content="${escapeHtml(guide.title)}">
@@ -718,14 +718,14 @@ function navHtml(kind: 'index' | 'article'): string {
     ? '<a class="enter" href="/app#/login">Entrar</a>'
     : '<a class="enter" href="/guias">Guias</a>';
   return `<div class="legal-nav"><div class="in">
-    <a class="brand" href="/"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>BaseRadar</a>
+    <a class="brand" href="/"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e9f2ee" stroke-width="2" stroke-linecap="round"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"></path><path d="M8 12a4 4 0 0 1 8 0"></path><circle cx="12" cy="12" r="1.2" fill="#e9f2ee"></circle><path d="M12 12l6.5 6.5"></path></svg></span>Concursivo</a>
     <div class="nav-cta">${enter}<a class="start" href="/app#/registo">Começar grátis</a></div>
   </div></div>`;
 }
 
 function footHtml(): string {
   return `<div class="legal-foot"><div class="in">
-    <span>BaseRadar — um produto da <strong>Transformatiive, Lda.</strong></span>
+    <span>Concursivo — um produto da <strong>Transformatiive, Lda.</strong></span>
     <span><a href="/">Início</a> · <a href="/guias">Guias</a> · <a href="/termos">Termos</a> · <a href="/privacidade">Privacidade</a></span>
   </div></div>`;
 }

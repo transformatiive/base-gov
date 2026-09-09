@@ -211,7 +211,7 @@ ANÚNCIO:
     structure_note: parsed.structure_note
       || (structure === 'caderno'
         ? 'Estrutura seguida do caderno de encargos / programa do concurso.'
-        : 'O caderno não impõe formato — usada a estrutura standard BaseRadar.'),
+        : 'O caderno não impõe formato — usada a estrutura standard Concursivo.'),
     usage,
     model,
   };

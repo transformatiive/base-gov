@@ -1,23 +1,89 @@
 import { config } from './config.js';
 
 /**
- * Envio de email transacional via Resend (API HTTP, sem dependências extra).
+ * Envio de email transacional via Cloudflare Email Service (REST).
  *
  * Cobre o que um produto self-serve não pode fazer à mão: convites de equipa,
- * recuperação de password, confirmação de pagamento e o digest semanal.
+ * recuperação de password, confirmação de pagamento e o digest semanal
+ * (segunda-feira, hora de Lisboa — ver scheduler).
  *
  * É best-effort por desenho: uma falha de email nunca faz falhar a operação de
  * negócio que a originou (um convite fica registado mesmo que o email não saia).
  * O resultado é devolvido para quem chama poder avisar o utilizador.
+ *
+ * Fallback: se ainda existir RESEND_API_KEY e não houver credenciais Cloudflare,
+ * o envio usa a API Resend. Preferir Cloudflare quando ambos estão definidos.
  */
 
-const API = 'https://api.resend.com/emails';
+const RESEND_API = 'https://api.resend.com/emails';
+
+export type MailProvider = 'cloudflare' | 'resend';
+
+export function cloudflareSendUrl(accountId: string): string {
+  return `https://api.cloudflare.com/client/v4/accounts/${accountId}/email/sending/send`;
+}
+
+export function mailProvider(): MailProvider | null {
+  if (config.mail.cloudflareAccountId && config.mail.cloudflareApiToken && config.mail.from) {
+    return 'cloudflare';
+  }
+  if (config.mail.resendApiKey && config.mail.from) return 'resend';
+  return null;
+}
 
 export function mailEnabled(): boolean {
-  return Boolean(config.mail.apiKey && config.mail.from);
+  return mailProvider() !== null;
+}
+
+export function mailDisabledHint(): string {
+  if (!config.mail.from) {
+    return 'Email não configurado (falta MAIL_FROM).';
+  }
+  if (config.mail.cloudflareApiToken && !config.mail.cloudflareAccountId) {
+    return 'Email não configurado (falta CLOUDFLARE_ACCOUNT_ID).';
+  }
+  if (config.mail.cloudflareAccountId && !config.mail.cloudflareApiToken) {
+    return 'Email não configurado (falta CLOUDFLARE_API_TOKEN).';
+  }
+  return 'Email não configurado (falta CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID, ou MAIL_FROM).';
 }
 
 export interface SendResult { ok: boolean; id?: string; error?: string; skipped?: boolean }
+
+export function cloudflareSendBody(msg: {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+}, from: string): Record<string, unknown> {
+  return {
+    from,
+    to: Array.isArray(msg.to) ? msg.to : [msg.to],
+    subject: msg.subject,
+    html: msg.html,
+    ...(msg.text ? { text: msg.text } : {}),
+    ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
+  };
+}
+
+function cfErrorMessage(json: {
+  errors?: { message?: string }[];
+  messages?: { message?: string }[];
+}): string {
+  return json.errors?.[0]?.message || json.messages?.[0]?.message || 'cloudflare_send_failed';
+}
+
+function cfResultId(json: {
+  result?: { delivered?: string[]; queued?: string[]; messageId?: string };
+}): string | undefined {
+  const r = json.result;
+  if (!r) return undefined;
+  if (r.messageId) return r.messageId;
+  if (r.delivered?.[0]) return `cf:${r.delivered[0]}`;
+  if (r.queued?.[0]) return `cf-queued:${r.queued[0]}`;
+  return undefined;
+}
 
 export async function sendMail(msg: {
   to: string | string[];
@@ -26,38 +92,85 @@ export async function sendMail(msg: {
   text?: string;
   replyTo?: string;
 }): Promise<SendResult> {
-  if (!mailEnabled()) {
-    console.warn('[mail] envio desativado (falta RESEND_API_KEY ou MAIL_FROM):', msg.subject);
+  const provider = mailProvider();
+  if (!provider) {
+    console.warn('[mail] envio desativado:', mailDisabledHint(), msg.subject);
     return { ok: false, skipped: true, error: 'mail_disabled' };
   }
   try {
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.mail.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: config.mail.from,
-        to: Array.isArray(msg.to) ? msg.to : [msg.to],
-        subject: msg.subject,
-        html: msg.html,
-        ...(msg.text ? { text: msg.text } : {}),
-        ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string };
-    if (!res.ok) {
-      const error = json.message || json.name || `HTTP ${res.status}`;
-      console.error('[mail] envio falhou:', error);
-      return { ok: false, error };
-    }
-    return { ok: true, id: json.id };
+    if (provider === 'cloudflare') return await sendViaCloudflare(msg);
+    return await sendViaResend(msg);
   } catch (err) {
     console.error('[mail] erro de rede:', String(err).slice(0, 200));
     return { ok: false, error: String(err).slice(0, 200) };
   }
+}
+
+async function sendViaCloudflare(msg: {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+}): Promise<SendResult> {
+  const res = await fetch(cloudflareSendUrl(config.mail.cloudflareAccountId), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.mail.cloudflareApiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(cloudflareSendBody(msg, config.mail.from)),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    errors?: { message?: string }[];
+    messages?: { message?: string }[];
+    result?: { delivered?: string[]; queued?: string[]; permanent_bounces?: string[]; messageId?: string };
+  };
+  if (!res.ok || json.success === false) {
+    const error = cfErrorMessage(json) || `HTTP ${res.status}`;
+    console.error('[mail] envio Cloudflare falhou:', error);
+    return { ok: false, error };
+  }
+  if (json.result?.permanent_bounces?.length && !json.result.delivered?.length && !json.result.queued?.length) {
+    const error = `bounce:${json.result.permanent_bounces.join(',')}`;
+    console.error('[mail] envio Cloudflare recusado:', error);
+    return { ok: false, error };
+  }
+  return { ok: true, id: cfResultId(json) };
+}
+
+async function sendViaResend(msg: {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+}): Promise<SendResult> {
+  const res = await fetch(RESEND_API, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.mail.resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: config.mail.from,
+      to: Array.isArray(msg.to) ? msg.to : [msg.to],
+      subject: msg.subject,
+      html: msg.html,
+      ...(msg.text ? { text: msg.text } : {}),
+      ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string };
+  if (!res.ok) {
+    const error = json.message || json.name || `HTTP ${res.status}`;
+    console.error('[mail] envio Resend falhou:', error);
+    return { ok: false, error };
+  }
+  return { ok: true, id: json.id };
 }
 
 /* ---------- Modelo visual partilhado (mesma linguagem da marca) ---------- */
@@ -91,7 +204,7 @@ export function esc(v: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/** Envolve o conteúdo num email HTML consistente com a identidade do BaseRadar. */
+/** Envolve o conteúdo num email HTML consistente com a identidade do Concursivo. */
 export function layout(opts: { title: string; body: string; cta?: { label: string; url: string }; footnote?: string }): string {
   const cta = opts.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0">
@@ -107,7 +220,7 @@ export function layout(opts: { title: string; body: string; cta?: { label: strin
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e6e8e6;border-radius:12px">
   <tr><td style="padding:22px 28px;border-bottom:1px solid #e6e8e6">
-    <span style="font-size:19px;font-weight:800;color:#191c1e;letter-spacing:-0.5px">Base<span style="color:${BRAND}">Radar</span></span>
+    <span style="font-size:19px;font-weight:800;color:#191c1e;letter-spacing:-0.5px">Concur<span style="color:${BRAND}">sivo</span></span>
   </td></tr>
   <tr><td style="padding:26px 28px">
     <h1 style="font-size:19px;color:#191c1e;margin:0 0 12px">${opts.title}</h1>
@@ -116,7 +229,7 @@ export function layout(opts: { title: string; body: string; cta?: { label: strin
     ${opts.footnote ? `<p style="font-size:12.5px;color:#8a938e;margin:22px 0 0">${opts.footnote}</p>` : ''}
   </td></tr>
   <tr><td style="padding:16px 28px;border-top:1px solid #e6e8e6">
-    <p style="font-size:11.5px;color:#9aa6a0;margin:0">BaseRadar — um produto da Transformatiive, Lda. · Fonte: Portal BASE — IMPIC / dados.gov.pt</p>
+    <p style="font-size:11.5px;color:#9aa6a0;margin:0">Concursivo — um produto da Transformatiive, Lda. · Fonte: Portal BASE — IMPIC / dados.gov.pt</p>
   </td></tr>
 </table></td></tr></table></body></html>`;
 }
