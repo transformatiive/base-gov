@@ -181,7 +181,7 @@ export function moloniPdfUrlFromResponse(raw: unknown): string | null {
 export function pdfFilename(number: string | null | undefined, id: number): string {
   const raw = (number && String(number).trim()) ? String(number).trim() : `fatura-${id}`;
   const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return `concursivo-${safe || id}.pdf`;
+  return `prepbid-${safe || id}.pdf`;
 }
 
 export function invoicePdfUnavailableMessage(status: string | null | undefined): string {

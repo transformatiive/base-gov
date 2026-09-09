@@ -49,6 +49,7 @@ test('classifyOrigin: UTM ganha, senão referrer, senão directo', () => {
   assert.equal(classifyOrigin({ referrer: 'https://www.linkedin.com/feed' }), 'social');
   assert.equal(classifyOrigin({ referrer: 'https://www.base.gov.pt/foo' }), 'portal_base');
   assert.equal(classifyOrigin({ referrer: 'https://basegov-robot-production.up.railway.app/guias' }), 'internal');
+  assert.equal(classifyOrigin({ referrer: 'https://prepbid.com/guias' }), 'internal');
   assert.equal(classifyOrigin({ referrer: 'https://concursivo.com/guias' }), 'internal');
   assert.equal(classifyOrigin({ referrer: 'https://news.ycombinator.com/item?id=1' }), 'news.ycombinator.com');
   assert.equal(classifyOrigin({}), 'direct');

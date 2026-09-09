@@ -27,7 +27,7 @@ function signedEvent(body: Record<string, unknown>, secret = WEBHOOK_SECRET): { 
 
 test('newIntegrationIdentifier is label + 8 random letters', () => {
   const id = newIntegrationIdentifier();
-  assert.match(id, /^concursivo-[a-z]{8}$/);
+  assert.match(id, /^prepbid-[a-z]{8}$/);
   assert.notEqual(newIntegrationIdentifier(), id);
 });
 

@@ -13,27 +13,27 @@ test('cloudflareSendBody mapeia destinatários, HTML e reply-to', () => {
   const body = cloudflareSendBody(
     {
       to: 'ana@empresa.pt',
-      subject: 'Concursivo — Resumo semanal',
+      subject: 'PrepBid — Resumo semanal',
       html: '<p>Olá</p>',
       text: 'Olá',
-      replyTo: 'suporte@concursivo.com',
+      replyTo: 'suporte@prepbid.com',
     },
-    'Concursivo <noreply@concursivo.com>',
+    'PrepBid <noreply@prepbid.com>',
   );
   assert.deepEqual(body, {
-    from: 'Concursivo <noreply@concursivo.com>',
+    from: 'PrepBid <noreply@prepbid.com>',
     to: ['ana@empresa.pt'],
-    subject: 'Concursivo — Resumo semanal',
+    subject: 'PrepBid — Resumo semanal',
     html: '<p>Olá</p>',
     text: 'Olá',
-    reply_to: 'suporte@concursivo.com',
+    reply_to: 'suporte@prepbid.com',
   });
 });
 
 test('cloudflareSendBody aceita vários destinatários', () => {
   const body = cloudflareSendBody(
     { to: ['a@x.pt', 'b@x.pt'], subject: 'x', html: '<p>x</p>' },
-    'noreply@concursivo.com',
+    'noreply@prepbid.com',
   );
   assert.deepEqual(body.to, ['a@x.pt', 'b@x.pt']);
   assert.equal(body.reply_to, undefined);

@@ -1,4 +1,4 @@
-/* Concursivo — design language "Atlas" (Schibsted Grotesk + verde-mata)
+/* PrepBid — design language "Atlas" (Schibsted Grotesk + verde-mata)
    Drop-in replacement for public/style.css — mesmos seletores que app.js/index.html.
    Font: Schibsted Grotesk (Google Fonts), ligada no index.html <head>. */
 :root {
@@ -196,7 +196,14 @@ label { font-size: 0.9rem; }
 
 /* ---------- Login / auth ---------- */
 .login-box { max-width: 400px; margin: 10vh auto; border-radius: var(--radius-lg); box-shadow: 0 4px 24px rgba(20, 30, 25, 0.07); padding: 2.1rem 2.3rem 1.8rem; }
-.login-box .wordmark { justify-content: center; font-size: 1.35rem; margin-bottom: 0.4rem; }
+.login-box .wordmark, .register-box .wordmark {
+  flex-direction: column; justify-content: center; gap: 0.75rem;
+  font-size: 1.5rem; margin-bottom: 0.35rem; letter-spacing: -0.03em;
+}
+.login-box .wordmark > svg, .register-box .wordmark > svg {
+  width: 28px; height: 28px; padding: 10px; border-radius: 12px;
+}
+.login-box .muted { text-align: center; }
 .login-box label { display: block; margin: 0.9rem 0 0.35rem; font-weight: 700; font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 .login-box button { width: 100%; justify-content: center; }
 .error { color: var(--bad); margin-top: 0.6rem; font-size: 0.88rem; }

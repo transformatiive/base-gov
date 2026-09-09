@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regista concursivo.com na Cloudflare (Registrar API) e activa Email Routing
+ * Regista prepbid.com na Cloudflare (Registrar API) e activa Email Routing
  * + tenta o onboard de Email Sending. Requer:
  *   CLOUDFLARE_API_TOKEN  (Registrar Write + Zone DNS + Email Routing + Email Sending)
  *   CLOUDFLARE_ACCOUNT_ID
@@ -10,7 +10,7 @@
  *   node scripts/setup-concursivo-cloudflare.mjs --register # compra + DNS + email
  */
 
-const DOMAIN = process.env.CONCURSIVO_DOMAIN || 'concursivo.com';
+const DOMAIN = process.env.PREPBID_DOMAIN || process.env.CONCURSIVO_DOMAIN || 'prepbid.com';
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
 const FORWARD_TO = process.env.MAIL_FORWARD_TO || 'nbarreto@transformatiive.com';
@@ -211,6 +211,6 @@ await addCatchAll(zone.id);
 await onboardSending(zone.id);
 console.log('Concluído. Confirme o destino', FORWARD_TO, 'e as variáveis Railway:');
 console.log('  CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN');
-console.log('  MAIL_FROM="Concursivo <noreply@concursivo.com>"');
-console.log('  SUPPORT_EMAIL=suporte@concursivo.com');
-console.log('  APP_URL=https://concursivo.com');
+console.log('  MAIL_FROM="PrepBid <noreply@prepbid.com>"');
+console.log('  SUPPORT_EMAIL=suporte@prepbid.com');
+console.log('  APP_URL=https://prepbid.com');

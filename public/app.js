@@ -1,4 +1,4 @@
-/* SPA mínima do Concursivo — sem dependências. */
+/* SPA mínima do PrepBid — sem dependências. */
 const app = document.getElementById('app');
 const topbar = document.getElementById('topbar');
 const whoami = document.getElementById('whoami');
@@ -195,9 +195,9 @@ const ICON_PATHS = {
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
 
-/* Wordmark Concursivo (igual ao do header). */
+/* Wordmark PrepBid (igual ao do header). */
 const wordmark = (size = 20) =>
-  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 12l6.5 6.5"/></svg><span>Concur<span class="accent">sivo</span></span></span>`;
+  `<span class="wordmark"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg><span>Prep<span class="accent">Bid</span></span></span>`;
 
 /* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
 const scoreDonut = (score, color, size = 52) => {
@@ -1073,7 +1073,7 @@ function renderLogin() {
   app.innerHTML = `
     <div class="card login-box">
       ${wordmark(24)}
-      <p class="muted">Radar comercial de contratos públicos</p>
+      <p class="muted">Assistente para ganhar concursos públicos</p>
       <form id="login-form">
         <label>Utilizador</label>
         <input type="text" name="username" autocomplete="username" required>
@@ -2857,7 +2857,7 @@ function aiModalOpen(steps) {
   el.id = 'ai-modal';
   el.innerHTML = `
     <div class="ai-modal-box">
-      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'Concursivo'}</div>
+      <div class="wordmark" style="justify-content:center;margin-bottom:0.6rem">${wordmark ? wordmark() : 'PrepBid'}</div>
       <div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>
       <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
     </div>`;
@@ -3490,7 +3490,7 @@ function bindPipelineBoard(root) {
       el.classList.add('dragging');
       el.dataset.didDrag = '1';
       const payload = JSON.stringify({ type: el.dataset.type, id: el.dataset.id, status: el.dataset.status });
-      e.dataTransfer.setData('application/x-concursivo-pipeline', payload);
+      e.dataTransfer.setData('application/x-prepbid-pipeline', payload);
       e.dataTransfer.setData('text/plain', payload);
       e.dataTransfer.effectAllowed = 'move';
     });
@@ -3520,7 +3520,7 @@ function bindPipelineBoard(root) {
       col.classList.remove('drop-target');
       let data = {};
       try {
-        data = JSON.parse(e.dataTransfer.getData('application/x-concursivo-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
+        data = JSON.parse(e.dataTransfer.getData('application/x-prepbid-pipeline') || e.dataTransfer.getData('text/plain') || '{}');
       } catch { data = {}; }
       const card = dragging || board.querySelector(`.pl-card[data-type="${CSS.escape(String(data.type || ''))}"][data-id="${CSS.escape(String(data.id || ''))}"]`);
       if (!card) return;
@@ -3555,7 +3555,7 @@ async function renderRadar(tab = 'opportunities') {
   if (profiles.length === 0) {
     app.innerHTML = `
       <div class="card" style="max-width:640px;margin:8vh auto;text-align:center">
-        <h2>Bem-vindo ao Concursivo</h2>
+        <h2>Bem-vindo ao PrepBid</h2>
         <p class="muted">Começa por definir a tua atividade comercial (palavras-chave e códigos CPV).
         Todos os insights — oportunidades, renovações, mapa, concorrentes — serão apresentados nesse contexto,
         calculados sobre os dados já importados.</p>
@@ -3574,7 +3574,7 @@ async function renderRadar(tab = 'opportunities') {
   app.innerHTML = `
     <div class="toolbar">
       <div>
-        <div class="eyebrow">Radar comercial</div>
+        <div class="eyebrow">A sua atividade</div>
         <div class="muted">${active
           ? `Atividade: ${esc(active.name)} — ${active.terms.map(esc).join(', ')}${(active.cpv_codes ?? []).length ? ' · CPV ' + active.cpv_codes.map(esc).join(', ') : ''}`
           : 'Todos os dados recolhidos, sem filtro de atividade.'}</div>
@@ -4409,7 +4409,7 @@ async function renderAdmin() {
   app.innerHTML = `
     <div class="admin-wrap">
       <div class="eyebrow" style="color:var(--brand)">Administração</div>
-      <h2 style="margin:.3rem 0 .6rem">Operação do Concursivo</h2>
+      <h2 style="margin:.3rem 0 .6rem">Operação do PrepBid</h2>
       ${adminTabs('ops')}
 
       <div class="admin-stats">
@@ -4780,7 +4780,7 @@ function openFeedbackModal() {
     <div class="modal-box">
       <button class="modal-x" aria-label="Fechar">×</button>
       <h3 style="margin:0 0 .3rem">Como podemos ajudar?</h3>
-      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o Concursivo.</p>
+      <p class="muted" style="margin:0 0 1rem;font-size:.88rem">Envie uma dúvida à equipa de suporte ou deixe uma sugestão para melhorarmos o PrepBid.</p>
       <div class="fb-tabs">
         <button class="fb-tab active" data-kind="manual">Manual</button>
         <button class="fb-tab" data-kind="help">Pedir ajuda</button>

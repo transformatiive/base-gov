@@ -92,7 +92,7 @@ export async function renderDigestEmail(
   optOutUrl: string
 ): Promise<{ subject: string; html: string; text: string }> {
   const today = fmtDatePT(new Date());
-  const subject = `Concursivo — Resumo semanal · ${profileName} · ${today}`;
+  const subject = `PrepBid — Resumo semanal · ${profileName} · ${today}`;
   const empty = digestIsEmpty(d);
   const fmtEur = (v: unknown) =>
     v == null ? '—' : Number(v).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -121,13 +121,13 @@ export async function renderDigestEmail(
   const html = layout({
     title: `Resumo semanal · ${esc(profileName)}`,
     body,
-    cta: { label: 'Abrir o Concursivo', url: `${config.appBaseUrl || ''}/app#/hoje` },
+    cta: { label: 'Abrir o PrepBid', url: `${config.appBaseUrl || ''}/app#/hoje` },
     footnote: `<a href="${optOutUrl}">Deixar de receber o digest</a>`,
   });
   return {
     subject,
     html,
-    text: `Digest Concursivo — ${profileName}. ${empty ? 'Semana sem novidades na sua atividade.' : `${d.openAnns.length} concursos abertos.`}`,
+    text: `Digest PrepBid — ${profileName}. ${empty ? 'Semana sem novidades na sua atividade.' : `${d.openAnns.length} concursos abertos.`}`,
   };
 }
 
@@ -148,7 +148,7 @@ export async function renderReminderEmail(
     cta: { label: 'Abrir o pipeline', url: `${config.appBaseUrl || ''}/app#/pipeline` },
     footnote: `<a href="${optOutUrl}">Deixar de receber lembretes</a>`,
   });
-  return { subject: `Concursivo — ${subject}`, html, text: subject };
+  return { subject: `PrepBid — ${subject}`, html, text: subject };
 }
 
 export { digestData };
@@ -191,7 +191,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     const parsed = verifyUnsubscribe(t);
     const htmlFail = (msg: string) => {
       reply.header('Content-Type', 'text/html; charset=utf-8');
-      return reply.send(`<!doctype html><html lang="pt"><meta charset="utf-8"><title>Concursivo</title>
+      return reply.send(`<!doctype html><html lang="pt"><meta charset="utf-8"><title>PrepBid</title>
         <body style="font-family:sans-serif;padding:40px;max-width:480px"><p>${esc(msg)}</p>
         <p><a href="${esc(config.appBaseUrl || '/')}/app#/login">Entrar</a></p></body></html>`);
     };
@@ -207,7 +207,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     }
     reply.header('Content-Type', 'text/html; charset=utf-8');
     const login = `${config.appBaseUrl || ''}/app#/login`;
-    return reply.send(`<!doctype html><html lang="pt"><meta charset="utf-8"><title>Concursivo</title>
+    return reply.send(`<!doctype html><html lang="pt"><meta charset="utf-8"><title>PrepBid</title>
       <body style="font-family:sans-serif;padding:40px;max-width:520px">
         <h1 style="font-size:1.2rem">Preferência actualizada</h1>
         <p>Deixou de receber ${parsed.kind === 'digest' ? 'o digest semanal' : 'os lembretes de prazo'}.</p>

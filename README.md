@@ -1,4 +1,4 @@
-# Concursivo
+# PrepBid
 
 Inteligência comercial de concursos públicos em Portugal. Cruza o histórico do Portal BASE (IMPIC / dados.gov.pt) com o perfil da empresa — CPV, distritos e valor — para mostrar que contratos vale a pena concorrer, e a tempo.
 
@@ -61,10 +61,10 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `CLOUDFLARE_ACCOUNT_ID` | vazio | Conta Cloudflare (envio de email + setup do domínio) |
 | `CLOUDFLARE_API_TOKEN` | vazio | Token com Email Sending: Edit (digest, lembretes, convites) |
 | `RESEND_API_KEY` | vazio | Fallback legado se Cloudflare ainda não estiver configurado |
-| `MAIL_FROM` | vazio | Remetente, ex. `Concursivo <noreply@concursivo.com>` |
+| `MAIL_FROM` | vazio | Remetente, ex. `PrepBid <noreply@prepbid.com>` |
 | `SUPPORT_EMAIL` | vazio | Destino dos pedidos de ajuda e destino de reencaminhamento |
 
-O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`. Para comprar `concursivo.com` e activar Email Routing: `node scripts/setup-concursivo-cloudflare.mjs --register`.
+O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`. Para comprar `prepbid.com` e activar Email Routing: `node scripts/setup-concursivo-cloudflare.mjs --register`.
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 

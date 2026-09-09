@@ -212,15 +212,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const url = `${config.appBaseUrl}/app#/repor-password?token=${token}`;
     await sendMail({
       to: user.email,
-      subject: 'Concursivo — repor a sua password',
+      subject: 'PrepBid — repor a sua password',
       html: layout({
         title: 'Repor a sua password',
         body: `<p>Olá${user.first_name ? ' ' + esc(user.first_name) : ''},</p>
-               <p>Recebemos um pedido para repor a password da sua conta Concursivo. Clique no botão abaixo para escolher uma nova. <strong>A ligação é válida durante 1 hora.</strong></p>`,
+               <p>Recebemos um pedido para repor a password da sua conta PrepBid. Clique no botão abaixo para escolher uma nova. <strong>A ligação é válida durante 1 hora.</strong></p>`,
         cta: { label: 'Repor password', url },
         footnote: 'Se não foi você que pediu, ignore este email — a sua password actual continua válida.',
       }),
-      text: `Reponha a sua password do Concursivo (válido 1 hora): ${url}`,
+      text: `Reponha a sua password do PrepBid (válido 1 hora): ${url}`,
     });
     return reply.send(generic);
   });

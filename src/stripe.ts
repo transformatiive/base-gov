@@ -116,7 +116,7 @@ export function newIntegrationIdentifier(): string {
   const bytes = crypto.randomBytes(8);
   let suffix = '';
   for (let i = 0; i < 8; i++) suffix += letters[bytes[i]! % letters.length];
-  return `concursivo-${suffix}`;
+  return `prepbid-${suffix}`;
 }
 
 function publicAppUrl(): string {
@@ -340,7 +340,7 @@ async function recordPaymentAndInvoice(opts: {
     const recorrente = opts.kind === 'subscription';
     sendMail({
       to: String(contacts[0].email),
-      subject: `Concursivo — pagamento confirmado (plano ${planLabel})`,
+      subject: `PrepBid — pagamento confirmado (plano ${planLabel})`,
       html: layout({
         title: 'Pagamento confirmado',
         body: `<p>Olá${contacts[0].first_name ? ' ' + esc(String(contacts[0].first_name)) : ''},</p>
@@ -349,7 +349,7 @@ async function recordPaymentAndInvoice(opts: {
                  ? 'A subscrição renova automaticamente todos os meses. Pode cancelar ou alterar o cartão em Conta → Gerir subscrição.'
                  : 'Este pagamento dá acesso durante 1 mês. Não há renovação automática — receberá o aviso antes de terminar.'}</p>
                <p>A fatura fica disponível para descarregar na área de conta, assim que for emitida.</p>`,
-        cta: config.appBaseUrl ? { label: 'Abrir o Concursivo', url: `${config.appBaseUrl}/app#/conta` } : undefined,
+        cta: config.appBaseUrl ? { label: 'Abrir o PrepBid', url: `${config.appBaseUrl}/app#/conta` } : undefined,
       }),
       text: `Pagamento de ${valor} EUR confirmado — plano ${planLabel}. O acesso está ativo.`,
     }).catch((e) => console.error('[stripe] email de confirmação falhou:', String(e).slice(0, 150)));
