@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { pool } from './db.js';
 import { requireAuth, auth } from './auth.js';
 import { requirePlan } from './plans.js';
-import { recordUsage } from './aiUsage.js';
+import { recordUsage, rejectIfAiCapped } from './aiUsage.js';
 import { aiEnabled } from './ai.js';
 import { buildDocx, DOCX_CONTENT_TYPE, extractDocxText } from './docx-lite.js';
 import {
@@ -234,6 +234,7 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
       if (cached[0] && cached[0].fingerprint === fp && cached[0].llm) {
         return { announcement, forecast: publicForecast(statistical, cached[0].llm, null), cached: true };
       }
+      if (await rejectIfAiCapped(req, reply)) return;
       const q = await qualifyCloseForecast({ announcement, statistical, comparables: statistical.used });
       const llm = {
         low_pct: q.low_pct,
@@ -283,6 +284,13 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
     const refresh = (req.body as { refresh?: boolean } | undefined)?.refresh === true;
     try {
       if (refresh) await pool.query('DELETE FROM announcement_requirements WHERE announcement_id = $1', [id]);
+      if (!refresh) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM announcement_requirements WHERE announcement_id = $1',
+          [id],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
       const r = await extractAnnouncementRequirements(id);
       if (!r.cached) {
         const { companyId, userId } = auth(req);
@@ -337,6 +345,7 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
     const id = Number((req.params as { id: string }).id);
     const body = (req.body ?? {}) as Record<string, unknown>;
     try {
+      if (await rejectIfAiCapped(req, reply)) return;
       const { rows: anns } = await pool.query('SELECT * FROM announcements WHERE id = $1', [id]);
       if (anns.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Anúncio não encontrado' } });
       let profile = await loadProfile(companyId);
@@ -425,6 +434,7 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
     const id = Number((req.params as { id: string }).id);
     const body = (req.body ?? {}) as { filename?: string; content_base64?: string };
     try {
+      if (await rejectIfAiCapped(req, reply)) return;
       if (!body.content_base64) {
         return reply.code(400).send({ error: { code: 'invalid', message: 'content_base64 é obrigatório.' } });
       }

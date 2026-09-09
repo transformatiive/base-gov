@@ -10,13 +10,15 @@ import {
 const END_DATE = `(c.signing_date + (substring(c.execution_deadline from '(\\d+)')::int))`;
 
 export async function runSchedulerTick(now = new Date()): Promise<{
-  hour: number; digests: number; reminders: number; retries: number;
+  hour: number; digests: number; reminders: number; retries: number; quota_resets: number;
 }> {
   const { weekday, hour, ymd } = lisbonNow(now);
+  const { rollAiQuotaPeriods } = await import('./aiUsage.js');
+  const quota = await rollAiQuotaPeriods(now);
   const digestHour = config.digestHour;
   if (hour !== digestHour) {
     const retries = await retryFailed();
-    return { hour, digests: 0, reminders: 0, retries };
+    return { hour, digests: 0, reminders: 0, retries, quota_resets: quota.advanced };
   }
 
   let digests = 0;
@@ -25,7 +27,7 @@ export async function runSchedulerTick(now = new Date()): Promise<{
   }
   const reminders = await dueReminders(ymd);
   const retries = await retryFailed();
-  return { hour, digests, reminders, retries };
+  return { hour, digests, reminders, retries, quota_resets: quota.advanced };
 }
 
 async function dueDigests(now: Date): Promise<number> {

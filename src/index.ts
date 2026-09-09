@@ -20,11 +20,13 @@ import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
 import { startScheduler } from './scheduler.js';
 import { ensureCpvCatalog } from './cpv.js';
+import { rollAiQuotaPeriods } from './aiUsage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   await migrateAndSeed();
+  await rollAiQuotaPeriods().catch((e) => console.warn('[ai-quota] backfill inicial falhou:', e));
 
   const app = Fastify({ logger: true, bodyLimit: 16 * 1024 * 1024 });
   await app.register(fastifyCookie, { secret: config.sessionSecret });

@@ -7,8 +7,6 @@ import { loadCompanyProfile, companyProfileContext } from './company-profile.js'
 import { applyFitRules, type CompanyProfileRules } from './fit-rules.js';
 import { negativeExamples, negativeExamplesBlock } from './ai-feedback.js';
 import { inferDistrict } from './districts.js';
-import { usageThisMonth, overSoftCap } from './aiUsage.js';
-import { effectivePlan } from './plans.js';
 import { compileAnalysisParts, sumUsage } from './ai-compile.js';
 
 const require = createRequire(import.meta.url);
@@ -414,6 +412,7 @@ async function persistFit(
 export async function fitScores(
   profileId: number,
   items: FitItem[],
+  opts?: { capped?: boolean },
 ): Promise<{ scores: Record<string, FitScore>; usage: AiUsage }> {
   const result: Record<string, FitScore> = {};
   const { rows: profRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1', [profileId]);
@@ -421,16 +420,7 @@ export async function fitScores(
   const cp = companyId != null ? await loadCompanyProfile(companyId) : null;
   const rules = asRulesProfile(cp);
   const currentVersion = cp?.version ?? 0;
-
-  let staleMode = false;
-  if (companyId != null) {
-    const { rows: co } = await pool.query(
-      'SELECT plan, subscription_status, trial_ends_at, access_until FROM companies WHERE id = $1',
-      [companyId]
-    );
-    const used = await usageThisMonth(companyId);
-    staleMode = overSoftCap(used, effectivePlan(co[0]));
-  }
+  const staleMode = opts?.capped === true;
 
   const missing: FitItem[] = [];
   for (const it of items) {
@@ -486,6 +476,7 @@ export async function fitScores(
 
   let usage: AiUsage = { tokens_in: 0, tokens_out: 0 };
   if (needAi.length === 0) return { scores: result, usage };
+  if (staleMode) return { scores: result, usage };
   if (!aiEnabled()) return { scores: result, usage };
 
   const ctx = await profileContext(profileId);

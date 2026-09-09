@@ -22,7 +22,7 @@ export const config = {
   supportEmail: process.env.SUPPORT_EMAIL || '',  // destino dos pedidos de ajuda (envio a implementar)
 
   // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
-  // capability → plano mínimo; seats/tetos/preços por plano; soft cap de IA.
+  // capability → plano mínimo; seats/tetos/preços por plano; teto de IA.
   plans: {
     features: {
       // free
@@ -32,18 +32,18 @@ export const config = {
       score_fit: 'pro', matriz: 'pro', renovacoes: 'pro', ted: 'pro',
       analise_ia: 'pro', concorrentes: 'pro', entidades: 'pro', export_excel: 'pro',
       filtros_avancados: 'pro', lembretes: 'pro', feedback_ia: 'pro',
-      // Previsão de fecho e geração de propostas: Pro (a restrição a Business
-      // fica em aberto para validação de mercado — o gating sobe-se aqui).
-      previsao_fecho: 'pro', geracao_propostas: 'pro',
+      // Previsão de fecho e geração de propostas: Business (custo Sonnet/Haiku
+      // de geração; a ficha go/no-go fica no Pro).
+      previsao_fecho: 'business', geracao_propostas: 'business',
       // business
       seats: 'business', export_avancada: 'business', ia_elevada: 'business', api_integration: 'business',
     } as Record<string, 'free' | 'pro' | 'business'>,
     seats: { free: 1, pro: 2, business: 10 } as Record<string, number>,
-    aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises/mês (teto; ver flag)
+    aiCap: { free: 0, pro: 40, business: 250 } as Record<string, number>,   // análises / 30 dias / utilizador
     priceCents: { free: 0, pro: 2900, business: 9900 } as Record<string, number>,  // sem IVA
     order: ['free', 'pro', 'business'] as const,
-    // Soft cap de IA: quando true, AVISA (não bloqueia). Desligado por defeito.
-    aiSoftCapEnabled: (process.env.AI_SOFT_CAP_ENABLED || 'false').toLowerCase() === 'true',
+    // Teto de IA efectivo (bloqueia novas chamadas). AI_CAP_ENABLED=false desliga.
+    aiCapEnabled: (process.env.AI_CAP_ENABLED || 'true').toLowerCase() !== 'false',
   },
 
   // Taxa de IVA aplicada aos preços "sem IVA" dos planos (para cobrança e fatura).

@@ -268,11 +268,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Capabilities: fonte única para o frontend espelhar o gating (o backend é
   // sempre a verdade — 403 nas rotas fora do plano, independentemente disto).
   app.get('/api/me/capabilities', { preHandler: requireAuth }, async (req) => {
-    const { companyId, isAdmin, plan } = auth(req);
+    const { companyId, isAdmin, plan, userId } = auth(req);
     // Admin/acesso global: plano efetivo business (tudo desbloqueado).
     const effPlan = isAdmin ? 'business' : plan;
     const seatUsed = companyId != null ? await seatsUsed(companyId) : 0;
-    const ai = await aiUsageSummary(companyId, effPlan);
+    const ai = await aiUsageSummary(isAdmin ? null : userId, effPlan);
     return {
       plan: effPlan,
       capabilities: capabilitiesFor(effPlan),

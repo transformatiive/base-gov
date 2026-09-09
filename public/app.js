@@ -229,6 +229,11 @@ async function api(path, opts = {}) {
       err.planRequired = body.error;   // { feature, required_plan, current_plan }
       throw err;
     }
+    if (res.status === 429 && body?.error?.code === 'ai_cap_reached') {
+      const err = new Error(body.error.message || 'Atingiu o teto de análises deste ciclo.');
+      err.aiCapReached = body.error;
+      throw err;
+    }
     throw new Error(body?.error?.message || `Erro HTTP ${res.status}`);
   }
   const act = usageActionFromApi(method, path);
@@ -681,6 +686,7 @@ async function startFichaAi({ kind, id, force = false }) {
     if (force) payload.force = true;
     const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
     if (!stillHere()) return;
+    loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
     const itemType = kind === 'contract' ? 'renovacao' : 'anuncio_aberto';
     let docNote = '';
     if (kind === 'contract' && r.docs_used === 0) {
@@ -713,6 +719,7 @@ async function startFichaAi({ kind, id, force = false }) {
         ]);
         try {
           const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
+          loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
           const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
           const url = URL.createObjectURL(blob);
           document.getElementById('ai-template-out').innerHTML = `
@@ -730,6 +737,14 @@ async function startFichaAi({ kind, id, force = false }) {
   } catch (err) {
     if (!stillHere()) return;
     if (err.planRequired) { body.innerHTML = aiLockedHtml(); return; }
+    if (err.aiCapReached) {
+      await loadCaps(true);
+      renderAiQuotaBanner(window._caps, window._me);
+      body.innerHTML = `<p class="error">${esc(err.message)}</p>
+        <p class="muted">Reabrir uma ficha já analisada não conta para o teto. O ciclo reinicia a ${esc(err.aiCapReached.reset_label || '00:00')}.</p>
+        <p><a class="btn-secondary" href="#/planos">Ver planos</a></p>`;
+      return;
+    }
     body.innerHTML = `<p class="error">${esc(err.message)}</p>
       <p><button type="button" class="btn-secondary" id="ai-retry-btn">Tentar de novo</button></p>`;
     const retry = document.getElementById('ai-retry-btn');
@@ -944,7 +959,15 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-function hideTrialBanner() { const t = document.getElementById('trial-banner'); if (t) { t.hidden = true; t.innerHTML = ''; } }
+function hideTrialBanner() {
+  const t = document.getElementById('trial-banner');
+  if (t) { t.hidden = true; t.innerHTML = ''; }
+  hideAiQuotaBanner();
+}
+function hideAiQuotaBanner() {
+  const t = document.getElementById('ai-quota-banner');
+  if (t) { t.hidden = true; t.innerHTML = ''; t.className = ''; }
+}
 
 /* Mensagens de validação do browser em português (por omissão vêm no idioma do browser). */
 function localizeValidation(form) {
@@ -1223,6 +1246,37 @@ function renderTrialBanner(me) {
   host.innerHTML = `<div class="tb-title">${title}</div><div class="tb-sub">${sub}</div><a href="#/planos">${cta}</a>`;
 }
 
+function renderAiQuotaBanner(caps, me) {
+  const host = document.getElementById('ai-quota-banner');
+  if (!host) return;
+  if (!me || me.is_admin) { hideAiQuotaBanner(); return; }
+  const ai = caps?.ai_usage;
+  if (!ai || !ai.enabled || !ai.cap) { hideAiQuotaBanner(); return; }
+  const level = ai.level || 'ok';
+  if (level === 'ok') { hideAiQuotaBanner(); return; }
+  const pct = Math.min(100, Math.round((Number(ai.used) / Number(ai.cap)) * 100));
+  const reset = ai.reset_label || '00:00 do próximo ciclo';
+  let title = `${ai.used} / ${ai.cap} análises`;
+  let sub = `O teto reinicia a ${reset}.`;
+  if (level === 'capped') {
+    title = `Teto de análises atingido (${ai.used} / ${ai.cap})`;
+    sub = `Novas análises ficam bloqueadas até ${reset}. Reabrir uma ficha já analisada não conta.`;
+  } else if (level === 'alert') {
+    title = `Análises quase no teto (${ai.used} / ${ai.cap})`;
+    sub = `Já usou ${pct}% deste ciclo. Reinicia a ${reset}.`;
+  } else {
+    title = `A aproximar-se do teto de análises (${ai.used} / ${ai.cap})`;
+    sub = `Já usou ${pct}% deste ciclo. Reinicia a ${reset}.`;
+  }
+  host.hidden = false;
+  host.className = level === 'warn' ? 'warn' : (level === 'capped' ? 'capped' : 'alert');
+  host.innerHTML = `<div class="tb-title">${esc(title)}</div>
+    <div class="tb-sub">${esc(sub)}</div>
+    <div class="tb-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+    ${level === 'capped' ? '<a href="#/planos">Ver planos</a>' : ''}`;
+}
+}
+
 /* Preenche o bloco "Atividade" da barra lateral com o perfil ativo. */
 async function updateSidebar() {
   const el = document.getElementById('side-activity');
@@ -1253,8 +1307,8 @@ async function updateSidebar() {
 const eur = (cents) => (cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: cents % 100 ? 2 : 0 });
 const PLAN_FEATURES = {
   free: ['Concursos abertos', 'Mapa e sazonalidade', 'Resumo semanal', 'Carteira de propostas'],
-  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '2 utilizadores'],
-  business: ['Tudo do Pro', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', 'Teto de IA mais alto (250 análises/mês)', 'Apoio prioritário'],
+  pro: ['Tudo do Grátis', 'Oportunidades com pontuação e adequação IA', 'Radar de renovações', 'Concursos europeus', 'Análise IA do caderno de encargos', 'Concorrentes e entidades', 'Exportação em folha de cálculo', '40 análises de IA / 30 dias por utilizador', '2 utilizadores'],
+  business: ['Tudo do Pro', 'Previsão de valor de fecho', 'Rascunho assistido de proposta', 'Até 10 utilizadores', 'Carteira partilhada pela equipa', '250 análises de IA / 30 dias por utilizador', 'Apoio prioritário'],
 };
 
 function closeAccountConfirm() {
@@ -1580,6 +1634,10 @@ async function renderAccount() {
   const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
+  const barColor = ai.level === 'capped' || ai.level === 'alert' ? '#e11d48' : (ai.level === 'warn' ? '#d97706' : 'var(--brand)');
+  const resetLine = ai.reset_label
+    ? `Reinicia a ${ai.reset_label}.`
+    : '';
   const { used: seatUsed, max: seatMax } = seatOccupancy(seats, caps);
   const memberCount = (seats?.members || []).length || Number(summary.members) || 1;
   const upgradeLabel = plan === 'business' ? 'Ver planos' : plan === 'free' ? 'Fazer upgrade' : 'Mudar de plano';
@@ -1605,10 +1663,12 @@ async function renderAccount() {
         </div>
 
         <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
-          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA este mês</div>
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${ai.used}${ai.cap > 0 ? ` <span style="font-size:.9rem;font-weight:400;color:var(--muted,#64748b)">/ ${ai.cap}</span>` : ''}</div>
-          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct >= 100 ? '#e11d48' : 'var(--brand)'}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
-          <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.enabled ? 'O teto é indicativo — avisamos, não bloqueamos.' : 'Contagem informativa; sem bloqueio.'}</div>
+          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
+          <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.cap > 0
+            ? `${ai.remaining ?? Math.max(0, ai.cap - ai.used)} restantes neste ciclo. ${resetLine}${ai.enabled && ai.level === 'capped' ? ' Novas análises estão bloqueadas.' : ''}`
+            : 'Contagem informativa.'}</div>
         </div>
       </div>
 
@@ -1644,7 +1704,7 @@ function renderProposalProfileBlock(profile, plan) {
   if (profile === 'locked' || (profile == null && !can('geracao_propostas'))) {
     return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
       <h3 style="margin:0 0 .4rem">Perfil para propostas</h3>
-      <p class="muted">Disponível no plano Pro: habilitações, referências e margem mínima reutilizados em todos os concursos.</p>
+      <p class="muted">Disponível no plano Business: habilitações, referências e margem mínima reutilizados em todos os concursos.</p>
     </div>`;
   }
   const p = profile || { legal_name: '', nif: '', cae: '', certifications: [], technical_capabilities: '', portfolio: '', references: [], key_team: [], min_margin_pct: '', notes: '', missing: [] };
@@ -3649,7 +3709,7 @@ function renderForecastCard(id, payload) {
 
 async function mountCloseForecast(host, id) {
   if (!can('previsao_fecho')) {
-    host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted" style="margin:0">Disponível no plano Pro — estimativa de valor de adjudicação com base no histórico.</p></div>`;
+    host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted" style="margin:0">Disponível no plano Business — estimativa de valor de adjudicação com base no histórico.</p></div>`;
     return;
   }
   host.innerHTML = `<div class="d-card"><div class="t">Previsão de fecho</div><p class="muted">A calcular a partir do histórico…</p></div>`;
@@ -3662,6 +3722,7 @@ async function mountCloseForecast(host, id) {
       btn.textContent = 'A qualificar…';
       try {
         const q = await api(`/api/announcements/${id}/close-forecast/qualify`, { method: 'POST', body: '{}' });
+        loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
         host.innerHTML = renderForecastCard(id, q);
       } catch (err) {
         btn.disabled = false;
@@ -3703,7 +3764,7 @@ function renderProposalVersions(items) {
 
 async function mountProposalPanel(host, id) {
   if (!can('geracao_propostas')) {
-    host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted" style="margin:0">Geração assistida de propostas (.docx) disponível no plano Pro.</p></div>`;
+    host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted" style="margin:0">Geração assistida de propostas (.docx) disponível no plano Business.</p></div>`;
     return;
   }
   host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted">A carregar…</p></div>`;
@@ -3791,6 +3852,7 @@ async function mountProposalPanel(host, id) {
       document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
       wireProposalDownloads();
       document.getElementById('prop-out').innerHTML = `<p class="hint">Rascunho v${r.version} gerado. Edita-o no Word e volta a carregá-lo para a reavaliação.</p>`;
+      loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
     } catch (err) {
       document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
     } finally {
@@ -4304,14 +4366,23 @@ async function renderAdmin() {
     <div class="asv">${value}</div><div class="asl">${esc(label)}</div>${note ? `<div class="asn">${esc(note)}</div>` : ''}</div>`;
 
   const planBreak = (stats.companies_by_plan || []).map((r) => `${PLAN_LABEL[r.plan] || r.plan}: <strong>${r.n}</strong>`).join(' · ');
-  const aiKinds = (stats.ai_usage?.by_kind || []).map((r) => `<div class="admin-row"><span>${esc(AI_KIND_LABEL[r.kind] || r.kind)}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem análises este mês.</p>';
-  const searchKinds = (stats.searches_by_kind || []).map((r) => `<div class="admin-row"><span>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem pesquisas.</p>';
+  const aiKinds = (stats.ai_usage?.by_kind || []).map((r) => `<div class="admin-row"><span>${esc(AI_KIND_LABEL[r.kind] || r.kind)}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem análises nos últimos 30 dias.</p>';
+  const searchKinds = (stats.searches?.by_kind || stats.searches_by_kind || []).map((r) => `<div class="admin-row"><span>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</span><strong>${r.n}</strong></div>`).join('') || '<p class="muted" style="margin:0">Sem pesquisas.</p>';
+  const searchCo = (stats.searches?.by_company || []).map((r) => `<div class="admin-row"><span>${esc(r.name)}</span><strong>${r.n}</strong></div>`).join('');
+  const searchRecent = (stats.searches?.recent || []).map((s) => `<tr>
+      <td class="muted" style="white-space:nowrap">${s.created_at ? new Date(s.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+      <td>${esc(s.kind === 'anuncios' ? 'Anúncios' : 'Contratos')}</td>
+      <td>${esc(s.term || '—')}</td>
+      <td>${esc(s.status || '—')}</td>
+      <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+    </tr>`).join('');
 
   const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
   const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
   const userLine = (u) => `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}${
-        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}</span>
+        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}${
+        u.ai_used != null ? ` · IA ${u.ai_used}${u.ai_reset_at ? ` · reset ${new Date(u.ai_reset_at).toLocaleDateString('pt-PT')}` : ''}` : ''}</span>
       <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(u.email || u.username)}">repor password</button></div>`;
   const compRows = (companies.items || []).map((c) => `
     <tr data-id="${c.id}">
@@ -4320,6 +4391,7 @@ async function renderAdmin() {
       <td>${c.n_users}</td>
       <td>${c.n_profiles}</td>
       <td>${c.ai_month ?? 0}</td>
+      <td>${c.searches_30d ?? 0}</td>
       <td><select class="adm-plan">${planOpts(normalizeAdminPlan(c.plan))}</select></td>
       <td><select class="adm-status">${statusOpts(c.subscription_status)}</select></td>
       <td>${new Date(c.created_at).toLocaleDateString('pt-PT')}</td>
@@ -4347,14 +4419,16 @@ async function renderAdmin() {
         ${stat('Em trial', sub.trialing ?? 0, 'Pro 7 dias')}
         ${stat('Free / inativas', sub.free_inactive ?? 0, null)}
         ${stat('Receita (mês)', ((stats.payments?.cents_month ?? 0) / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }), `${stats.payments?.n_month ?? 0} pagamento(s)`)}
-        ${stat('Análises IA (mês)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
+        ${stat('Análises IA (30d)', stats.ai_usage?.n_month ?? 0, `custo est. ${money(stats.ai_usage?.cost_month)}`)}
+        ${stat('Pesquisas (30d)', stats.searches?.last30 ?? 0, `${stats.searches?.last7 ?? 0} nos últimos 7 dias`)}
       </div>
 
       <div class="admin-grid2">
         <div class="card"><h3 style="margin:0 0 .6rem">Distribuição de planos</h3><p class="muted" style="margin:0 0 .8rem">${planBreak || '—'}</p>
           <div class="admin-row"><span>Faturas Moloni (mês)</span><strong>${stats.payments?.invoiced ?? 0}${stats.payments?.invoice_errors ? ` · ${stats.payments.invoice_errors} erro(s)` : ''}</strong></div>
-          <h4 style="margin:.8rem 0 .4rem">Análises de IA por tipo (mês)</h4>${aiKinds}</div>
-        <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo</h3>${searchKinds}
+          <h4 style="margin:.8rem 0 .4rem">Análises de IA por tipo (30 dias)</h4>${aiKinds}</div>
+        <div class="card"><h3 style="margin:0 0 .6rem">Pesquisas por tipo (30 dias)</h3>${searchKinds}
+          ${searchCo ? `<h4 style="margin:.8rem 0 .4rem">Por empresa</h4>${searchCo}` : ''}
           <h4 style="margin:.8rem 0 .4rem">Recolhas (profile runs)</h4>
           <div class="admin-row"><span>Total</span><strong>${stats.profile_runs?.total ?? 0}</strong></div>
           <div class="admin-row"><span>Últimos 30 dias</span><strong>${stats.profile_runs?.last30 ?? 0}</strong></div>
@@ -4362,9 +4436,17 @@ async function renderAdmin() {
       </div>
 
       <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Últimas pesquisas</h3>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Quando</th><th>Tipo</th><th>Termo</th><th>Estado</th><th>Quem</th></tr></thead>
+          <tbody>${searchRecent || '<tr><td colspan="5" class="muted">Sem pesquisas.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .8rem">Empresas</h3>
         <div style="overflow-x:auto"><table class="admin-table">
-          <thead><tr><th>Empresa</th><th>Utils</th><th>Perfis</th><th>IA/mês</th><th>Plano</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
+          <thead><tr><th>Empresa</th><th>Utils</th><th>Perfis</th><th>IA/30d</th><th>Pesq/30d</th><th>Plano</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
           <tbody id="admin-companies">${compRows}</tbody>
         </table></div>
       </div>
@@ -4520,7 +4602,7 @@ async function renderAdmin() {
   if (tickBtn) tickBtn.onclick = async () => {
     try {
       const r = await api('/api/admin/notifications/run', { method: 'POST', body: '{}' });
-      alert(`Tick: ${r.digests ?? 0} digest(s), ${r.reminders ?? 0} lembrete(s), hora ${r.hour}`);
+      alert(`Tick: ${r.digests ?? 0} digest(s), ${r.reminders ?? 0} lembrete(s), ${r.quota_resets ?? 0} reset(s) de teto IA, hora ${r.hour}`);
       renderAdmin();
     } catch (e) { alert(e.message); }
   };
@@ -4574,6 +4656,23 @@ async function renderUsageAdmin() {
     <td>${esc(e.origin || '—')}</td>
     <td>${esc(e.company || '—')}${e.username ? `<div class="muted" style="font-size:.8rem">${esc(e.username)}</div>` : ''}</td>
   </tr>`).join('');
+  const sk = data.searches?.kpis || {};
+  const sKindRows = (data.searches?.by_kind || []).map((r) => `<tr>
+    <td>${esc(r.kind === 'anuncios' ? 'Anúncios (concursos)' : 'Contratos')}</td>
+    <td>${r.n}</td><td>${r.done ?? '—'}</td><td>${r.failed ?? '—'}</td>
+  </tr>`).join('');
+  const sCoRows = (data.searches?.by_company || []).map((c) => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(PLAN_LABEL[c.plan] || c.plan)}</td><td>${c.n}</td>
+    <td class="muted">${c.last_at ? new Date(c.last_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+  </tr>`).join('');
+  const sRecRows = (data.searches?.recent || []).map((s) => `<tr>
+    <td class="muted" style="white-space:nowrap">${s.created_at ? new Date(s.created_at).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+    <td>${esc(s.kind === 'anuncios' ? 'Anúncios' : 'Contratos')}</td>
+    <td>${esc(s.term || '—')}</td>
+    <td>${esc(s.status || '—')}</td>
+    <td>${s.total_scraped ?? '—'} / ${s.total_reported ?? '—'}</td>
+    <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+  </tr>`).join('');
 
   app.innerHTML = `
     <div class="admin-wrap wide">
@@ -4589,6 +4688,7 @@ async function renderUsageAdmin() {
         ${stat('Utilizadores', k.users ?? 0, 'com sessão')}
         ${stat('Empresas', k.companies ?? 0, 'com actividade')}
         ${stat('Acções', k.actions ?? 0, 'análises, carteira…')}
+        ${stat('Pesquisas', sk.n ?? 0, `${sk.anuncios ?? 0} anúncios · ${sk.contratos ?? 0} contratos`)}
       </div>
 
       <div class="usage-trend card">
@@ -4621,6 +4721,15 @@ async function renderUsageAdmin() {
       <div class="card" style="margin-top:1.2rem">
         <h3 style="margin:0 0 .6rem">Empresas mais activas</h3>
         ${table(['Empresa', 'Plano', 'Eventos', 'Última'], coRows, 'Nenhuma empresa autenticada neste período.')}
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <h3 style="margin:0 0 .6rem">Pesquisas (BASE.gov)</h3>
+        ${table(['Tipo', 'Corridas', 'Concluídas', 'Falhas'], sKindRows, 'Sem pesquisas neste período.')}
+        <h4 style="margin:1rem 0 .4rem">Por empresa</h4>
+        ${table(['Empresa', 'Plano', 'Pesquisas', 'Última'], sCoRows, 'Nenhuma empresa com pesquisas neste período.')}
+        <h4 style="margin:1rem 0 .4rem">Últimas pesquisas</h4>
+        ${table(['Quando', 'Tipo', 'Termo', 'Estado', 'Itens', 'Quem'], sRecRows, 'Sem pesquisas.')}
       </div>
 
       <div class="card" style="margin-top:1.2rem">
@@ -4937,6 +5046,7 @@ async function route() {
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
   whoami.innerHTML = `<a href="#/conta"><span class="nm">${esc(window._me.username)}</span><span class="co"><span class="co-nm">${esc(window._me.company?.name ?? '')}</span>${planPill}</span></a>`;
   renderTrialBanner(window._me);
+  renderAiQuotaBanner(window._caps, window._me);
   updateSidebar();
   ensureHelpButton();
   ensureAdminNav();

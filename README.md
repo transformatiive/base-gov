@@ -54,6 +54,7 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `SCRAPE_DELAY_MS` | `500` | Pausa entre pedidos ao BASE |
 | `MAX_RESULTS_PER_SEARCH` | `5000` | Limite de segurança por pesquisa |
 | `OPENROUTER_API_KEY` | vazio | Chave OpenRouter (análises de IA) |
+| `AI_CAP_ENABLED` | `true` | Teto de análises IA (40 Pro / 250 Business por utilizador / 30 dias). `false` desliga o bloqueio. |
 | `IVA_RATE` | `0.23` | Taxa de IVA aplicada aos preços dos planos |
 | `DIGEST_HOUR` | `8` | Hora de Lisboa para o digest (segunda-feira) e lembretes |
 | `REMINDER_DAYS` | `7,2` | Dias de antecedência dos lembretes de prazo (Pro) |

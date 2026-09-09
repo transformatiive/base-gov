@@ -264,6 +264,7 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
   #topbar nav a { padding: 0.7rem 0.85rem; font-size: 0.95rem; }
   #side-activity { display: block; }
   #trial-banner:not([hidden]) { margin: 10px 10px 0; }
+  #ai-quota-banner:not([hidden]) { margin: 10px 10px 0; }
   .side-foot { margin-top: auto; border-top: 1px solid var(--border); padding: 14px 12px; }
   main {
     padding: 16px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
@@ -472,6 +473,19 @@ a.side-activity .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
 #trial-banner .tb-sub { margin-top: 3px; opacity: 0.85; }
 #trial-banner a { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: #fff; background: var(--brand); border-radius: 7px; padding: 6px 12px; }
 #trial-banner a:hover { background: var(--brand-dark); text-decoration: none; }
+
+/* Teto de análises IA — faixa no topo da área de conteúdo */
+#ai-quota-banner { margin: 12px 16px 0; border-radius: 10px; padding: 11px 14px; font-size: 13px; }
+#ai-quota-banner[hidden] { display: none; }
+#ai-quota-banner.warn { background: #fff4e5; border: 1px solid #f0c989; color: #8a5a12; }
+#ai-quota-banner.alert,
+#ai-quota-banner.capped { background: var(--bad-bg); border: 1px solid var(--bad-border); color: var(--bad); }
+#ai-quota-banner .tb-title { font-weight: 700; }
+#ai-quota-banner .tb-sub { margin-top: 3px; opacity: 0.9; }
+#ai-quota-banner .tb-bar { height: 6px; background: rgba(0,0,0,.08); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+#ai-quota-banner .tb-bar > i { display: block; height: 100%; border-radius: 99px; background: currentColor; }
+#ai-quota-banner a { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: #fff; background: var(--brand); border-radius: 7px; padding: 6px 12px; }
+#ai-quota-banner a:hover { background: var(--brand-dark); text-decoration: none; }
 .pay-m { min-width: 120px; justify-content: center; }
 
 /* ---------- Detalhe de contrato/anúncio (linguagem "Atlas") ---------- */
