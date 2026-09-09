@@ -85,7 +85,7 @@ Por concurso ou renovação, a IA produz uma **ficha de oportunidade**:
 - **Rascunho assistido (.docx)** — extrai requisitos do caderno e gera um Word com o perfil da empresa (memória descritiva, capacidade técnica, equipa, referências, preço). O que faltar fica marcado `[A COMPLETAR]`; a IA não inventa. Edita no Word, volta a carregar, e vê o que ainda falta. A submissão no portal (Vortal, acinGov, etc.) é sempre manual.
 - **Previsão de valor de fecho** — estima o intervalo de adjudicação a partir do histórico de contratos semelhantes (não é um palpite genérico).
 
-### 5.11 Digest semanal e mesa de concursos
+### 5.11 Digest semanal e carteira de concursos
 - **Digest** — segunda-feira às 08:00 (Europa/Lisboa), no email: novos concursos de obras e reabilitações a entrar na janela de contacto. Grátis. Opt-out num clique.
 - **Pipeline de propostas** (grátis) — Nova → Interessa → Em preparação → Submetida → Ganha/Perdida, partilhado pela equipa.
 - **Lembretes de prazo** (Pro) — 7 e 2 dias antes, para o que está marcado Interessa / Em preparação.

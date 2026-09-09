@@ -121,7 +121,7 @@ export async function renderDigestEmail(
   const html = layout({
     title: `Resumo semanal · ${esc(profileName)}`,
     body,
-    cta: { label: 'Abrir a mesa de concursos', url: `${config.appBaseUrl || ''}/app#/hoje` },
+    cta: { label: 'Abrir o BaseRadar', url: `${config.appBaseUrl || ''}/app#/hoje` },
     footnote: `<a href="${optOutUrl}">Deixar de receber o digest</a>`,
   });
   return {
