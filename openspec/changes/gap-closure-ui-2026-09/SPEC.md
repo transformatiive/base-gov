@@ -509,7 +509,7 @@ Os Given/When/Then da Fable **mantêm-se**. A coluna «Verificação» diz se é
 
 #### GTM-04 — Funcionalidades sem pirotecnia
 - **URL:** `/#funcionalidades`
-- **Passa se:** mocks de obras, energia ou saúde e entidades públicas; resumo = email semanal (segunda 08:00); carteira de propostas ou mesa de trabalho mencionado.
+- **Passa se:** mocks de obras, energia ou saúde e entidades públicas; resumo = email semanal (segunda 08:00); carteira de propostas mencionado.
 - **Falha se:** «Grupo Luso», «Pirotec», «Festas».
 
 #### GTM-05 — Title, meta, CTAs
