@@ -63,3 +63,11 @@ test('páginas legais e guias usam o mesmo destino /app/#/…', () => {
   assert.match(index, /href="\/app\/#\/login"/);
   assert.match(index, /href="\/app\/#\/registo"/);
 });
+
+test('route() declara results antes de o usar — senão Hoje/Radar rebentam', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const decl = appJs.search(/const results = hash\.match\(\/\^#\\\/searches\\/);
+  const use = appJs.indexOf('if (results) return await renderResults');
+  assert.ok(decl >= 0, 'falta const results = hash.match(#/searches/…)');
+  assert.ok(use > decl, 'if (results) aparece antes da declaração');
+});

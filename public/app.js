@@ -5106,6 +5106,7 @@ async function route() {
   if (ajuda) return renderAjuda(ajuda[1] || '');
   if (hashBase === '#/qa') return renderQaChecklist();
   showBootSplash();
+  const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
   const contract = hashBase.match(/^#\/contracts\/(\d+)$/);
   const profile = hashBase.match(/^#\/profiles\/(\d+)(?:\/(\w+))?$/);
   const entity = hashBase.match(/^#\/entities\/(\d+)$/);
