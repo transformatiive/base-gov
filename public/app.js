@@ -191,9 +191,26 @@ const ICON_PATHS = {
   building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
+  calendar: '<path d="M8 3v3"/><path d="M16 3v3"/><path d="M4 9h16"/><rect x="4" y="5" width="16" height="15" rx="2"/>',
+  columns: '<rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6"/>',
+  chart: '<path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sliders: '<path d="M4 21V14"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 };
 const ico = (name, size = 15) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px">${ICON_PATHS[name] ?? ''}</svg>`;
+const navIco = (name, size = 16) =>
+  `<svg class="nav-ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] ?? ''}</svg>`;
+function hydrateNavIcons() {
+  document.querySelectorAll('#topbar nav a[data-nav-icon]').forEach((a) => {
+    if (a.querySelector(':scope > .nav-ico')) return;
+    a.insertAdjacentHTML('afterbegin', navIco(a.getAttribute('data-nav-icon')));
+  });
+}
 
 /* Wordmark Concursivo (igual ao do header). */
 const wordmark = (size = 20) =>
@@ -377,7 +394,7 @@ function applyNavGating() {
     const locked = feat && !can(feat);
     a.classList.toggle('nav-locked', !!locked);
     a.querySelector('.nav-lock')?.remove();
-    if (locked) a.insertAdjacentHTML('beforeend', ' <span class="nav-lock" aria-hidden="true" title="Plano superior">🔒</span>');
+    if (locked) a.insertAdjacentHTML('beforeend', `<span class="nav-lock" aria-hidden="true" title="Plano superior">${navIco('lock', 12)}</span>`);
   });
 }
 
@@ -4740,27 +4757,11 @@ async function renderUsageAdmin() {
 
 function normalizeAdminPlan(p) { return p === 'pro' || p === 'business' ? p : (p === 'baseradar' ? 'pro' : 'free'); }
 
-/* Liga "Admin" à navegação lateral (só para administradores). */
+/* Liga o grupo Admin à navegação lateral (só para administradores). */
 function ensureAdminNav() {
-  const nav = document.querySelector('#topbar nav');
-  if (!nav) return;
-  const existingAdmin = nav.querySelector('a[href="#/admin"]');
-  const existingUso = nav.querySelector('a[href="#/admin/uso"]');
-  if (!window._me?.is_admin) {
-    existingAdmin?.remove();
-    existingUso?.remove();
-    return;
-  }
-  if (!existingAdmin) {
-    const a = document.createElement('a');
-    a.href = '#/admin'; a.textContent = 'Admin';
-    nav.appendChild(a);
-  }
-  if (!existingUso) {
-    const a = document.createElement('a');
-    a.href = '#/admin/uso'; a.textContent = 'Utilização';
-    nav.appendChild(a);
-  }
+  const group = document.getElementById('nav-admin');
+  if (!group) return;
+  group.hidden = !window._me?.is_admin;
 }
 
 /* ---------- Feedback / ajuda: botão flutuante + modal ---------- */
@@ -4873,6 +4874,7 @@ function setAppNavOpen(open) {
 }
 
 function bindAppNav() {
+  hydrateNavIcons();
   const btn = document.getElementById('nav-toggle');
   const scrim = document.getElementById('nav-scrim');
   if (!btn || btn.dataset.bound) return;

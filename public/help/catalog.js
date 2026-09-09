@@ -24,10 +24,10 @@
     menuTour: {
       steps: [
         { href: '#/hoje', title: 'Hoje', body: 'O painel do dia: o que tem prazo, o que está na carteira e o valor em jogo. Comece sempre aqui.' },
-        { href: '#/radar/opportunities', feature: 'score_fit', title: 'Oportunidades', body: 'Concursos abertos e renovações da sua atividade, ordenados por score (valor, urgência, recorrência). A adequação IA aparece no plano Pro.' },
         { href: '#/pipeline', feature: 'pipeline', title: 'Carteira', body: 'Mesa de trabalho da empresa. Arraste cartas entre Interessa, Em preparação e Submetida. Os estados são partilhados.' },
-        { href: '#/radar/renewals', feature: 'renovacoes', title: 'Renovações', body: 'Contratos a terminar — a janela para contactar o cliente antes do novo procedimento.' },
+        { href: '#/radar/opportunities', feature: 'score_fit', title: 'Oportunidades', body: 'Concursos abertos e renovações da sua atividade, ordenados por score (valor, urgência, recorrência). A adequação IA aparece no plano Pro.' },
         { href: '#/radar/announcements', title: 'Concursos', body: 'Anúncios do BASE/DRE na sua atividade, incluindo no plano Grátis. Abra a ficha para prazos, peças e análise IA.' },
+        { href: '#/radar/renewals', feature: 'renovacoes', title: 'Renovações', body: 'Contratos a terminar — a janela para contactar o cliente antes do novo procedimento.' },
         { href: '#/radar/map', title: 'Mapa', body: 'Onde as entidades adjudicantes compram na sua área. Clique num distrito para o detalhe.' },
         { href: '#/radar/seasonality', title: 'Sazonalidade', body: 'Em que meses o mercado da sua atividade costuma abrir procedimentos.' },
         { href: '#/radar/competitors', feature: 'concorrentes', title: 'Concorrentes', body: 'Quem ganha os contratos no seu perfil: quota, volume e entidades em comum.' },
