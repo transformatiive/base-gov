@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css">
-  <link rel="stylesheet" href="/style.css?v=45">
+  <link rel="stylesheet" href="/style.css?v=46">
 </head>
 <body>
   <div id="shell">
@@ -20,17 +20,34 @@
       </button>
       <div id="nav-scrim" class="nav-scrim" hidden></div>
       <div class="nav-drawer" id="nav-drawer">
-        <nav>
-          <a href="#/hoje">Hoje</a>
-          <a href="#/radar/opportunities">Oportunidades</a>
-          <a href="#/pipeline">Carteira</a>
-          <a href="#/radar/renewals">Renovações</a>
-          <a href="#/radar/announcements">Concursos</a>
-          <a href="#/radar/map">Mapa</a>
-          <a href="#/radar/seasonality">Sazonalidade</a>
-          <a href="#/radar/competitors">Concorrentes</a>
-          <a href="#/entities">Entidades</a>
-          <a href="#/config">Configuração</a>
+        <nav aria-label="Secções da aplicação">
+          <div class="nav-group" role="group" aria-labelledby="nav-g-dia">
+            <h2 class="nav-group-label" id="nav-g-dia">Dia a dia</h2>
+            <a href="#/hoje" data-nav-icon="calendar"><span>Hoje</span></a>
+            <a href="#/pipeline" data-nav-icon="columns"><span>Carteira</span></a>
+            <a href="#/radar/opportunities" data-nav-icon="target"><span>Oportunidades</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="nav-g-radar">
+            <h2 class="nav-group-label" id="nav-g-radar">Radar</h2>
+            <a href="#/radar/announcements" data-nav-icon="doc"><span>Concursos</span></a>
+            <a href="#/radar/renewals" data-nav-icon="rotate"><span>Renovações</span></a>
+            <a href="#/radar/map" data-nav-icon="pin"><span>Mapa</span></a>
+            <a href="#/radar/seasonality" data-nav-icon="chart"><span>Sazonalidade</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="nav-g-mercado">
+            <h2 class="nav-group-label" id="nav-g-mercado">Mercado</h2>
+            <a href="#/radar/competitors" data-nav-icon="users"><span>Concorrentes</span></a>
+            <a href="#/entities" data-nav-icon="building"><span>Entidades</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="nav-g-conta">
+            <h2 class="nav-group-label" id="nav-g-conta">Conta</h2>
+            <a href="#/config" data-nav-icon="sliders"><span>Configuração</span></a>
+          </div>
+          <div class="nav-group" id="nav-admin" role="group" aria-labelledby="nav-g-admin" hidden>
+            <h2 class="nav-group-label" id="nav-g-admin">Admin</h2>
+            <a href="#/admin" data-nav-icon="shield"><span>Admin</span></a>
+            <a href="#/admin/uso" data-nav-icon="activity"><span>Utilização</span></a>
+          </div>
         </nav>
         <div id="side-activity"></div>
         <div id="trial-banner" hidden></div>
@@ -46,10 +63,10 @@
     </div>
   </div>
   <script src="/vendor/maplibre/maplibre-gl.js"></script>
-  <script src="/help/catalog.js?v=4"></script>
-  <script src="/help/manual/toc.js?v=1"></script>
+  <script src="/help/catalog.js?v=5"></script>
+  <script src="/help/manual/toc.js?v=2"></script>
   <script src="/help/qa-checklist.js?v=1"></script>
   <script src="/guide.js?v=2"></script>
-  <script src="/app.js?v=71"></script>
+  <script src="/app.js?v=72"></script>
 </body>
 </html>
