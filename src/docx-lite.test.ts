@@ -25,7 +25,7 @@ test('docx roundtrip preserves section text', async () => {
   const buf = buildDocx({
     title: 'Proposta — Conservação de espaços verdes',
     subtitle: 'Município de Sintra',
-    note: 'Rascunho gerado pelo BaseRadar.',
+    note: 'Rascunho gerado pelo Concursivo.',
     sections: [
       { title: 'Memória descritiva', body: 'A empresa propõe a manutenção anual.\n\nInclui monda e rega.' },
       { title: 'Referências', body: '[A COMPLETAR: referência de projeto semelhante em X]' },

@@ -1,4 +1,4 @@
-/* BaseRadar — design language "Atlas" (Schibsted Grotesk + verde-mata)
+/* Concursivo — design language "Atlas" (Schibsted Grotesk + verde-mata)
    Drop-in replacement for public/style.css — mesmos seletores que app.js/index.html.
    Font: Schibsted Grotesk (Google Fonts), ligada no index.html <head>. */
 :root {
@@ -36,12 +36,17 @@
   --sans: 'Schibsted Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { max-width: 100%; overflow-x: hidden; }
+html { margin: 0; }
 body {
+  max-width: 100%;
+  overflow-x: clip;
   font-family: var(--sans);
   margin: 0; background: var(--bg); color: var(--ink);
   font-size: 15px; line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+}
+@supports not (overflow-x: clip) {
+  body { overflow-x: hidden; }
 }
 img, svg { max-width: 100%; vertical-align: middle; }
 a { color: var(--brand); text-decoration: none; }
