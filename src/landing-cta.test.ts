@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { dirname, join } from 'node:path';
@@ -25,6 +26,11 @@ const sample: GuideRecord = {
   updated_at: '2026-09-08T12:00:00.000Z',
   author_agent: 'claude',
 };
+
+test('a SPA parseia: um } a mais em app.js impede Entrar e o registo', () => {
+  execFileSync('node', ['--check', join(root, 'public/app.js')], { stdio: 'pipe' });
+  execFileSync('node', ['--check', join(root, 'public/guide.js')], { stdio: 'pipe' });
+});
 
 test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.equal([...landing.matchAll(/href="\/app#\//g)].length, 0);

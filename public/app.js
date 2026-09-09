@@ -1275,7 +1275,6 @@ function renderAiQuotaBanner(caps, me) {
     <div class="tb-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
     ${level === 'capped' ? '<a href="#/planos">Ver planos</a>' : ''}`;
 }
-}
 
 /* Preenche o bloco "Atividade" da barra lateral com o perfil ativo. */
 async function updateSidebar() {
