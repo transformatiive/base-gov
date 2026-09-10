@@ -32,6 +32,26 @@ test('a SPA parseia: um } a mais em app.js impede Entrar e o registo', () => {
   execFileSync('node', ['--check', join(root, 'public/guide.js')], { stdio: 'pipe' });
 });
 
+test('landing, legais e SPA: SEO público vs app noindex', () => {
+  assert.match(landing, /<html lang="pt-PT">/);
+  assert.match(landing, /og:url" content="https:\/\/prepbid.com\/"/);
+  assert.match(landing, /og:locale" content="pt_PT"/);
+  assert.match(landing, /twitter:card" content="summary"/);
+  assert.match(landing, /application\/ld\+json/);
+  assert.match(landing, /FAQPage/);
+  assert.match(landing, /SoftwareApplication/);
+  assert.match(landing, /href="https:\/\/prepbid.com\/llms.txt"/);
+  assert.match(termos, /rel="canonical" href="https:\/\/prepbid.com\/termos"/);
+  assert.match(privacidade, /rel="canonical" href="https:\/\/prepbid.com\/privacidade"/);
+  assert.match(termos, /<html lang="pt-PT">/);
+  const index = readFileSync(join(root, 'public/index.html'), 'utf8');
+  assert.match(index, /<html lang="pt-PT">/);
+  assert.match(index, /name="robots" content="noindex, nofollow"/);
+  for (const json of landing.matchAll(/<script type="application\/ld\+json">([^<]+)<\/script>/g)) {
+    JSON.parse(json[1]);
+  }
+});
+
 test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.equal([...landing.matchAll(/href="\/app#\//g)].length, 0);
   assert.match(landing, /class="enter"[^>]*href="\/app\/#\/login">Entrar/);
