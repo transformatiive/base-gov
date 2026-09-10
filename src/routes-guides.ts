@@ -6,12 +6,15 @@ import { pool } from './db.js';
 import {
   GUIDE_AGENT_SPEC,
   guideRecordFromRow,
+  llmsFullTxt,
   llmsTxt,
   markdownToHtml,
   parseGuidePayload,
+  parsePublicGuideParam,
   publicSiteOrigin,
   renderGuideArticleHtml,
   renderGuideIndexHtml,
+  renderGuideMarkdown,
   resolveGuideAgent,
   robotsTxt,
   sitemapXml,
@@ -74,6 +77,12 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
     );
   });
 
+  app.get('/llms-full.txt', async (_req, reply) => {
+    const published = await listPublished();
+    reply.type('text/plain; charset=utf-8');
+    return llmsFullTxt(origin(), published);
+  });
+
   const sendIndex = async (req: FastifyRequest, reply: FastifyReply) => {
     ingestPublicPage(req, reply, '/guias');
     const published = await listPublished();
@@ -84,12 +93,16 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
   app.get('/guias/', sendIndex);
 
   app.get<{ Params: { slug: string } }>('/guias/:slug', async (req, reply) => {
-    const slug = req.params.slug.replace(/\.html$/i, '');
+    const { slug, format } = parsePublicGuideParam(req.params.slug);
     const guide = await loadGuide(slug);
     if (!guide || guide.status !== 'published') {
       return reply.code(404).type('text/plain; charset=utf-8').send('Guia não encontrado.');
     }
-    ingestPublicPage(req, reply, `/guias/${slug}`);
+    ingestPublicPage(req, reply, `/guias/${slug}${format === 'markdown' ? '.md' : ''}`);
+    if (format === 'markdown') {
+      reply.type('text/markdown; charset=utf-8');
+      return renderGuideMarkdown(origin(), guide);
+    }
     reply.type('text/html; charset=utf-8');
     return renderGuideArticleHtml(origin(), guide);
   });

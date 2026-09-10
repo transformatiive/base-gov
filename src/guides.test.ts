@@ -9,7 +9,11 @@ import {
   sitemapXml,
   renderGuideIndexHtml,
   renderGuideArticleHtml,
+  renderGuideMarkdown,
   resolveGuideAgent,
+  parsePublicGuideParam,
+  llmsTxt,
+  llmsFullTxt,
   PUBLIC_SITE_FALLBACK,
   type GuideRecord,
 } from './guides.js';
@@ -76,8 +80,10 @@ test('robots.txt e sitemap.xml: só guias publicados, sem \/app', () => {
   ]);
   assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias<\/loc>/);
   assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias\/ajuste-direto-e-concurso-publico<\/loc>/);
+  assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias\/ajuste-direto-e-concurso-publico\.md<\/loc>/);
   assert.doesNotMatch(xml, /o-que-e-o-base-gov/);
   assert.doesNotMatch(xml, /\/app</);
+  assert.match(robots, /llms\.txt/);
 });
 
 test('o seed inicial não inclui o artigo do BASE.gov', () => {
@@ -110,9 +116,13 @@ const sample: GuideRecord = {
 
 test('HTML público responde na primeira frase e inclui JSON-LD FAQ', () => {
   const page = renderGuideArticleHtml('https://baseradar.example', sample);
+  assert.match(page, /<html lang="pt-PT">/);
   assert.match(page, /<link rel="canonical" href="https:\/\/baseradar\.example\/guias\/como-prever-o-valor-de-adjudicacao">/);
+  assert.match(page, /rel="alternate" type="text\/markdown"/);
+  assert.match(page, /og:locale" content="pt_PT"/);
   assert.match(page, /application\/ld\+json/);
   assert.match(page, /FAQPage/);
+  assert.match(page, /BreadcrumbList/);
   assert.match(page, /O valor adjudicado costuma ficar abaixo/);
   assert.match(page, /Começar grátis/);
   assert.match(page, /href="\/app\/#\/registo"/);
@@ -124,9 +134,31 @@ test('índice agrupa por intenção e omite rascunhos', () => {
     sample,
     { ...sample, slug: 'rascunho', status: 'draft', title: 'Rascunho invisível' },
   ]);
+  assert.match(html, /<html lang="pt-PT">/);
+  assert.match(html, /CollectionPage/);
   assert.match(html, /como-prever-o-valor-de-adjudicacao/);
   assert.doesNotMatch(html, /rascunho/);
   assert.match(html, /Ferramenta/);
+});
+
+test('versão markdown e llms.txt apontam para o mesmo guia', () => {
+  assert.deepEqual(parsePublicGuideParam('como-prever-o-valor-de-adjudicacao.md'), {
+    slug: 'como-prever-o-valor-de-adjudicacao',
+    format: 'markdown',
+  });
+  const md = renderGuideMarkdown('https://baseradar.example', sample);
+  assert.match(md, /^---\n/);
+  assert.match(md, /canonical: https:\/\/baseradar\.example\/guias\/como-prever-o-valor-de-adjudicacao/);
+  assert.match(md, /Porque o preço base engana\?/);
+  assert.match(md, /### Isto substitui a proposta\?/);
+  const catalog = llmsTxt('https://baseradar.example', [
+    { slug: sample.slug, title: sample.title, description: sample.description },
+  ]);
+  assert.match(catalog, /llms-full\.txt/);
+  assert.match(catalog, /\.md\): /);
+  const full = llmsFullTxt('https://baseradar.example', [sample]);
+  assert.match(full, /# Corpo dos guias/);
+  assert.match(full, /É o teto, não o mercado/);
 });
 
 test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov', () => {
