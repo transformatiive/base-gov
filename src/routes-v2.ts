@@ -235,7 +235,17 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query('SELECT * FROM opendata_imports ORDER BY year DESC, created_at DESC');
     const { rows: [tot] } = await pool.query(
       `SELECT count(*) AS n FROM contracts WHERE opendata_imported`);
-    return { total_opendata_contracts: Number(tot.n), items: rows };
+    const { rows: [sync] } = await pool.query('SELECT last_check_at, last_error FROM opendata_sync WHERE id = 1');
+    const nowYear = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon', year: 'numeric' }).format(new Date()));
+    return {
+      total_opendata_contracts: Number(tot.n),
+      items: rows,
+      sync: {
+        last_check_at: sync?.last_check_at ?? null,
+        last_error: sync?.last_error ?? null,
+        auto_years: [nowYear - 1, nowYear],
+      },
+    };
   });
 
   app.post('/api/opendata/import', { preHandler: requireAuth }, async (req, reply) => {
@@ -252,7 +262,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         `SELECT 1 FROM opendata_imports WHERE year = $1 AND status IN ('pending','running')`, [year]);
       if (dup.length > 0) continue;
       const { rows } = await pool.query(
-        'INSERT INTO opendata_imports (year) VALUES ($1) RETURNING id', [year]);
+        `INSERT INTO opendata_imports (year, origin) VALUES ($1, 'manual') RETURNING id`, [year]);
       created.push(rows[0].id);
     }
     return reply.code(201).send({ created });

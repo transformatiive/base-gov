@@ -227,6 +227,20 @@ CREATE TABLE IF NOT EXISTS opendata_imports (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS source_checksum TEXT;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS source_modified TIMESTAMPTZ;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS source_filesize BIGINT;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS inserted_rows INT NOT NULL DEFAULT 0;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS updated_rows INT NOT NULL DEFAULT 0;
+ALTER TABLE opendata_imports ADD COLUMN IF NOT EXISTS unchanged_rows INT NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS opendata_sync (
+  id            INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  last_check_at TIMESTAMPTZ,
+  last_error    TEXT
+);
+INSERT INTO opendata_sync (id) VALUES (1) ON CONFLICT DO NOTHING;
 
 -- Catálogo CPV construído a partir do corpus (código + designação PT + frequência)
 CREATE TABLE IF NOT EXISTS cpv_catalog (
