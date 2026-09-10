@@ -80,9 +80,11 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.doesNotMatch(appJs, /[Mm]esa de trabalho/);
   assert.doesNotMatch(catalog, /[Mm]esa de trabalho/);
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
+  assert.match(appJs, /O que a empresa ainda tem de fazer/);
+  assert.doesNotMatch(appJs, /A checklist de preparação precisa das peças/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
-  assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=78/);
+  assert.match(index, /catalog\.js\?v=7/);
+  assert.match(index, /app\.js\?v=79/);
 });
 
 test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
