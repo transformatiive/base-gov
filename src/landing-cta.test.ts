@@ -140,4 +140,14 @@ test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {
   assert.match(ribbon, /transform:translateX\(-50%\)/);
   assert.match(ribbon, /background:var\(--brand\)/);
   assert.match(landing, /<div class="ribbon">PARA A EQUIPA<\/div>/);
+  assert.match(
+    landing,
+    /<div class="plan hi">[\s\S]*?href="\/app\/#\/registo">Experimentar 7 dias grátis/,
+  );
+  assert.match(
+    landing,
+    /<div class="pfine"><a href="\/app\/#\/registo">Experimente o Business 7 dias grátis, sem cartão<\/a><\/div>/,
+  );
+  assert.match(landing, /\.plan \.ptag\{[^}]*min-height:4\.5em/);
+  assert.match(landing, /\.plan ul\{[^}]*margin:auto 0 0/);
 });
