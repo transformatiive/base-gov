@@ -768,7 +768,7 @@ export async function responseTemplate(announcementId: number, profileId: number
   const system = `És um consultor sénior de contratação pública portuguesa (CCP — DL 111-B/2017).
 ${ctx}
 ${extra.ctx}
-Gera um DOSSIER DE RESPOSTA em markdown para este procedimento, com placeholders claros no formato [PLACEHOLDER: descrição], contendo:
+Gera um DOSSIER DE RESPOSTA em markdown para este procedimento, com placeholders no formato [A COMPLETAR: descrição], contendo:
 1. **Checklist de submissão** — documentos a carregar na plataforma eletrónica indicada, prazos, assinatura digital qualificada, quem assina;
 2. **Declaração Anexo I do CCP** (aceitação do conteúdo do caderno de encargos, art. 57.º n.º 1 a)) — texto completo com placeholders da empresa;
 3. **Estrutura da Memória Descritiva/Proposta Técnica** — secções alinhadas EXATAMENTE aos critérios e ponderações de adjudicação deste concurso, com orientação do que escrever em cada secção para maximizar pontuação;

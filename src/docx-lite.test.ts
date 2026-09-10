@@ -15,10 +15,12 @@ import {
 } from './docx-brand.js';
 import {
   buildDocx,
+  buildDossierDocx,
   extractDocxText,
   textFromDocumentXml,
   buildProposalDocumentXml,
   readDocxPart,
+  sectionsFromMarkdown,
 } from './docx-lite.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -120,4 +122,33 @@ test('docx roundtrip preserves section text e a marca', async () => {
   const docXml = doc.toString('utf8');
   assert.match(docXml, /IBM Plex Mono/);
   assert.match(docXml, /12 500 €/);
+});
+
+test('sectionsFromMarkdown: headings, listas e [PLACEHOLDER] viram secções PrepBid', () => {
+  const input = sectionsFromMarkdown(`# Dossier X
+## Checklist de submissão
+- Assinar com [PLACEHOLDER: certificado]
+- Carregar na plataforma
+
+## Memória descritiva
+Texto **técnico**.
+`, 'fallback');
+  assert.equal(input.title, 'Dossier X');
+  assert.equal(input.sections[0].title, 'Checklist de submissão');
+  assert.match(input.sections[0].body, /· Assinar/);
+  assert.match(input.sections[0].body, /\[A COMPLETAR: certificado\]/);
+  assert.doesNotMatch(input.sections[0].body, /PLACEHOLDER/);
+  assert.equal(input.sections[1].title, 'Memória descritiva');
+  assert.match(input.sections[1].body, /Texto técnico/);
+});
+
+test('buildDossierDocx é OOXML com lockup e sem Calibri', async () => {
+  const buf = buildDossierDocx('## Preço\nBase 12 500 € e [PLACEHOLDER: valor da proposta].', 'Limpeza urbana');
+  assert.equal(buf.readUInt32LE(0), 0x04034b50);
+  const text = await extractDocxText(buf);
+  assert.match(text, /^PrepBid\nCONTRATOS\nPÚBLICOS\n/);
+  assert.match(text, /Dossier de resposta — Limpeza urbana/);
+  assert.match(text, /\[A COMPLETAR: valor da proposta\]/);
+  const styles = (await readDocxPart(buf, 'word/styles.xml'))!.toString('utf8');
+  assert.doesNotMatch(styles, /Calibri/);
 });

@@ -694,7 +694,26 @@ function aiProgressStepIndex(elapsedSec, nSteps) {
   return last;
 }
 function aiProgressPct(elapsedSec) {
-  return Math.min(88, 8 + elapsedSec * 2.1);
+  const t = Math.max(0, elapsedSec);
+  const rising = 8 + t * 2.1;
+  if (rising < 88) return rising;
+  const after = t - (88 - 8) / 2.1;
+  return Math.min(94, 88 + after * 0.15);
+}
+
+const AI_STILL_WORKING = [
+  'Ainda a trabalhar — a IA continua, não ficou preso…',
+  'Isto pode levar cerca de um minuto em procedimentos longos…',
+  'A gerar o resultado — aguarde mais uns segundos…',
+];
+
+function aiProgressMessage(steps, elapsedSec) {
+  const t = Math.max(0, elapsedSec);
+  if (!steps.length) return AI_STILL_WORKING[Math.floor(t / 4) % AI_STILL_WORKING.length];
+  const i = aiProgressStepIndex(t, steps.length);
+  const lastStart = steps.length <= 1 ? 0 : steps.length === 2 ? 4 : steps.length === 3 ? 9 : steps.length === 4 ? 16 : 24;
+  if (i < steps.length - 1 || t < lastStart + 4) return steps[Math.min(i, steps.length - 1)];
+  return AI_STILL_WORKING[Math.floor((t - lastStart - 4) / 4) % AI_STILL_WORKING.length];
 }
 
 let _aiInlineTimer = null;
@@ -704,11 +723,11 @@ function aiInlineStart(steps) {
   _aiInlineTimer = setInterval(() => {
     const s = (Date.now() - t0) / 1000;
     const pct = aiProgressPct(s);
-    const i = aiProgressStepIndex(s, steps.length);
+    const msg = aiProgressMessage(steps, s);
     const bar = document.getElementById('ai-inline-bar');
     const stepEl = document.getElementById('ai-inline-step');
     if (bar) bar.style.width = pct + '%';
-    if (stepEl) stepEl.textContent = steps[i];
+    if (stepEl) stepEl.textContent = msg;
   }, 400);
 }
 function aiInlineStop() {
@@ -769,19 +788,19 @@ async function startFichaAi({ kind, id, force = false }) {
           'A montar a lista de verificação de submissão na plataforma…',
           'A redigir a declaração do Anexo I do CCP…',
           'A estruturar a memória descritiva alinhada aos critérios…',
-          'A preparar os placeholders da sua empresa…',
+          'A montar o documento Word com a identidade PrepBid…',
         ]);
         try {
           const t = await api(`/api/announcements/${id}/response-template`, { method: 'POST', body: JSON.stringify({ profile_id: pid }) });
           loadCaps(true).then((c) => renderAiQuotaBanner(c, window._me));
-          const blob = new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body><pre style="font-family:Calibri,Arial,sans-serif;white-space:pre-wrap">' + t.markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></body></html>'], { type: 'application/msword' });
-          const url = URL.createObjectURL(blob);
+          const fname = esc(t.file_name || `dossier-resposta-${id}.docx`);
           document.getElementById('ai-template-out').innerHTML = `
             <div class="card" style="margin-top:0.6rem">
-              <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
-                <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
-              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--pb-radius);padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
+              <div class="toolbar"><h3 style="margin:0">Dossier de resposta</h3>
+                <a class="btn-secondary" href="/api/announcements/${id}/response-template.docx" download="${fname}">${ico('download')} Descarregar .docx</a></div>
+              <p class="muted" style="margin:0.6rem 0 0">Documento Word com a identidade PrepBid. Complete os campos [A COMPLETAR]. A submissão no portal é sempre manual.</p>
             </div>`;
+          tbtn.disabled = false;
         } catch (err) {
           document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
           tbtn.disabled = false;
@@ -2924,19 +2943,14 @@ function aiModalOpen(steps) {
       <p class="muted" id="ai-modal-step" style="text-align:center;min-height:2.2em;margin:0.7rem 0 0">${esc(steps[0])}</p>
     </div>`;
   document.body.appendChild(el);
-  let i = 0;
-  let pct = 4;
+  const t0 = Date.now();
   const bar = () => document.getElementById('ai-progress-bar');
   const stepEl = () => document.getElementById('ai-modal-step');
   _aiModalTimer = setInterval(() => {
-    // progresso assimptótico até 92% (o salto para 100% acontece no fecho)
-    pct = Math.min(92, pct + Math.max(0.6, (92 - pct) * 0.06));
-    if (bar()) bar().style.width = pct + '%';
-    if (Math.random() < 0.16 && i < steps.length - 1) {
-      i++;
-      if (stepEl()) stepEl().textContent = steps[i];
-    }
-  }, 350);
+    const s = (Date.now() - t0) / 1000;
+    if (bar()) bar().style.width = aiProgressPct(s) + '%';
+    if (stepEl()) stepEl().textContent = aiProgressMessage(steps, s);
+  }, 400);
 }
 function aiModalClose() {
   if (_aiModalTimer) { clearInterval(_aiModalTimer); _aiModalTimer = null; }
