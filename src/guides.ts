@@ -260,8 +260,25 @@ export const GUIDE_AGENT_SPEC = {
 } as const;
 
 export function publicSiteOrigin(appBaseUrl: string): string {
+  const override = (process.env.PUBLIC_SITE_URL || '').replace(/\/$/, '');
+  if (override) return override;
   const trimmed = appBaseUrl.replace(/\/$/, '');
-  return trimmed || PUBLIC_SITE_FALLBACK;
+  if (!trimmed) return PUBLIC_SITE_FALLBACK;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.endsWith('.up.railway.app') ||
+      host.endsWith('.railway.app') ||
+      host.endsWith('.railway.internal')
+    ) {
+      return PUBLIC_SITE_FALLBACK;
+    }
+  } catch {
+    return PUBLIC_SITE_FALLBACK;
+  }
+  return trimmed;
 }
 
 export function robotsTxt(origin: string): string {
