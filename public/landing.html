@@ -52,10 +52,12 @@
     /* Nav */
     .nav{position:sticky;top:0;z-index:400;background:var(--panel);border-bottom:1px solid var(--line);isolation:isolate}
     .nav-in{display:flex;align-items:center;justify-content:space-between;padding-top:16px;padding-bottom:16px;gap:12px;min-width:0}
-    .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-    .brand .name,.brand .pb-wordmark{font:var(--pb-wordmark);letter-spacing:var(--pb-wordmark-tracking);color:var(--pb-ink);font-style:normal}
+    .brand{display:flex;align-items:center;gap:0;min-width:0;flex:1}
+    .brand .name,.brand .pb-wordmark{font:var(--pb-wordmark);letter-spacing:var(--pb-wordmark-tracking);color:var(--pb-ink);font-style:normal;flex:none}
     .brand .name em{font-style:normal;font-weight:inherit;color:inherit}
-    .brand .tag{display:block;font:var(--pb-label);letter-spacing:var(--pb-label-tracking);text-transform:uppercase;color:var(--pb-ink-42)}
+    /* Variante A: filete 1px a 20 % de tinta, 66 % da maiúscula; intervalos 0,28×M. */
+    .brand-rule{width:1px;height:calc(19px * 0.7 * 0.66);margin-inline:calc(19px * 0.83 * 0.28);background:var(--pb-ink);opacity:.2;flex:none;align-self:center}
+    .brand .tag{display:block;font-family:var(--pb-font-sans);font-weight:500;font-size:7.5px;line-height:1.2;letter-spacing:.2em;text-transform:uppercase;color:var(--pb-grey);flex:none}
     .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:var(--ink2)}
     .nav-links a{color:var(--ink2)}
     .nav-links a:hover{color:var(--brand)}
@@ -99,8 +101,15 @@
     .injogo .val{font:var(--pb-numeric-l);font-size:21px;font-variant-numeric:tabular-nums;margin-top:2px;color:var(--pb-green-light)}
     .injogo .r{font-size:11.5px;color:var(--pb-green-light);text-align:right}
 
-    /* Bands */
-    .band{background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:64px 0}
+    /* Faixas a toda a largura: papel (cinza actual) e superfície (branco). */
+    .band{padding:64px 0}
+    .band--paper{background:var(--pb-paper)}
+    .band--surface{background:var(--pb-surface)}
+    .band--ink{background:var(--pb-ink);color:var(--pb-paper)}
+    .band--hero,.band--foot{padding:0}
+    .band--surface .step,
+    .band--surface .plan,
+    .band--surface .faq details{background:var(--pb-paper)}
     .sect-eyebrow{font-size:11.5px;font-weight:700;letter-spacing:0.1em;color:var(--tint-text);margin-bottom:10px}
     h2.sect{font-size:28px;font-weight:700;letter-spacing:-0.02em;margin:0 0 36px;max-width:560px}
     .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
@@ -110,7 +119,7 @@
     .step p{font-size:13.5px;color:var(--ink2);line-height:1.65;margin:0}
 
     /* Features + pricing */
-    .feat-sect{padding-top:64px;padding-bottom:64px}
+    .feat-sect{padding-top:0;padding-bottom:0}
     .feat-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start}
     .feat-list{display:flex;flex-direction:column;gap:18px}
     .feat{display:flex;gap:14px}
@@ -128,7 +137,7 @@
     .pricing .fine{text-align:center;font-size:11.5px;color:var(--on-muted);margin-top:10px}
     /* Funcionalidades a toda a largura (2×2) + planos em 3 colunas */
     .feat-only{display:grid;grid-template-columns:1fr 1fr;gap:22px 48px}
-    .plans-sect{padding-top:8px;padding-bottom:8px}
+    .plans-sect{padding-top:0;padding-bottom:0}
     .plans-sect .sub{font-size:15px;color:var(--ink2);max-width:560px;margin:10px 0 0}
     .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:stretch;margin-top:32px;min-width:0}
     .plan{background:var(--card);border:1px solid var(--line);border-radius:var(--pb-radius);padding:30px 26px 26px;display:flex;flex-direction:column;position:relative;min-width:0}
@@ -242,14 +251,16 @@
     .prop-chips .mid{background:var(--pb-amber-tint);color:var(--pb-amber)}
     .prop-chips .bad{background:var(--pb-garnet-tint);color:var(--pb-garnet)}
 
-    /* Footer */
-    .foot{padding-top:24px;padding-bottom:24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-    .foot .c{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+    /* Footer — reversa 03: tinta, palavra papel */
+    .foot{padding-top:28px;padding-bottom:28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+    .foot .foot-brand{text-decoration:none;color:var(--pb-paper)}
+    .foot .foot-brand:hover{text-decoration:none;color:var(--pb-paper)}
+    .foot .c{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--pb-paper)}
     .foot .c .logo-mark{width:20px;height:20px;border-radius:var(--pb-radius)}
     .foot .c .logo-mark svg{width:20px;height:20px}
-    .foot .links{display:flex;gap:20px;font-size:12.5px;color:var(--muted)}
-    .foot .links a{color:var(--muted)}
-    .foot .links a:hover{color:var(--brand)}
+    .foot .links{display:flex;gap:20px;font-size:12.5px}
+    .foot .links a{color:var(--pb-paper)}
+    .foot .links a:hover{color:var(--pb-green-light)}
 
     /* Depoimentos + FAQ (abaixo dos planos) */
     .quotes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
@@ -272,7 +283,7 @@
       .hero{grid-template-columns:minmax(0,1fr);gap:36px;padding-top:44px;padding-bottom:44px}
       h1.hero-h{font-size:34px;max-width:none}
       .nav-toggle{display:inline-flex}
-      .brand .tag{display:none}
+      .brand .tag,.brand-rule{display:none}
       .nav.nav-open .nav-toggle .ico-menu{display:none}
       .nav.nav-open .nav-toggle .ico-close{display:block}
       .nav-links{
@@ -301,7 +312,7 @@
       .nav-cta{gap:6px}
       .nav-cta .enter{display:inline-flex;padding:8px 12px;border:1px solid var(--line);background:var(--pb-surface);white-space:nowrap}
       .nav-cta .start{display:none}
-      .brand .tag{display:none}
+      .brand .tag,.brand-rule{display:none}
       .eyebrow{font-size:11px;padding:6px 12px;white-space:normal;line-height:1.35;max-width:100%}
       h1.hero-h{font-size:28px;line-height:1.18;margin-bottom:14px}
       .hero{padding-top:28px;padding-bottom:32px;gap:24px}
@@ -318,7 +329,7 @@
       .opp .ti{font-size:12.5px}
       .injogo{align-items:flex-start;gap:10px}
       .band{padding:40px 0}
-      .feat-sect{padding-top:40px;padding-bottom:40px}
+      .band--hero,.band--foot{padding:0}
       h2.sect{font-size:24px;margin-bottom:24px}
       .step,.plan{padding:22px 18px}
       .quote{padding:20px 18px}
@@ -344,7 +355,9 @@
   <div class="nav">
     <div class="wrap nav-in">
       <a class="brand" href="/">
-        <span class="pb-wordmark">PrepBid</span><span class="tag">CONTRATOS PÚBLICOS</span>
+        <span class="pb-wordmark">PrepBid</span>
+        <span class="brand-rule" aria-hidden="true"></span>
+        <span class="tag">Contratos<br>públicos</span>
       </a>
       <div class="nav-links" id="land-nav-links">
         <a href="#como">Como funciona</a>
@@ -366,6 +379,7 @@
     </div>
   </div>
 
+  <div class="band band--paper band--hero">
   <div class="wrap hero">
     <div>
       <div class="eyebrow">Responsável por concursos · obras, energia e saúde</div>
@@ -404,8 +418,9 @@
       </div>
     </div>
   </div>
+  </div>
 
-  <div class="band" id="como">
+  <div class="band band--surface" id="como">
     <div class="wrap">
       <div class="sect-eyebrow">COMO FUNCIONA</div>
       <h2 class="sect">Do perfil à proposta.</h2>
@@ -417,7 +432,8 @@
     </div>
   </div>
 
-  <div class="wrap feat-sect" id="funcionalidades">
+  <div class="band band--paper" id="funcionalidades">
+  <div class="wrap feat-sect">
     <div class="sect-eyebrow">FUNCIONALIDADES</div>
     <h2 class="sect" style="margin-bottom:24px">Tudo o que a equipa de concursos precisa.</h2>
     <div class="feat-cards">
@@ -549,9 +565,10 @@
 
     </div>
   </div>
+  </div>
 
-  <div class="band">
-    <div class="wrap plans-sect" id="preco">
+  <div class="band band--surface" id="preco">
+    <div class="wrap plans-sect">
       <div class="sect-eyebrow">PLANOS</div>
       <h2 class="sect">Escolha o plano da sua equipa.</h2>
       <p class="sub">Comece grátis, sem cartão e sem reunião comercial. Suba de plano quando precisar — cancele quando quiser.</p>
@@ -617,7 +634,8 @@
     </div>
   </div>
 
-  <div class="wrap quotes-sect" id="depoimentos" style="padding-top:56px;padding-bottom:24px">
+  <div class="band band--paper" id="depoimentos">
+  <div class="wrap quotes-sect">
     <div class="sect-eyebrow">NA EQUIPA DE CONCURSOS</div>
     <h2 class="sect">O que a equipa passa a ver, todos os dias.</h2>
     <p class="quote-note">Exemplos ilustrativos — perfis típicos de quem responde a concursos, não depoimentos de empresas nomeadas.</p>
@@ -636,8 +654,10 @@
       </figure>
     </div>
   </div>
+  </div>
 
-  <div class="wrap faq-sect" id="faq" style="padding-top:32px;padding-bottom:64px">
+  <div class="band band--surface" id="faq">
+  <div class="wrap faq-sect">
     <div class="sect-eyebrow">PERGUNTAS FREQUENTES</div>
     <h2 class="sect">Antes de começar, as respostas curtas.</h2>
     <div class="faq">
@@ -683,10 +703,13 @@
       </details>
     </div>
   </div>
+  </div>
 
+  <footer class="band band--ink band--foot">
   <div class="wrap foot">
+    <a class="foot-brand" href="/"><span class="pb-wordmark pb-wordmark--reverse">PrepBid</span></a>
     <div class="c">
-      PrepBid © 2026 · um produto da <strong>Transformatiive, Lda.</strong> · Fonte: Portal BASE — IMPIC / dados.gov.pt
+      © 2026 · um produto da <strong>Transformatiive, Lda.</strong> · Fonte: Portal BASE — IMPIC / dados.gov.pt
     </div>
     <div class="links">
       <a href="/guias">Guias</a>
@@ -696,6 +719,7 @@
       <a href="/app/#/registo">Começar grátis</a>
     </div>
   </div>
+  </footer>
 
   <script>
     (function () {
