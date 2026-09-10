@@ -213,6 +213,8 @@ test('guia: em viewport mobile não monta splash nem tour', async () => {
     maybeSplash: () => Promise<void>;
     startMenuTour: () => Promise<void>;
     maybeScreenCoach: (id: string) => Promise<void>;
+    replayMenuTour: () => Promise<void>;
+    replayScreen: (id: string) => Promise<void>;
     afterView: (id: string) => void;
     isRunning: () => boolean;
     isMobileLayout: () => boolean;
@@ -221,7 +223,10 @@ test('guia: em viewport mobile não monta splash nem tour', async () => {
   await g.maybeSplash();
   await g.startMenuTour();
   await g.maybeScreenCoach('hoje');
+  await g.replayMenuTour();
+  await g.replayScreen('hoje');
   g.afterView('hoje');
   assert.equal(g.isRunning(), false);
   assert.equal(appended.length, 0);
+  assert.equal(Object.keys(local).length, 0);
 });

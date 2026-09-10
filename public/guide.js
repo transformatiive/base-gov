@@ -457,11 +457,13 @@
   }
 
   function replayMenuTour() {
+    if (isMobileLayout()) return Promise.resolve();
     save({ menuTourDone: false });
     return startMenuTour();
   }
 
   function replayScreen(id) {
+    if (isMobileLayout()) return Promise.resolve();
     var s = {};
     s[id] = false;
     save({ screens: s });
