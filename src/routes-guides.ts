@@ -53,14 +53,21 @@ async function listPublished(): Promise<GuideRecord[]> {
   return rows.map((r) => guideRecordFromRow(r as Record<string, unknown>));
 }
 
+function crawlerNoStore(reply: FastifyReply): void {
+  reply.header('Cache-Control', 'public, max-age=0, must-revalidate');
+  reply.header('CDN-Cache-Control', 'no-store');
+}
+
 export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<void> {
   app.get('/robots.txt', async (_req, reply) => {
+    crawlerNoStore(reply);
     reply.type('text/plain; charset=utf-8');
     return robotsTxt(origin());
   });
 
   app.get('/sitemap.xml', async (_req, reply) => {
     const published = await listPublished();
+    crawlerNoStore(reply);
     reply.type('application/xml; charset=utf-8');
     return sitemapXml(
       origin(),
@@ -70,6 +77,7 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
 
   app.get('/llms.txt', async (_req, reply) => {
     const published = await listPublished();
+    crawlerNoStore(reply);
     reply.type('text/plain; charset=utf-8');
     return llmsTxt(
       origin(),
@@ -79,6 +87,7 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
 
   app.get('/llms-full.txt', async (_req, reply) => {
     const published = await listPublished();
+    crawlerNoStore(reply);
     reply.type('text/plain; charset=utf-8');
     return llmsFullTxt(origin(), published);
   });

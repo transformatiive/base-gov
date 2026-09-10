@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   GUIDE_SEED,
   parseGuidePayload,
@@ -170,6 +171,12 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
     assert.doesNotMatch(seed.markdown, /o-que-e-o-base-gov/);
     assert.ok(countH2ForTest(seed.markdown) >= 2);
   }
+});
+
+test('robots.txt e sitemap.xml saem com Cache-Control curto para a CDN', () => {
+  const src = readFileSync(new URL('./routes-guides.ts', import.meta.url), 'utf8');
+  assert.match(src, /CDN-Cache-Control['"]?, 'no-store'/);
+  assert.match(src, /crawlerNoStore\(reply\)/);
 });
 
 function countH2ForTest(markdown: string): number {
