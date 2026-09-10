@@ -744,11 +744,11 @@ async function startFichaAi({ kind, id, force = false }) {
     const itemType = kind === 'contract' ? 'renovacao' : 'anuncio_aberto';
     let docNote = '';
     if (kind === 'contract' && r.docs_used === 0) {
-      docNote = '<p class="hint">Nenhum documento PDF disponível para este contrato — a análise usou apenas os dados estruturados. Para análises completas, active «Descarregar documentos PDF» na pesquisa/perfil.</p>';
+      docNote = '<p class="hint">Sem PDF do contrato na PrepBid. A análise usou dados estruturados (datas, preço, CPV, entidades) e adjudicações semelhantes, quando existem. Active «Descarregar documentos PDF» no perfil para incluir caderno e relatório de adjudicação.</p>';
     } else if (kind === 'announcement' && r.docs_used > 0) {
       docNote = `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`;
     } else if (kind === 'announcement' && (r.docs_used === 0 || r.docs_used === -1)) {
-      docNote = '<p class="hint">A análise usa o anúncio do Diário da República e os dados estruturados. Sem peças/caderno acessíveis, a checklist de preparação não é gerada.</p>';
+      docNote = '<p class="hint">A análise usa o anúncio do Diário da República e os dados estruturados. Sem peças acessíveis, as especificações técnicas podem ficar incompletas.</p>';
     }
     const dossier = kind === 'announcement'
       ? `<p style="margin-top:0.6rem"><button type="button" class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
@@ -4070,14 +4070,21 @@ function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
     : (an.requisitos_habilitacao?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${an.requisitos_habilitacao.map((i) => `<li>${esc(typeof i === 'string' ? i : i.text)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const list = (arr) => (arr?.length ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${arr.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>');
   const checks = Array.isArray(an.checklist) ? an.checklist : [];
-  const emptyChecklistHint = (docsUsed === -1 || docsUsed === 0 || !checks.length)
-    ? '<p class="muted">A análise é do anúncio do Diário da República. A checklist de preparação precisa das peças do procedimento (caderno de encargos).</p>'
-    : '<p class="muted">Gere a análise de IA para obter a lista de verificação de preparação</p>';
+  const specs = Array.isArray(an.especificacoes_tecnicas) ? an.especificacoes_tecnicas : [];
+  const hasFindings = Boolean(an.resumo || an.adjudicatario || an.janela_renovacao || an.precos_referencia || specs.length);
+  const emptyChecklistHint = hasFindings
+    ? '<p class="muted">Sem acções humanas pendentes — a PrepBid já extraiu os achados acima. Esta lista só inclui o que a empresa tem de fazer fora da app (contactos, certidões em falta, preço interno, referências próprias).</p>'
+    : '<p class="muted">Gere a análise de IA para obter os achados e a lista do que a empresa ainda tem de fazer.</p>';
   const checkHtml = itemType && itemId
     ? (checks.length
       ? `<div class="check-list" data-type="${esc(itemType)}" data-id="${itemId}">${checks.map((t) => `<label><input type="checkbox" data-text="${esc(t)}"> ${esc(t)}</label>`).join('')}<p class="muted" id="ck-prog"></p></div>`
       : emptyChecklistHint)
     : list(an.checklist);
+  const extraRows = [
+    an.adjudicatario ? `<dt>Adjudicatário</dt><dd>${esc(an.adjudicatario)}</dd>` : '',
+    an.janela_renovacao ? `<dt>Janela de renovação</dt><dd>${esc(an.janela_renovacao)}</dd>` : '',
+    an.precos_referencia ? `<dt>Preços de referência</dt><dd>${esc(an.precos_referencia).replace(/\n/g, '<br>')}</dd>` : '',
+  ].join('');
   const fitScore = displayFitScore(an.fit_atividade?.score);
   return `
     <div class="ai-verdict">
@@ -4092,10 +4099,14 @@ function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
       <dt>Prazo de execução</dt><dd>${esc(an.prazos?.execucao ?? '—')}</dd>
       <dt>Preço base</dt><dd>${esc(an.preco_base ?? '—')}</dd>
       <dt>Caução / garantias</dt><dd>${esc(an.caucao_garantias ?? '—')}</dd>
+      ${extraRows}
     </dl>
+    ${specs.length ? `<h3>Especificações técnicas</h3>${list(specs)}` : ''}
     <h3>Requisitos de habilitação</h3>${habHtml}
     <h3>Alertas</h3>${list(an.red_flags)}
-    <h3>Checklist para a proposta</h3>${checkHtml}
+    <h3>O que a empresa ainda tem de fazer</h3>
+    <p class="muted" style="font-size:12px;margin:.2rem 0 .4rem">Só o que não dá para fazer na PrepBid (contactos, certidões em falta, preço interno, referências próprias).</p>
+    ${checkHtml}
     <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}${model ? ` · ${esc(model)}` : ''}</p>`;
 }
 

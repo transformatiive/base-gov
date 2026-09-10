@@ -88,7 +88,16 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=79/);
+  assert.match(index, /app\.js\?v=80/);
+});
+
+test('ficha IA mostra achados; a lista final só tem o que a empresa ainda faz fora da app', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  assert.match(appJs, /O que a empresa ainda tem de fazer/);
+  assert.match(appJs, /especificacoes_tecnicas/);
+  assert.match(appJs, /janela_renovacao/);
+  assert.match(appJs, /precos_referencia/);
+  assert.doesNotMatch(appJs, /checklist de preparação precisa das peças/);
 });
 
 test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
