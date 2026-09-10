@@ -78,6 +78,10 @@ costuma estar espalhada por opções de biblioteca, não por CSS.
 
 ## 5. Referência visual
 
+`DESIGN.md` na raiz do repositório é a norma de identidade (logótipo,
+paleta, tipo, usos incorrectos, documentos). `tokens.css` é a fonte dos
+valores.
+
 `PrepBid App Adapted.dc.html` neste projecto tem os nove ecrãs já adaptados
 (A1–A9). Vale mais do que a descrição: quando o Cursor devolver algo que não
 bate, compara-se com o ecrã correspondente. `PrepBid Brand Guidelines.dc.html`

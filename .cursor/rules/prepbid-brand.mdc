@@ -6,8 +6,9 @@ alwaysApply: true
 
 # PrepBid — brand rules
 
-Read `src/styles/tokens.css` before writing any style. Components consume
-tokens; they never contain raw colour, font or radius values.
+Read `DESIGN.md` (normas de identidade) and `src/styles/tokens.css` before
+writing any style. Components consume tokens; they never contain raw
+colour, font or radius values.
 
 ## Hard rules
 
