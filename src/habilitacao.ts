@@ -1,3 +1,4 @@
+import { mergeChecklist, sanitizeChecklist } from './ai-checklist.js';
 import { foldPt } from './fit-rules.js';
 import { normalizeFitScore } from './ai-compile.js';
 
@@ -86,5 +87,11 @@ export function overlayHabilitacao(
     fit.score = normalizeFitScore(fit.score);
     a.fit_atividade = fit;
   }
+  const extra = items
+    .filter((i) => i.status === 'nao_tem')
+    .map((i) => `Juntar evidência de: ${i.text}`);
+  const current = Array.isArray(a.checklist) ? a.checklist.map((x) => String(x)) : [];
+  a.checklist = mergeChecklist(current, extra);
+  a.red_flags = sanitizeChecklist(a.red_flags, 12);
   return a;
 }

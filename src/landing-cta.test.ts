@@ -80,9 +80,12 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.doesNotMatch(appJs, /[Mm]esa de trabalho/);
   assert.doesNotMatch(catalog, /[Mm]esa de trabalho/);
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
+  assert.match(appJs, /O que a empresa ainda tem de fazer/);
+  assert.doesNotMatch(appJs, /A checklist de preparação precisa das peças/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
-  assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=78/);
+  assert.match(index, /catalog\.js\?v=7/);
+  assert.match(index, /app\.js\?v=80/);
+  assert.match(index, /style\.css\?v=52/);
 });
 
 test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
@@ -95,7 +98,8 @@ test('wordmark da app e dos guias é texto PrepBid, sem SVG nem itálico', () =>
   const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
   const index = readFileSync(join(root, 'public/index.html'), 'utf8');
   const article = renderGuideArticleHtml('https://prepbid.example', sample);
-  assert.match(appJs, /class="pb-wordmark">PrepBid</);
+  assert.match(appJs, /pb-wordmark/);
+  assert.match(appJs, />PrepBid</);
   assert.doesNotMatch(appJs, /MARK_SVG/);
   assert.match(index, /class="pb-wordmark">PrepBid</);
   assert.match(article, /class="pb-wordmark">PrepBid</);
@@ -118,7 +122,22 @@ test('landing HTML não espera pelo INSERT de analytics', () => {
   assert.doesNotMatch(indexTs, /await ingestPublicPage/);
   assert.match(landing, /media="print" onload="this\.media='all'"/);
   assert.match(index, /media="print" onload="this\.media='all'"/);
-  assert.match(landing, /tokens\.css\?v=2/);
+  assert.match(landing, /tokens\.css\?v=3/);
+});
+
+test('wordmark 1a: Archivo 600, um peso, um cor; footer landing reversed', () => {
+  const tokens = readFileSync(join(root, 'src/styles/tokens.css'), 'utf8');
+  assert.match(tokens, /--pb-wordmark:\s*600 19px\/1/);
+  assert.match(tokens, /--pb-wordmark-tracking:\s*-0\.038em/);
+  assert.match(tokens, /--pb-wordmark-lg:\s*600 48px\/1/);
+  assert.match(landing, /class="brand-rule"/);
+  assert.match(landing, /pb-wordmark pb-wordmark--reverse">PrepBid/);
+  assert.match(landing, /\.foot\{background:var\(--pb-ink\)/);
+  assert.doesNotMatch(landing, /Prep<em>Bid/);
+  const wm = landing.match(/\.brand \.name,\.brand \.pb-wordmark\{[^}]+\}/)?.[0] ?? '';
+  assert.match(wm, /font:var\(--pb-wordmark\)/);
+  assert.match(wm, /font-weight:600/);
+  assert.doesNotMatch(wm, /font-weight:700/);
 });
 
 test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {

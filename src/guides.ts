@@ -713,7 +713,7 @@ function headChrome(): string {
   <link rel="preload" as="style" href="${fonts}">
   <link rel="stylesheet" href="${fonts}" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="${fonts}"></noscript>
-  <link rel="stylesheet" href="/legal.css?v=2">`;
+  <link rel="stylesheet" href="/legal.css?v=3">`;
 }
 
 function navHtml(kind: 'index' | 'article'): string {

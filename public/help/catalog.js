@@ -119,7 +119,7 @@
         lockedFallback: null,
         steps: [
           { sel: 'ficha-tabs', title: 'Separadores', body: 'Análise IA, Enquadramento, Carteira, Cronologia e Formalidades. Mude de separador sem sair da ficha.', placement: 'bottom' },
-          { sel: 'ficha-ia', title: 'Análise IA', body: 'Go / no-go, fit, habilitação e checklist. A checklist precisa das peças; o anúncio do DRE sozinho não chega.', placement: 'bottom' },
+          { sel: 'ficha-ia', title: 'Análise IA', body: 'Go / no-go, fit, habilitação e achados (especificações, janela de renovação, preços). A lista final só tem o que a empresa ainda tem de fazer fora da app.', placement: 'bottom' },
           { sel: 'ficha-carteira', title: 'Carteira nesta ficha', body: 'Estado na carteira da empresa, nota e responsável. Partilhado com a equipa.', placement: 'bottom' },
         ],
       },
