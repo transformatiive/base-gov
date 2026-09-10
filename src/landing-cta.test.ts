@@ -88,7 +88,7 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=81/);
+  assert.match(index, /app\.js\?v=82/);
 });
 
 test('dossier de resposta descarrega .docx, não markdown HTML', () => {
@@ -169,4 +169,14 @@ test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {
   );
   assert.match(landing, /\.plan \.ptag\{[^}]*min-height:4\.5em/);
   assert.match(landing, /\.plan ul\{[^}]*margin:auto 0 0/);
+});
+
+test('admin lista inscritos com nome e email', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const account = readFileSync(join(root, 'src/routes-account.ts'), 'utf8');
+  assert.match(appJs, /Utilizadores inscritos/);
+  assert.match(appJs, /api\('\/api\/admin\/users'/);
+  assert.match(appJs, /function adminPersonMail/);
+  assert.match(account, /app.get\('\/api\/admin\/users'/);
+  assert.match(account, /u.first_name, u.last_name, u.is_admin/);
 });

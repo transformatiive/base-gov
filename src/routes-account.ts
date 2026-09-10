@@ -423,6 +423,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
             AND s.created_at >= now() - interval '30 days') AS searches_30d,
          (SELECT json_agg(json_build_object(
             'id', u.id, 'email', u.email, 'username', u.username, 'is_admin', u.is_admin,
+            'first_name', u.first_name, 'last_name', u.last_name,
             'terms_accepted_at', u.terms_accepted_at, 'terms_version', u.terms_version,
             'created_at', u.created_at, 'ai_reset_at', u.ai_period_end,
             'ai_used', (SELECT count(*) FROM ai_usage_events ae
@@ -433,6 +434,19 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           ) ORDER BY u.id)
             FROM users u WHERE u.company_id = c.id) AS users
        FROM companies c ORDER BY c.created_at DESC LIMIT 500`);
+    return { items: rows };
+  });
+
+  app.get('/api/admin/users', { preHandler: requireAuth }, async (req, reply) => {
+    if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
+    const { rows } = await pool.query(
+      `SELECT u.id, u.email, u.username, u.first_name, u.last_name, u.is_admin, u.created_at,
+              c.id AS company_id, c.name AS company, c.plan, c.subscription_status
+         FROM users u
+         LEFT JOIN companies c ON c.id = u.company_id
+        ORDER BY u.created_at DESC
+        LIMIT 2000`,
+    );
     return { items: rows };
   });
 
@@ -759,7 +773,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           GROUP BY c.id, c.name, c.plan
           ORDER BY n DESC LIMIT 20`),
       pool.query(`SELECT s.id, s.term, s.kind, s.status, s.created_at, s.finished_at,
-              c.name AS company, u.username, u.email
+              c.name AS company, u.username, u.email, u.first_name, u.last_name
            FROM searches s
            LEFT JOIN companies c ON c.id = s.company_id
            LEFT JOIN users u ON u.id = s.created_by
