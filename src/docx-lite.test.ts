@@ -5,9 +5,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   FILETE,
+  FILETE_ON_SURFACE,
   FONT_SANS,
   FONT_SANS_MEDIUM,
   FONT_SANS_SEMIBOLD,
+  PAGE_FILL,
   PB,
   STYLES,
   buildVariantALockupXml,
@@ -44,14 +46,17 @@ test('hex da marca no .docx bate com tokens.css', () => {
   assert.match(css, new RegExp(`--pb-amber-tint:\\s*#${PB.amberTint}`, 'i'));
 });
 
-test('filete é 20 % de tinta sobre papel', () => {
+test('filete é 20 % de tinta sobre o fundo', () => {
   assert.equal(mixHex(PB.ink, PB.paper, 0.2), FILETE);
   assert.equal(FILETE, 'C3C2BD');
+  assert.equal(mixHex(PB.ink, PB.surface, 0.2), FILETE_ON_SURFACE);
 });
 
 test('estilos do Word: Archivo, tinta, sem itálico nem Calibri', () => {
   assert.match(STYLES, /Archivo SemiBold/);
-  assert.match(STYLES, new RegExp(`w:color w:val="${PB.ink}"`));
+  assert.match(STYLES, /w:sz w:val="40"/);
+  assert.match(STYLES, /Heading2/);
+  assert.match(STYLES, new RegExp(`w:color="${PB.green}"`));
   assert.doesNotMatch(STYLES, /<w:i\b/);
   assert.doesNotMatch(STYLES, /Calibri/);
   assert.doesNotMatch(STYLES, /173F35/);
@@ -68,7 +73,7 @@ test('variante A: PrepBid numa só run, filete e descritivo em duas linhas', () 
   assert.match(xml, /<w:t>CONTRATOS<\/w:t>/);
   assert.match(xml, /<w:t>PÚBLICOS<\/w:t>/);
   assert.doesNotMatch(xml, /CONTRATOS PÚBLICOS/);
-  assert.match(xml, new RegExp(`w:color="${FILETE}"`));
+  assert.match(xml, new RegExp(`w:color="${FILETE_ON_SURFACE}"`));
   assert.match(xml, /w:sz w:val="85"/);
   assert.match(xml, /w:spacing w:val="-32"/);
 });
@@ -84,7 +89,8 @@ test('buildProposalDocumentXml marca placeholders com âmbar e põe a variante A
   assert.match(xml, /\[A COMPLETAR: CV do coordenador\]/);
   assert.match(xml, /<w:t>PrepBid<\/w:t>/);
   assert.match(xml, /<w:t>CONTRATOS<\/w:t>/);
-  assert.match(xml, new RegExp(`<w:background w:color="${PB.paper}"`));
+  assert.match(xml, new RegExp(`<w:background w:color="${PAGE_FILL}"`));
+  assert.equal(PAGE_FILL, 'FFFFFF');
 });
 
 test('docx roundtrip preserves section text e a marca', async () => {
@@ -139,7 +145,33 @@ Texto **técnico**.
   assert.match(input.sections[0].body, /\[A COMPLETAR: certificado\]/);
   assert.doesNotMatch(input.sections[0].body, /PLACEHOLDER/);
   assert.equal(input.sections[1].title, 'Memória descritiva');
-  assert.match(input.sections[1].body, /Texto técnico/);
+  assert.match(input.sections[1].body ?? '', /Texto técnico/);
+});
+
+test('tabela GFM vira w:tbl, não pipes de markdown', async () => {
+  const md = `## 1. Checklist de submissão
+### 1.1 Plataforma e prazos
+| Item | Dados |
+|---|---|
+| Plataforma electrónica | Vortal |
+| Prazo de propostas | 01-04-2027, 23:59 |
+`;
+  const parsed = sectionsFromMarkdown(md);
+  assert.equal(parsed.sections[0].blocks?.[0].kind, 'p');
+  assert.equal(parsed.sections[0].blocks?.[1].kind, 'table');
+  const buf = buildDossierDocx(md, 'X');
+  const xml = (await readDocxPart(buf, 'word/document.xml'))!.toString('utf8');
+  assert.match(xml, /<w:tbl>/);
+  assert.match(xml, /<w:tblHeader\/>/);
+  assert.doesNotMatch(xml, /\|---\|/);
+  assert.doesNotMatch(xml, /\| Item \|/);
+  assert.match(xml, /<w:t xml:space="preserve">Item<\/w:t>|<w:t>Item<\/w:t>/);
+  assert.match(xml, /Vortal/);
+  assert.match(xml, /Heading2/);
+  const text = await extractDocxText(buf);
+  assert.doesNotMatch(text, /\|---/);
+  assert.match(text, /1\.1 Plataforma e prazos/);
+  assert.match(text, /Plataforma electrónica/);
 });
 
 test('buildDossierDocx é OOXML com lockup e sem Calibri', async () => {

@@ -37,7 +37,7 @@ function emTrackingTwips(pt: number, em: number): number {
   return Math.round(pt * em * 20);
 }
 
-/** 20 % de tinta sobre papel — filete da variante A. */
+/** Tinta a `alpha` sobre o fundo — filete e grelha de tabela. */
 export function mixHex(fg: string, bg: string, alpha: number): string {
   const parse = (hex: string) => {
     const n = parseInt(hex, 16);
@@ -52,7 +52,13 @@ export function mixHex(fg: string, bg: string, alpha: number): string {
     .toUpperCase();
 }
 
+/** Filete sobre papel (marketing). */
 export const FILETE = mixHex(PB.ink, PB.paper, 0.2);
+/** Filete em documentos Word (página branca — variante 02). */
+export const FILETE_ON_SURFACE = mixHex(PB.ink, PB.surface, 0.2);
+export const INK_06 = mixHex(PB.ink, PB.surface, 0.06);
+export const INK_12 = mixHex(PB.ink, PB.surface, 0.12);
+export const PAGE_FILL = PB.surface;
 
 const GAP_TWIPS = Math.round(0.28 * M_RATIO * WORDMARK_PT * 20);
 const FILETE_TWIPS = Math.round(0.66 * CAP_RATIO * WORDMARK_PT * 20);
@@ -103,8 +109,8 @@ export const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:rPrDefault>
       <w:rPr>
         ${rFonts(FONT_SANS)}
-        <w:sz w:val="22"/>
-        <w:szCs w:val="22"/>
+        <w:sz w:val="24"/>
+        <w:szCs w:val="24"/>
         <w:color w:val="${PB.ink}"/>
         <w:lang w:val="pt-PT"/>
       </w:rPr>
@@ -117,13 +123,13 @@ export const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </w:docDefaults>
   <w:style w:type="paragraph" w:styleId="Normal" w:default="1">
     <w:name w:val="Normal"/>
-    <w:rPr>${rFonts(FONT_SANS)}<w:sz w:val="22"/><w:szCs w:val="22"/><w:color w:val="${PB.ink}"/></w:rPr>
-    <w:pPr><w:spacing w:after="160" w:line="372" w:lineRule="auto"/></w:pPr>
+    <w:rPr>${rFonts(FONT_SANS)}<w:sz w:val="24"/><w:szCs w:val="24"/><w:color w:val="${PB.ink}"/></w:rPr>
+    <w:pPr><w:spacing w:after="160" w:line="360" w:lineRule="auto"/></w:pPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Title">
     <w:name w:val="Title"/>
     <w:basedOn w:val="Normal"/>
-    <w:rPr>${rFonts(FONT_SANS_SEMIBOLD)}<w:sz w:val="42"/><w:szCs w:val="42"/><w:color w:val="${PB.ink}"/><w:spacing w:val="-11"/></w:rPr>
+    <w:rPr>${rFonts(FONT_SANS_SEMIBOLD)}<w:sz w:val="52"/><w:szCs w:val="52"/><w:color w:val="${PB.ink}"/><w:spacing w:val="-13"/></w:rPr>
     <w:pPr><w:spacing w:before="${CLEAR_P_TWIPS}" w:after="80"/></w:pPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Subtitle">
@@ -135,8 +141,28 @@ export const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:style w:type="paragraph" w:styleId="Heading1">
     <w:name w:val="heading 1"/>
     <w:basedOn w:val="Normal"/>
-    <w:rPr>${rFonts(FONT_SANS_SEMIBOLD)}<w:sz w:val="30"/><w:szCs w:val="30"/><w:color w:val="${PB.ink}"/><w:spacing w:val="-8"/></w:rPr>
-    <w:pPr><w:spacing w:before="280" w:after="120"/></w:pPr>
+    <w:rPr>${rFonts(FONT_SANS_SEMIBOLD)}<w:sz w:val="40"/><w:szCs w:val="40"/><w:color w:val="${PB.ink}"/><w:spacing w:val="-10"/></w:rPr>
+    <w:pPr>
+      <w:keepNext/>
+      <w:spacing w:before="400" w:after="160"/>
+      <w:outlineLvl w:val="0"/>
+      <w:pBdr><w:bottom w:val="single" w:sz="12" w:space="6" w:color="${PB.green}"/></w:pBdr>
+    </w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:rPr>${rFonts(FONT_SANS_SEMIBOLD)}<w:sz w:val="28"/><w:szCs w:val="28"/><w:color w:val="${PB.ink}"/><w:spacing w:val="-7"/></w:rPr>
+    <w:pPr>
+      <w:keepNext/>
+      <w:spacing w:before="280" w:after="80"/>
+      <w:outlineLvl w:val="1"/>
+    </w:pPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="ListBullet">
+    <w:name w:val="List Bullet"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:ind w:left="360" w:hanging="200"/><w:spacing w:after="80"/></w:pPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Note">
     <w:name w:val="Note"/>
@@ -213,7 +239,7 @@ export function buildVariantALockupXml(): string {
             <w:pPr>
               <w:spacing w:before="0" w:after="0" w:line="${FILETE_TWIPS}" w:lineRule="exact"/>
               <w:pBdr>
-                <w:left w:val="single" w:sz="6" w:space="0" w:color="${FILETE}"/>
+                <w:left w:val="single" w:sz="6" w:space="0" w:color="${FILETE_ON_SURFACE}"/>
               </w:pBdr>
             </w:pPr>
             <w:r><w:t xml:space="preserve"> </w:t></w:r>
