@@ -4261,15 +4261,34 @@ async function renderOpendata() {
     const d = await api('/api/opendata/imports');
     const totEl = document.getElementById('od-total');
     if (totEl) totEl.textContent = d.total_opendata_contracts.toLocaleString('pt-PT');
+    const syncEl = document.getElementById('od-sync');
+    if (syncEl) {
+      const when = d.sync?.last_check_at ? new Date(d.sync.last_check_at).toLocaleString('pt-PT') : null;
+      const years = (d.sync?.auto_years ?? []).join(' e ');
+      syncEl.textContent = d.sync?.last_error
+        ? `Última verificação automática falhou${when ? ` (${when})` : ''}: ${d.sync.last_error}`
+        : when
+          ? `Última verificação automática: ${when}. Anos seguidos pelo cron: ${years}.`
+          : `Verificação automática activa para ${years || 'o ano corrente e o anterior'}.`;
+    }
     const tbody = document.getElementById('od-table');
     if (tbody) {
-      tbody.innerHTML = d.items.map((i) => `<tr>
-        <td>${i.year}</td><td>${badge(i.status)}</td>
-        <td>${(i.imported_rows ?? 0).toLocaleString('pt-PT')}${i.total_rows ? ' / ' + Number(i.total_rows).toLocaleString('pt-PT') : ''}</td>
+      tbody.innerHTML = d.items.map((i) => {
+        const counts = [
+          `${(i.imported_rows ?? 0).toLocaleString('pt-PT')}${i.total_rows ? ' / ' + Number(i.total_rows).toLocaleString('pt-PT') : ''}`,
+          i.inserted_rows ? `${Number(i.inserted_rows).toLocaleString('pt-PT')} novos` : '',
+          i.updated_rows ? `${Number(i.updated_rows).toLocaleString('pt-PT')} actualizados` : '',
+          i.unchanged_rows ? `${Number(i.unchanged_rows).toLocaleString('pt-PT')} iguais` : '',
+        ].filter(Boolean).join(' · ');
+        const origin = i.origin === 'cron' ? 'automático' : 'manual';
+        return `<tr>
+        <td>${i.year}</td><td class="muted">${esc(origin)}</td><td>${badge(i.status)}</td>
+        <td>${counts}</td>
         <td>${i.started_at ? new Date(i.started_at).toLocaleString('pt-PT') : '—'}</td>
         <td>${i.finished_at ? new Date(i.finished_at).toLocaleString('pt-PT') : '—'}</td>
         <td class="muted">${esc((i.error_message ?? '').slice(0, 80))}</td>
-      </tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhum import ainda.</td></tr>';
+      </tr>`;
+      }).join('') || '<tr><td colspan="7" class="muted">Nenhum import ainda.</td></tr>';
     }
     if (!d.items.some((i) => ['pending', 'running'].includes(i.status))) stopPolling();
   };
@@ -4280,9 +4299,9 @@ async function renderOpendata() {
     ${configTabs('opendata')}
     <div class="card">
       <h2>Dados abertos do Portal BASE (IMPIC)</h2>
-      <p class="muted">Fonte oficial do histórico: datasets anuais publicados pelo IMPIC em dados.gov.pt (atualização quinzenal) — os mesmos dados do site, sem risco de bloqueio.
-      Os contratos importados alimentam automaticamente as pesquisas, perfis e insights. Os PDFs dos documentos e os dados mais recentes que a última publicação continuam a vir do robot.</p>
+      <p class="muted">Fonte oficial do histórico: datasets anuais do IMPIC em dados.gov.pt (o catálogo actualiza-se semanalmente). O PrepBid verifica sozinho o ano corrente e o anterior de 6 em 6 horas e só grava contratos novos ou campos que mudaram (fecho, preço efectivo, etc.). Os PDFs e o que ainda não estiver no dataset continuam a vir do robot do site.</p>
       <p><strong><span id="od-total">…</span></strong> contratos em base de dados vindos de dados abertos.</p>
+      <p class="muted" id="od-sync">A verificar o catálogo…</p>
       <form class="inline" id="od-form">
         <select name="year">${years.map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <button type="submit">Importar ano</button>
@@ -4293,8 +4312,8 @@ async function renderOpendata() {
     <div class="card">
       <h2>Imports</h2>
       <table>
-        <thead><tr><th>Ano</th><th>Estado</th><th>Contratos</th><th>Início</th><th>Fim</th><th>Erro</th></tr></thead>
-        <tbody id="od-table"><tr><td colspan="6" class="muted">A carregar…</td></tr></tbody>
+        <thead><tr><th>Ano</th><th>Origem</th><th>Estado</th><th>Contratos</th><th>Início</th><th>Fim</th><th>Erro</th></tr></thead>
+        <tbody id="od-table"><tr><td colspan="7" class="muted">A carregar…</td></tr></tbody>
       </table>
     </div>`;
 
