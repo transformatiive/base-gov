@@ -236,6 +236,10 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const { rows: [tot] } = await pool.query(
       `SELECT count(*) AS n FROM contracts WHERE opendata_imported`);
     const { rows: [sync] } = await pool.query('SELECT last_check_at, last_error FROM opendata_sync WHERE id = 1');
+    const { rows: [harvest] } = await pool.query(
+      `SELECT last_check_at, last_ok_at, last_error, pages_fetched, upserted, details_fetched
+         FROM announcement_sync WHERE id = 1`,
+    );
     const nowYear = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon', year: 'numeric' }).format(new Date()));
     return {
       total_opendata_contracts: Number(tot.n),
@@ -245,6 +249,16 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         last_error: sync?.last_error ?? null,
         auto_years: [nowYear - 1, nowYear],
       },
+      announcements: harvest
+        ? {
+            last_check_at: harvest.last_check_at ?? null,
+            last_ok_at: harvest.last_ok_at ?? null,
+            last_error: harvest.last_error ?? null,
+            pages_fetched: harvest.pages_fetched ?? 0,
+            upserted: harvest.upserted ?? 0,
+            details_fetched: harvest.details_fetched ?? 0,
+          }
+        : null,
     };
   });
 

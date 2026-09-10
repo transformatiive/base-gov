@@ -4271,6 +4271,20 @@ async function renderOpendata() {
           ? `Última verificação automática: ${when}. Anos seguidos pelo cron: ${years}.`
           : `Verificação automática activa para ${years || 'o ano corrente e o anterior'}.`;
     }
+    const harEl = document.getElementById('od-harvest');
+    if (harEl) {
+      const h = d.announcements;
+      if (!h) harEl.textContent = 'Colheita de anúncios no site ainda não correu.';
+      else if (h.last_error) {
+        const when = h.last_check_at ? new Date(h.last_check_at).toLocaleString('pt-PT') : '';
+        harEl.textContent = `Colheita de anúncios falhou${when ? ` (${when})` : ''}: ${h.last_error}`;
+      } else {
+        const when = h.last_ok_at ? new Date(h.last_ok_at).toLocaleString('pt-PT') : null;
+        harEl.textContent = when
+          ? `Última colheita de anúncios no BASE.gov: ${when} · ${Number(h.upserted || 0).toLocaleString('pt-PT')} listagens · ${Number(h.details_fetched || 0).toLocaleString('pt-PT')} fichas.`
+          : 'Colheita de anúncios no site a cada 6 horas (os dados abertos IMPIC não incluem concursos abertos).';
+      }
+    }
     const tbody = document.getElementById('od-table');
     if (tbody) {
       tbody.innerHTML = d.items.map((i) => {
@@ -4299,9 +4313,10 @@ async function renderOpendata() {
     ${configTabs('opendata')}
     <div class="card">
       <h2>Dados abertos do Portal BASE (IMPIC)</h2>
-      <p class="muted">Fonte oficial do histórico: datasets anuais do IMPIC em dados.gov.pt (o catálogo actualiza-se semanalmente). O PrepBid verifica sozinho o ano corrente e o anterior de 6 em 6 horas e só grava contratos novos ou campos que mudaram (fecho, preço efectivo, etc.). Os PDFs e o que ainda não estiver no dataset continuam a vir do robot do site.</p>
+      <p class="muted">Fonte oficial do histórico de <strong>contratos</strong>: datasets anuais do IMPIC em dados.gov.pt (o catálogo actualiza-se semanalmente). O PrepBid verifica sozinho o ano corrente e o anterior de 6 em 6 horas e só grava contratos novos ou campos que mudaram (fecho, preço efectivo, etc.). Os <strong>anúncios / concursos abertos</strong> não vêm nesse dataset — o robot vai ao BASE.gov de 6 em 6 horas buscar as listagens recentes. Os PDFs continuam a vir do site quando a recolha os pede.</p>
       <p><strong><span id="od-total">…</span></strong> contratos em base de dados vindos de dados abertos.</p>
       <p class="muted" id="od-sync">A verificar o catálogo…</p>
+      <p class="muted" id="od-harvest">A colher anúncios no site…</p>
       <form class="inline" id="od-form">
         <select name="year">${years.map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <button type="submit">Importar ano</button>

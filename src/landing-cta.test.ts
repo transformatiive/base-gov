@@ -108,7 +108,7 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=82/);
+  assert.match(index, /app\.js\?v=84/);
 });
 
 test('dossier de resposta descarrega .docx, não markdown HTML', () => {

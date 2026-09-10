@@ -14,6 +14,14 @@ import { parseBaseDate, parseBasePrice } from './parse.js';
 import { reconcileProfileRuns, scheduleDueProfiles } from '../profiles.js';
 import { LOCAL_MATCH_LIMIT, pendingSearchOrderSql, searchOrigin, shouldLiveScrape } from '../profile-run-policy.js';
 import { localTextMatchMode, medicalDeviceMatchSql, notWorksNoiseSql } from '../activity-match.js';
+import {
+  ANNOUNCEMENT_DETAIL_BATCH,
+  ANNOUNCEMENT_HARVEST_INTERVAL_MS,
+  announcementNeedsDetail,
+  harvestLookbackYmd,
+  harvestPageLimit,
+  harvestShouldFetchNextPage,
+} from '../harvest-policy.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -533,6 +541,100 @@ async function processSearch(
 }
 
 let running = false;
+let harvesting = false;
+
+export async function harvestRecentAnnouncements(client: BaseGovClient, now = new Date()): Promise<void> {
+  if (harvesting) return;
+  harvesting = true;
+  const todayYmd = now.toISOString().slice(0, 10);
+  const lookbackYmd = harvestLookbackYmd(now);
+  try {
+    const { rows: syncRows } = await pool.query(
+      'SELECT last_ok_at FROM announcement_sync WHERE id = 1',
+    );
+    const lastOkAt = syncRows[0]?.last_ok_at ? new Date(syncRows[0].last_ok_at) : null;
+    const maxPages = harvestPageLimit(lastOkAt, now);
+    let page = 0;
+    let upserted = 0;
+    let details = 0;
+    let pagesFetched = 0;
+
+    while (page < maxPages) {
+      const result = await client.searchAnnouncements('', page, config.pageSize);
+      pagesFetched += 1;
+      if (!result.items.length) break;
+
+      const pubDates: (string | null)[] = [];
+      for (const item of result.items) {
+        const pub = parseBaseDate(item.drPublicationDate);
+        pubDates.push(pub);
+        const announcementId = await upsertAnnouncementFromList(item);
+        upserted += 1;
+        const { rows } = await pool.query(
+          `SELECT detail_scraped_at IS NOT NULL AS scraped,
+                  proposal_deadline_date::text AS deadline
+             FROM announcements WHERE id = $1`,
+          [announcementId],
+        );
+        const row = rows[0];
+        const need = announcementNeedsDetail({
+          detailScraped: row?.scraped === true,
+          proposalDeadlineYmd: row?.deadline ? String(row.deadline).slice(0, 10) : parseBaseDate(item.proposalDeadline),
+          todayYmd,
+        });
+        if (need && details < ANNOUNCEMENT_DETAIL_BATCH) {
+          await sleep(config.scrapeDelayMs);
+          const detail = await client.getAnnouncementDetail(item.id);
+          await saveAnnouncementDetail(announcementId, detail);
+          details += 1;
+        }
+      }
+
+      if (!harvestShouldFetchNextPage(pubDates, lookbackYmd)) break;
+      page += 1;
+      await sleep(config.scrapeDelayMs);
+    }
+
+    if (details < ANNOUNCEMENT_DETAIL_BATCH) {
+      const { rows: pending } = await pool.query(
+        `SELECT id, basegov_id FROM announcements
+          WHERE detail_scraped_at IS NULL
+            AND (proposal_deadline_date IS NULL OR proposal_deadline_date >= CURRENT_DATE)
+          ORDER BY dr_publication_date DESC NULLS LAST
+          LIMIT $1`,
+        [ANNOUNCEMENT_DETAIL_BATCH - details],
+      );
+      for (const row of pending) {
+        await sleep(config.scrapeDelayMs);
+        const detail = await client.getAnnouncementDetail(Number(row.basegov_id));
+        await saveAnnouncementDetail(Number(row.id), detail);
+        details += 1;
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO announcement_sync (id, last_check_at, last_ok_at, last_error, pages_fetched, upserted, details_fetched)
+       VALUES (1, now(), now(), NULL, $1, $2, $3)
+       ON CONFLICT (id) DO UPDATE SET
+         last_check_at = now(), last_ok_at = now(), last_error = NULL,
+         pages_fetched = EXCLUDED.pages_fetched, upserted = EXCLUDED.upserted,
+         details_fetched = EXCLUDED.details_fetched`,
+      [pagesFetched, upserted, details],
+    );
+    console.log(
+      `[harvest] anúncios: ${pagesFetched} páginas, ${upserted} listagens, ${details} detalhes`,
+    );
+  } catch (err) {
+    console.error('[harvest] anúncios falhou:', err);
+    await pool.query(
+      `INSERT INTO announcement_sync (id, last_check_at, last_error) VALUES (1, now(), $1)
+       ON CONFLICT (id) DO UPDATE SET last_check_at = now(), last_error = EXCLUDED.last_error`,
+      [String(err).slice(0, 500)],
+    );
+  } finally {
+    harvesting = false;
+  }
+}
 
 async function tick(client: BaseGovClient): Promise<void> {
   if (running) return;
@@ -621,5 +723,9 @@ async function tick(client: BaseGovClient): Promise<void> {
 export function startWorker(): void {
   const client = new HttpBaseGovClient();
   setInterval(() => void tick(client).catch((e) => console.error('[worker] tick error:', e)), 3000);
-  console.log('[worker] iniciado');
+  const harvest = () =>
+    void harvestRecentAnnouncements(client).catch((e) => console.error('[harvest] error:', e));
+  void harvest();
+  setInterval(harvest, ANNOUNCEMENT_HARVEST_INTERVAL_MS);
+  console.log('[worker] iniciado (colheita de anúncios a cada 6 h)');
 }

@@ -242,6 +242,18 @@ CREATE TABLE IF NOT EXISTS opendata_sync (
 );
 INSERT INTO opendata_sync (id) VALUES (1) ON CONFLICT DO NOTHING;
 
+-- Colheita periódica de anúncios no site (os dados abertos IMPIC só trazem contratos).
+CREATE TABLE IF NOT EXISTS announcement_sync (
+  id              INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  last_check_at   TIMESTAMPTZ,
+  last_ok_at      TIMESTAMPTZ,
+  last_error      TEXT,
+  pages_fetched   INT NOT NULL DEFAULT 0,
+  upserted        INT NOT NULL DEFAULT 0,
+  details_fetched INT NOT NULL DEFAULT 0
+);
+INSERT INTO announcement_sync (id) VALUES (1) ON CONFLICT DO NOTHING;
+
 -- Catálogo CPV construído a partir do corpus (código + designação PT + frequência)
 CREATE TABLE IF NOT EXISTS cpv_catalog (
   code             TEXT PRIMARY KEY,
