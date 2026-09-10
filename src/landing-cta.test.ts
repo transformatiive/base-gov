@@ -88,7 +88,17 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=80/);
+  assert.match(index, /app\.js\?v=81/);
+});
+
+test('dossier de resposta descarrega .docx, não markdown HTML', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  assert.match(appJs, /Descarregar \.docx/);
+  assert.match(appJs, /response-template\.docx/);
+  assert.match(appJs, /não ficou preso/);
+  assert.doesNotMatch(appJs, /application\/msword/);
+  assert.doesNotMatch(appJs, /dossier-resposta\.doc"/);
+  assert.doesNotMatch(appJs, /t\.markdown/);
 });
 
 test('ficha IA mostra achados; a lista final só tem o que a empresa ainda faz fora da app', () => {

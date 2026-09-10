@@ -104,7 +104,7 @@ function buildZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-const PLACEHOLDER_RE = /(\[A COMPLETAR:[^\]]+\])/g;
+const PLACEHOLDER_RE = /(\[(?:A COMPLETAR|PLACEHOLDER):[^\]]+\])/gi;
 const DATA_RE = /(\d{8}(?:-\d)?|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,3}(?:[ \u00A0]\d{3})+(?:[.,]\d+)?(?:\s*€)?|(?:\d+[.,]\d+|\d+)\s*€|\d+[.,]?\d*\s*%)/g;
 
 function rFonts(name: string): string {
@@ -121,6 +121,10 @@ function placeholderRun(text: string): string {
     text,
     `${rFonts(FONT_SANS_SEMIBOLD)}<w:color w:val="${PB.amber}"/><w:shd w:val="clear" w:color="auto" w:fill="${PB.amberTint}"/>`,
   );
+}
+
+function normalizePlaceholder(text: string): string {
+  return text.replace(/^\[PLACEHOLDER:/i, '[A COMPLETAR:');
 }
 
 function numberedRuns(text: string): string {
@@ -141,9 +145,9 @@ function runsFromText(text: string, numeric: boolean): string {
   const parts = text.split(PLACEHOLDER_RE);
   return parts.map((part) => {
     if (!part) return '';
-    if (PLACEHOLDER_RE.test(part) || /^\[A COMPLETAR:/.test(part)) {
+    if (PLACEHOLDER_RE.test(part) || /^\[(?:A COMPLETAR|PLACEHOLDER):/i.test(part)) {
       PLACEHOLDER_RE.lastIndex = 0;
-      return placeholderRun(part);
+      return placeholderRun(normalizePlaceholder(part));
     }
     PLACEHOLDER_RE.lastIndex = 0;
     return numeric ? numberedRuns(part) : textRun(part, '');
@@ -202,6 +206,82 @@ export function buildDocx(input: DocxProposalInput): Buffer {
     { name: 'word/fontTable.xml', data: Buffer.from(FONT_TABLE, 'utf8') },
     { name: 'word/document.xml', data: Buffer.from(document, 'utf8') },
   ]);
+}
+
+function stripInlineMd(s: string): string {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[\s(])\*(.+?)\*(?=[\s).]|$)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .trim();
+}
+
+function normalizeMdLine(line: string): string {
+  const t = line.replace(/\s+$/, '');
+  if (/^\s*[-*+]\s+/.test(t)) return `· ${stripInlineMd(t.replace(/^\s*[-*+]\s+/, ''))}`;
+  if (/^\s*\d+[.)]\s+/.test(t)) return stripInlineMd(t.replace(/^\s*\d+[.)]\s+/, ''));
+  return stripInlineMd(t);
+}
+
+/** Markdown do dossier de resposta → secções do .docx (variante A no título). */
+export function sectionsFromMarkdown(markdown: string, fallbackTitle = 'Dossier de resposta'): DocxProposalInput {
+  const raw = String(markdown ?? '')
+    .replace(/^```(?:markdown)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/\[PLACEHOLDER:/gi, '[A COMPLETAR:')
+    .trim();
+  const lines = raw.split(/\r?\n/);
+  let title = fallbackTitle;
+  const sections: DocxSection[] = [];
+  let current = '';
+  const buf: string[] = [];
+  const flush = () => {
+    if (!current && buf.every((l) => !l.trim())) return;
+    sections.push({ title: current || 'Conteúdo', body: buf.join('\n').trim() });
+    current = '';
+    buf.length = 0;
+  };
+  let sawH1 = false;
+  for (const line of lines) {
+    const h1 = line.match(/^#\s+(.+)/);
+    const h2 = line.match(/^##\s+(.+)/);
+    const h3 = line.match(/^###\s+(.+)/);
+    if (h1 && !sawH1 && sections.length === 0 && !current) {
+      title = stripInlineMd(h1[1]);
+      sawH1 = true;
+      continue;
+    }
+    if (h2) {
+      flush();
+      current = stripInlineMd(h2[1]);
+      continue;
+    }
+    if (h3) {
+      buf.push(stripInlineMd(h3[1]));
+      continue;
+    }
+    buf.push(normalizeMdLine(line));
+  }
+  flush();
+  if (sections.length === 0) {
+    sections.push({ title: 'Dossier', body: raw.split(/\r?\n/).map(normalizeMdLine).join('\n').trim() });
+  }
+  return {
+    title,
+    subtitle: 'Dossier de resposta · rascunho PrepBid',
+    note: 'Rascunho gerado pelo PrepBid. Requer revisão humana. Complete os campos [A COMPLETAR]. A submissão no portal é sempre manual.',
+    sections,
+    footer: 'Documento gerado pelo PrepBid. Não substitui a leitura das peças do procedimento.',
+  };
+}
+
+export function buildDossierDocx(markdown: string, designation?: string): Buffer {
+  const fallback = designation
+    ? `Dossier de resposta — ${designation.replace(/\s+/g, ' ').trim().slice(0, 160)}`
+    : 'Dossier de resposta';
+  return buildDocx(sectionsFromMarkdown(markdown, fallback));
 }
 
 export const DOCX_CONTENT_TYPE =
