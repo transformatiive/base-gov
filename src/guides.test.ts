@@ -72,6 +72,8 @@ test('robots.txt e sitemap.xml: só guias publicados, sem \/app', () => {
   const origin = publicSiteOrigin('https://baseradar.example/');
   assert.equal(origin, 'https://baseradar.example');
   assert.equal(publicSiteOrigin(''), PUBLIC_SITE_FALLBACK);
+  assert.equal(publicSiteOrigin('https://basegov-robot-production.up.railway.app'), PUBLIC_SITE_FALLBACK);
+  assert.equal(publicSiteOrigin('http://localhost:3000'), PUBLIC_SITE_FALLBACK);
   const robots = robotsTxt(origin);
   assert.match(robots, /Disallow: \/app/);
   assert.match(robots, /Sitemap: https:\/\/baseradar\.example\/sitemap\.xml/);
