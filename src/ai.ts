@@ -18,6 +18,9 @@ import {
   type PeerAwardLine,
 } from './ai-checklist.js';
 import { cpvDigits } from './closeForecast.js';
+import { buildChatBody, cached, userWithCachedPrefix, type Content } from './ai-cache.js';
+
+export { cached, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
@@ -34,16 +37,13 @@ export function aiEnabled(): boolean {
 export interface AiUsage { tokens_in: number; tokens_out: number }
 export interface ChatResult { content: string; usage: AiUsage }
 
-// Blocos de conteúdo para prompt caching (Anthropic via OpenRouter): um bloco
-// marcado com cache_control:ephemeral é reutilizado (mais barato) em chamadas
-// seguintes com o MESMO prefixo. Marcamos os blocos grandes e ESTÁVEIS entre
-// pedidos (instruções fixas, documentos de um anúncio) para poupar tokens.
-type Part = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
-export type Content = string | Part[];
-const cached = (text: string): Part => ({ type: 'text', text, cache_control: { type: 'ephemeral' } });
-const plain = (text: string): Part => ({ type: 'text', text });
-
-export async function chat(model: string, system: Content, user: Content, maxTokens = 3000): Promise<ChatResult> {
+export async function chat(
+  model: string,
+  system: Content,
+  user: Content,
+  maxTokens = 3000,
+  sessionId?: string,
+): Promise<ChatResult> {
   if (!aiEnabled()) throw new Error('IA não configurada (OPENROUTER_API_KEY em falta)');
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -53,15 +53,7 @@ export async function chat(model: string, system: Content, user: Content, maxTok
       'HTTP-Referer': 'https://prepbid.com',
       'X-Title': 'PrepBid',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      usage: { include: true },   // pede detalhe de tokens (prompt/completion/cache)
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
+    body: JSON.stringify(buildChatBody({ model, system, user, maxTokens, sessionId })),
     signal: AbortSignal.timeout(180_000),
   });
   if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -102,8 +94,14 @@ PROIBIDO na checklist e em red_flags do tipo «vá ao portal»: Portal BASE, Di�
 Se um facto não estiver nas fontes, escreve «não consta das fontes» no campo respectivo; não peças ao utilizador que vá buscar o documento.
 Confronta o CPV/objecto com o perfil da empresa no resumo e no go/no-go; não peças na checklist para «validar CPV» se o perfil já o cobre.`;
 
-async function chatJson(model: string, system: Content, user: Content, maxTokens: number): Promise<{ parsed: unknown; usage: AiUsage }> {
-  const { content, usage } = await chat(model, system, user, maxTokens);
+async function chatJson(
+  model: string,
+  system: Content,
+  user: Content,
+  maxTokens: number,
+  sessionId?: string,
+): Promise<{ parsed: unknown; usage: AiUsage }> {
+  const { content, usage } = await chat(model, system, user, maxTokens, sessionId);
   return { parsed: parseJson(content), usage };
 }
 
@@ -114,7 +112,8 @@ async function chatJson(model: string, system: Content, user: Content, maxTokens
  */
 async function runSplitAnalysis(lead: string, docBlock: string, activityBlock: string): Promise<{ analysis: Record<string, unknown>; usage: AiUsage; model: string }> {
   const model = config.aiModelDeep;
-  const user: Part[] = [cached(docBlock), plain(activityBlock)];
+  const system = [cached(`${lead}\n\n${ANALYSIS_OUTPUT_RULES}`)];
+  const prefix = [docBlock, activityBlock].filter((s) => s.trim()).join('\n\n');
   const specs: { schema: string; max: number }[] = [
     { schema: PART_FICHA, max: 1600 },
     { schema: PART_REQUISITOS, max: 1800 },
@@ -124,9 +123,10 @@ async function runSplitAnalysis(lead: string, docBlock: string, activityBlock: s
     specs.map((s) =>
       chatJson(
         model,
-        [cached(`${lead}\n\n${ANALYSIS_OUTPUT_RULES}`), plain(`Responde APENAS com um objeto JSON válido com esta estrutura:\n${s.schema}`)],
-        user,
+        system,
+        userWithCachedPrefix(prefix, `Responde APENAS com um objeto JSON válido com esta estrutura:\n${s.schema}`),
         s.max,
+        'analise-split',
       ),
     ),
   );
@@ -509,7 +509,7 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
   ).join('\n');
 
   const model = config.aiModelFast;
-  const { content: raw, usage: u } = await chat(model, system, user, 4000);
+  const { content: raw, usage: u } = await chat(model, system, user, 4000, 'fit-scores');
   usage = u;
   const parsed = parseJson(raw) as { scores?: { key: string; fit: number; razao: string; motivos?: string[] }[] };
 
@@ -764,17 +764,25 @@ Gera um DOSSIER DE RESPOSTA em markdown para este procedimento, com placeholders
 5. **Documentos de habilitação** a preparar para o caso de adjudicação (art. 81.º), incluindo os específicos desta atividade.
 Sê concreto e específico a ESTE concurso. Não inventes factos que não estejam nos dados; usa placeholders quando faltarem.`;
 
-  const user = `ANÚNCIO:
+  const model = config.aiModelDeep;
+  const { content: markdown, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      [
+        an.length > 0 ? `ANÁLISE JÁ EFETUADA (usa os critérios daqui):\n${JSON.stringify(an[0].analysis).slice(0, 6000)}` : '',
+        pdfText ? `TEXTO DO ANÚNCIO (DR):\n${pdfText}` : '',
+      ].filter(Boolean).join('\n\n'),
+      `ANÚNCIO:
 - Designação: ${a.contract_designation}
 - Entidade: ${a.contracting_entity}
 - Procedimento: ${a.model_type ?? a.contracting_procedure_type} · Contrato: ${a.contract_type}
 - Preço base: ${a.base_price ?? 'n/d'} · Prazo propostas: ${a.proposal_deadline_date ?? 'n/d'}
-- CPV: ${a.cpvs ?? 'n/d'} · Plataforma (peças): ${a.contracting_procedure_url ?? 'n/d'}
-${an.length > 0 ? `\nANÁLISE JÁ EFETUADA (usa os critérios daqui):\n${JSON.stringify(an[0].analysis).slice(0, 6000)}` : ''}
-${pdfText ? `\nTEXTO DO ANÚNCIO (DR):\n${pdfText}` : ''}`;
-
-  const model = config.aiModelDeep;
-  const { content: markdown, usage } = await chat(model, system, user, 6000);
+- CPV: ${a.cpvs ?? 'n/d'} · Plataforma (peças): ${a.contracting_procedure_url ?? 'n/d'}`,
+    ),
+    6000,
+    'dossier-resposta',
+  );
   return { markdown: markdown.replace(/^```(?:markdown)?\n?|```$/g, ''), model, usage };
 }
 
@@ -785,7 +793,8 @@ export async function digestIntro(profileName: string, stats: string): Promise<s
       config.aiModelFast,
       `És um analista comercial. Escreve um parágrafo único (3-4 frases, português de Portugal, tom profissional e direto) a resumir a semana de oportunidades de contratação pública para a atividade "${profileName}". Sem saudações, sem markdown.`,
       stats,
-      400
+      400,
+      'digest-intro',
     );
     return content.trim();
   } catch {
