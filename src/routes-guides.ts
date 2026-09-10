@@ -75,7 +75,7 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
   });
 
   const sendIndex = async (req: FastifyRequest, reply: FastifyReply) => {
-    await ingestPublicPage(req, reply, '/guias');
+    ingestPublicPage(req, reply, '/guias');
     const published = await listPublished();
     reply.type('text/html; charset=utf-8');
     return renderGuideIndexHtml(origin(), published);
@@ -89,7 +89,7 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
     if (!guide || guide.status !== 'published') {
       return reply.code(404).type('text/plain; charset=utf-8').send('Guia não encontrado.');
     }
-    await ingestPublicPage(req, reply, `/guias/${slug}`);
+    ingestPublicPage(req, reply, `/guias/${slug}`);
     reply.type('text/html; charset=utf-8');
     return renderGuideArticleHtml(origin(), guide);
   });

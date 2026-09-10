@@ -16,6 +16,7 @@ import { registerNotificationRoutes } from './notifications.js';
 import { registerAiFeedbackRoutes } from './ai-feedback.js';
 import { registerGuideAgentRoutes, registerPublicGuideRoutes } from './routes-guides.js';
 import { ingestPublicPage, registerUsageRoutes } from './routes-usage.js';
+import { cacheControlForPublicFile } from './static-cache.js';
 import { startWorker } from './scraper/worker.js';
 import { startOpendataWorker } from './opendata.js';
 import { startScheduler } from './scheduler.js';
@@ -30,30 +31,31 @@ async function main(): Promise<void> {
 
   const app = Fastify({ logger: true, bodyLimit: 16 * 1024 * 1024 });
   await app.register(fastifyCookie, { secret: config.sessionSecret });
-  // Sem cache agressiva: garante que o browser recebe sempre a versão atual da SPA.
-  // index:false → a raiz não serve automaticamente o index.html da SPA; a landing
-  // pública fica em "/" e a aplicação passa para "/app".
+  // HTML revalida sempre. JS/CSS e /vendor/ são imutáveis — o HTML usa ?v= para
+  // cache-bust. index:false → a raiz não serve o index.html da SPA.
   await app.register(fastifyStatic, {
     root: path.join(__dirname, '..', 'public'),
     index: false,
-    cacheControl: true,
-    maxAge: 0,
+    cacheControl: false,
     etag: true,
     lastModified: true,
+    setHeaders(res, filePath) {
+      res.setHeader('Cache-Control', cacheControlForPublicFile(filePath));
+    },
   });
 
   // Landing comercial na raiz do domínio.
   app.get('/', async (req, reply) => {
-    await ingestPublicPage(req, reply, '/');
+    ingestPublicPage(req, reply, '/');
     return reply.sendFile('landing.html');
   });
   // Páginas legais (públicas) e guias indexáveis (SEO / LLMs).
   app.get('/privacidade', async (req, reply) => {
-    await ingestPublicPage(req, reply, '/privacidade');
+    ingestPublicPage(req, reply, '/privacidade');
     return reply.sendFile('privacidade.html');
   });
   app.get('/termos', async (req, reply) => {
-    await ingestPublicPage(req, reply, '/termos');
+    ingestPublicPage(req, reply, '/termos');
     return reply.sendFile('termos.html');
   });
   await registerPublicGuideRoutes(app);

@@ -1,5 +1,5 @@
 /* PrepBid — tokens (src/styles/tokens.css). Aliases keep existing selectors. */
-@import url("/tokens.css");
+@import url("/tokens.css?v=2");
 :root {
   --brand: var(--pb-green);
   --brand-dark: var(--pb-green-hover);
