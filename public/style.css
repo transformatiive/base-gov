@@ -82,7 +82,7 @@ th, .nav-group-label, .stat .l, .eyebrow, .opp-tr.head, .comp-row.head, .ent-row
   display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
   background: var(--panel); border-right: 1px solid var(--border);
 }
-#topbar .wordmark { padding: 22px 16px 16px; gap: 0.7rem; }
+#topbar .wordmark { padding: 22px 16px 16px; gap: 0; }
 .nav-toggle { display: none; }
 .nav-toggle .ico-close { display: none; }
 .nav-scrim { display: none; }
@@ -340,7 +340,7 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
     padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px));
     min-height: 56px;
   }
-  #topbar .wordmark { padding: 10px 8px; gap: 0.5rem; }
+  #topbar .wordmark { padding: 10px 8px; gap: 0; }
   #topbar .wordmark > .mark { width: 28px; height: 28px; }
   #topbar .wordmark .wm-type { font-size: 1.28rem; }
   #topbar .brand-rule, #topbar .pb-lockup-tag { display: none; }
