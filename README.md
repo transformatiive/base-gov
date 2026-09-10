@@ -68,7 +68,7 @@ O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais sae
 
 **Email Sending (saída).** No dashboard Cloudflare: Compute → Email Service → Email Sending → Onboard `prepbid.com`. Token com permissão **Email Sending: Edit**. Na Railway: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `MAIL_FROM="PrepBid <noreply@prepbid.com>"`.
 
-**Email Routing (entrada).** Tudo o que chegar a `@prepbid.com` (incl. `info@`, `suporte@`, `privacidade@`) reencaminha para `info@transformatiive.com`. A Cloudflare manda um email de verificação a esse destino — é preciso abrir a ligação. Depois: `MAIL_FORWARD_TO=info@transformatiive.com node scripts/setup-concursivo-cloudflare.mjs --route`.
+**Email Routing (entrada).** Catch-all de `@prepbid.com` (`info@`, `suporte@`, `privacidade@`, …) para `info@transformatiive.com`. Para reaplicar regras: `MAIL_FORWARD_TO=info@transformatiive.com node scripts/setup-concursivo-cloudflare.mjs --route`.
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 
