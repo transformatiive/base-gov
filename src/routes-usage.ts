@@ -75,12 +75,20 @@ async function insertEvent(
   );
 }
 
-/** Hit de página pública (landing, guias, legais). Nunca lança. */
-export async function ingestPublicPage(req: FastifyRequest, reply: FastifyReply, path: string): Promise<void> {
+/** Cookie de visitante já; o INSERT não bloqueia o HTML. Nunca lança. */
+export function ingestPublicPage(req: FastifyRequest, reply: FastifyReply, path: string): void {
   try {
-    const utm = queryUtm(req);
     const visitor = visitorFrom(req, null);
     setVisitorCookie(reply, visitor);
+    void recordPublicPage(req, visitor, path);
+  } catch (err) {
+    console.warn('[usage] falha a registar página pública:', String(err).slice(0, 160));
+  }
+}
+
+async function recordPublicPage(req: FastifyRequest, visitor: string, path: string): Promise<void> {
+  try {
+    const utm = queryUtm(req);
     const user = await tryAuth(req);
     const parsed = parseUsageEvent({
       kind: 'page_view',

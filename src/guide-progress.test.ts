@@ -62,7 +62,8 @@ test('sidebar: grupos, ordem e ícone em cada opção', () => {
     assert.match(appJs, new RegExp(`^\\s+${name}:`, 'm'), `ICON_PATHS em falta: ${name}`);
   }
   assert.match(nav, /id="nav-admin"[^>]*hidden/);
-  assert.match(html, /style\.css\?v=49/);
+  assert.match(html, /style\.css\?v=51/);
+  assert.match(html, /guide\.js\?v=3/);
   assert.match(appJs, /A pesquisar concursos abertos/);
   assert.match(html, /class="pb-wordmark">PrepBid</);
 });
@@ -152,4 +153,80 @@ test('checklist QA: itens têm âncora da app', () => {
     }
   }
   assert.ok(ids.size >= 12);
+});
+
+test('guia: em viewport mobile não monta splash nem tour', async () => {
+  const appended: unknown[] = [];
+  const session: Record<string, string> = { br_onboard: '1' };
+  const local: Record<string, string> = {};
+  const windowObj: Record<string, unknown> = {
+    matchMedia: (q: string) => ({
+      matches: /max-width:\s*900px/.test(String(q)),
+      addEventListener() { /* noop */ },
+      addListener() { /* noop */ },
+      media: q,
+    }),
+    location: { hash: '#/hoje' },
+    sessionStorage: {
+      getItem: (k: string) => session[k] ?? null,
+      setItem: (k: string, v: string) => { session[k] = v; },
+      removeItem: (k: string) => { delete session[k]; },
+    },
+    localStorage: {
+      getItem: (k: string) => local[k] ?? null,
+      setItem: (k: string, v: string) => { local[k] = v; },
+      removeItem: (k: string) => { delete local[k]; },
+    },
+    BRHelpCatalog: {
+      splash: {
+        eyebrow: 'x', title: 't', lead: 'l', footnote: 'f',
+        ctaSkip: 's', ctaTour: 'c',
+        examples: [{ id: 'a', title: 'A', body: 'b' }],
+      },
+      menuTour: { steps: [{ href: '#/hoje', title: 'Hoje', body: 'x' }] },
+      screens: { hoje: { steps: [{ sel: 'hoje-head', title: 't', body: 'b' }] } },
+    },
+  };
+  const documentStub = {
+    createElement() {
+      return {
+        id: '',
+        className: '',
+        innerHTML: '',
+        style: {},
+        querySelector() { return { onclick: null, focus() { /* noop */ } }; },
+        querySelectorAll() { return []; },
+        remove() { /* noop */ },
+      };
+    },
+    body: { appendChild(el: unknown) { appended.push(el); } },
+    addEventListener() { /* noop */ },
+    removeEventListener() { /* noop */ },
+    querySelector() {
+      return { getBoundingClientRect() { return { left: 0, top: 0, right: 10, bottom: 10, width: 10, height: 10 }; } };
+    },
+  };
+  const ctx = createContext({ window: windowObj, document: documentStub, console });
+  (windowObj as { window?: unknown }).window = windowObj;
+  runInContext(readFileSync(join(root, 'public/guide.js'), 'utf8'), ctx, { filename: 'public/guide.js' });
+  const g = windowObj.BRGuide as {
+    maybeSplash: () => Promise<void>;
+    startMenuTour: () => Promise<void>;
+    maybeScreenCoach: (id: string) => Promise<void>;
+    replayMenuTour: () => Promise<void>;
+    replayScreen: (id: string) => Promise<void>;
+    afterView: (id: string) => void;
+    isRunning: () => boolean;
+    isMobileLayout: () => boolean;
+  };
+  assert.equal(g.isMobileLayout(), true);
+  await g.maybeSplash();
+  await g.startMenuTour();
+  await g.maybeScreenCoach('hoje');
+  await g.replayMenuTour();
+  await g.replayScreen('hoje');
+  g.afterView('hoje');
+  assert.equal(g.isRunning(), false);
+  assert.equal(appended.length, 0);
+  assert.equal(Object.keys(local).length, 0);
 });

@@ -2706,6 +2706,14 @@ async function renderInsightTab(el, q, tab, p) {
       return loadRegionPanel(district, q);
     };
     window._annReloadMap = () => renderInsightTab(el, q, tab, p);
+    const mapEl = document.getElementById('osm-map');
+    if (mapEl) mapEl.innerHTML = '<p class="muted" style="margin:12px">A carregar o mapa…</p>';
+    try {
+      await loadMapLibre();
+    } catch {
+      if (mapEl) mapEl.innerHTML = '<p class="muted" style="margin:12px">Não foi possível carregar o mapa.</p>';
+      return;
+    }
     renderLeafletMap(dataFor(0), (district) => loadRegionPanel(district, q), radiusRef);
     applySelection();
   } else if (tab === 'competitors') {
@@ -3015,6 +3023,31 @@ let glReady = false;
 let glPendingData = null;
 let glOnDistrictClick = null;
 let glPopup = null;
+let _maplibreLoading = null;
+
+function loadMapLibre() {
+  if (typeof maplibregl !== 'undefined') return Promise.resolve();
+  if (_maplibreLoading) return _maplibreLoading;
+  _maplibreLoading = new Promise((resolve, reject) => {
+    if (!document.getElementById('maplibre-css')) {
+      const link = document.createElement('link');
+      link.id = 'maplibre-css';
+      link.rel = 'stylesheet';
+      link.href = '/vendor/maplibre/maplibre-gl.css';
+      document.head.appendChild(link);
+    }
+    const s = document.createElement('script');
+    s.src = '/vendor/maplibre/maplibre-gl.js';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => {
+      _maplibreLoading = null;
+      reject(new Error('Não foi possível carregar o mapa.'));
+    };
+    document.head.appendChild(s);
+  });
+  return _maplibreLoading;
+}
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 // Fallback autónomo caso o estilo remoto não carregue (rede restrita):
@@ -3396,7 +3429,7 @@ async function renderHoje(opts = {}) {
         ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
         ${recolhaPendente ? '<p class="hint" style="margin:.5rem 0 0">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>' : ''}
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex:none">
+      <div class="hoje-head-actions">
         <select id="ctx-select" data-guide="hoje-ctx" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
@@ -4999,10 +5032,24 @@ function saveQaChecks(map) {
   try { localStorage.setItem(qaStorageKey(), JSON.stringify(map)); } catch { /* ignore */ }
 }
 
-function renderQaChecklist() {
+async function renderQaChecklist() {
   if (!window._me?.is_admin) {
     app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>';
     return;
+  }
+  if (!window.BRQaChecklist) {
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = '/help/qa-checklist.js?v=1';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('checklist'));
+        document.head.appendChild(s);
+      });
+    } catch {
+      app.innerHTML = '<div class="card error">Não foi possível carregar a checklist.</div>';
+      return;
+    }
   }
   const data = window.BRQaChecklist || { title: 'Checklist', intro: '', groups: [] };
   const done = loadQaChecks();
@@ -5097,7 +5144,7 @@ async function route() {
   if (hashBase === '#/admin/uso') return renderUsageAdmin();
   const ajuda = hashBase.match(/^#\/ajuda(?:\/([\w-]+))?$/);
   if (ajuda) return renderAjuda(ajuda[1] || '');
-  if (hashBase === '#/qa') return renderQaChecklist();
+  if (hashBase === '#/qa') return await renderQaChecklist();
   showBootSplash();
   const results = hash.match(/^#\/searches\/(\d+)(?:\?page=(\d+))?$/);
   const contract = hashBase.match(/^#\/contracts\/(\d+)$/);

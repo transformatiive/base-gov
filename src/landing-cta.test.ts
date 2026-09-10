@@ -82,7 +82,7 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=76/);
+  assert.match(index, /app\.js\?v=78/);
 });
 
 test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
@@ -101,4 +101,34 @@ test('wordmark da app e dos guias é texto PrepBid, sem SVG nem itálico', () =>
   assert.match(article, /class="pb-wordmark">PrepBid</);
   assert.doesNotMatch(article, /Prep<em>Bid<\/em>/);
   assert.doesNotMatch(article, /family=Fraunces/);
+});
+
+test('SPA não carrega MapLibre nem a checklist QA no arranque', () => {
+  const index = readFileSync(join(root, 'public/index.html'), 'utf8');
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  assert.doesNotMatch(index, /maplibre-gl\.(js|css)/);
+  assert.doesNotMatch(index, /qa-checklist\.js/);
+  assert.match(appJs, /function loadMapLibre\(/);
+  assert.match(appJs, /qa-checklist\.js\?v=1/);
+});
+
+test('landing HTML não espera pelo INSERT de analytics', () => {
+  const indexTs = readFileSync(join(root, 'src/index.ts'), 'utf8');
+  const index = readFileSync(join(root, 'public/index.html'), 'utf8');
+  assert.doesNotMatch(indexTs, /await ingestPublicPage/);
+  assert.match(landing, /media="print" onload="this\.media='all'"/);
+  assert.match(index, /media="print" onload="this\.media='all'"/);
+  assert.match(landing, /tokens\.css\?v=2/);
+});
+
+test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {
+  const hi = landing.match(/\.plan\.hi\{[^}]+\}/)?.[0] ?? '';
+  const ribbon = landing.match(/\.plan \.ribbon\{[^}]+\}/)?.[0] ?? '';
+  assert.match(hi, /border-color:var\(--brand\)/);
+  assert.doesNotMatch(hi, /transform:translateX/);
+  assert.doesNotMatch(hi, /background:var\(--brand\)/);
+  assert.doesNotMatch(hi, /white-space:nowrap/);
+  assert.match(ribbon, /transform:translateX\(-50%\)/);
+  assert.match(ribbon, /background:var\(--brand\)/);
+  assert.match(landing, /<div class="ribbon">PARA A EQUIPA<\/div>/);
 });

@@ -706,11 +706,14 @@ function inlineMarkdown(raw: string): string {
 }
 
 function headChrome(): string {
+  const fonts = 'https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
   return `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23141613'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/legal.css">`;
+  <link rel="preload" as="style" href="${fonts}">
+  <link rel="stylesheet" href="${fonts}" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="${fonts}"></noscript>
+  <link rel="stylesheet" href="/legal.css?v=2">`;
 }
 
 function navHtml(kind: 'index' | 'article'): string {
