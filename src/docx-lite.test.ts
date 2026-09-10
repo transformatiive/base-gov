@@ -1,6 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDocx, extractDocxText, textFromDocumentXml, buildProposalDocumentXml } from './docx-lite.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  FILETE,
+  FONT_SANS,
+  FONT_SANS_MEDIUM,
+  FONT_SANS_SEMIBOLD,
+  PB,
+  STYLES,
+  buildVariantALockupXml,
+  mixHex,
+} from './docx-brand.js';
+import {
+  buildDocx,
+  extractDocxText,
+  textFromDocumentXml,
+  buildProposalDocumentXml,
+  readDocxPart,
+} from './docx-lite.js';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('textFromDocumentXml joins w:t runs and paragraphs', () => {
   const xml = `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -12,22 +33,65 @@ test('textFromDocumentXml joins w:t runs and paragraphs', () => {
   assert.equal(textFromDocumentXml(xml), 'Olá mundo\nSegunda');
 });
 
-test('buildProposalDocumentXml marks placeholders', () => {
+test('hex da marca no .docx bate com tokens.css', () => {
+  const css = readFileSync(join(root, 'src/styles/tokens.css'), 'utf8');
+  assert.match(css, new RegExp(`--pb-ink:\\s*#${PB.ink}`, 'i'));
+  assert.match(css, new RegExp(`--pb-paper:\\s*#${PB.paper}`, 'i'));
+  assert.match(css, new RegExp(`--pb-grey:\\s*#${PB.grey}`, 'i'));
+  assert.match(css, new RegExp(`--pb-amber:\\s*#${PB.amber}`, 'i'));
+  assert.match(css, new RegExp(`--pb-amber-tint:\\s*#${PB.amberTint}`, 'i'));
+});
+
+test('filete é 20 % de tinta sobre papel', () => {
+  assert.equal(mixHex(PB.ink, PB.paper, 0.2), FILETE);
+  assert.equal(FILETE, 'C3C2BD');
+});
+
+test('estilos do Word: Archivo, tinta, sem itálico nem Calibri', () => {
+  assert.match(STYLES, /Archivo SemiBold/);
+  assert.match(STYLES, new RegExp(`w:color w:val="${PB.ink}"`));
+  assert.doesNotMatch(STYLES, /<w:i\b/);
+  assert.doesNotMatch(STYLES, /Calibri/);
+  assert.doesNotMatch(STYLES, /173F35/);
+  assert.doesNotMatch(STYLES, /9C5700/);
+});
+
+test('variante A: PrepBid numa só run, filete e descritivo em duas linhas', () => {
+  const xml = buildVariantALockupXml();
+  assert.match(xml, /<w:t>PrepBid<\/w:t>/);
+  assert.doesNotMatch(xml, /Prep<\/w:t>/);
+  assert.doesNotMatch(xml, /<w:i\b/);
+  assert.match(xml, new RegExp(FONT_SANS_SEMIBOLD));
+  assert.match(xml, new RegExp(FONT_SANS_MEDIUM));
+  assert.match(xml, /<w:t>CONTRATOS<\/w:t>/);
+  assert.match(xml, /<w:t>PÚBLICOS<\/w:t>/);
+  assert.doesNotMatch(xml, /CONTRATOS PÚBLICOS/);
+  assert.match(xml, new RegExp(`w:color="${FILETE}"`));
+  assert.match(xml, /w:sz w:val="85"/);
+  assert.match(xml, /w:spacing w:val="-32"/);
+});
+
+test('buildProposalDocumentXml marca placeholders com âmbar e põe a variante A no título', () => {
   const xml = buildProposalDocumentXml({
     title: 'Proposta',
     sections: [{ title: 'Equipa', body: 'Temos engenheiros.\n\n[A COMPLETAR: CV do coordenador]' }],
   });
-  assert.match(xml, /w:highlight w:val="yellow"/);
+  assert.match(xml, new RegExp(`w:fill="${PB.amberTint}"`));
+  assert.match(xml, new RegExp(`w:color w:val="${PB.amber}"`));
+  assert.doesNotMatch(xml, /w:highlight w:val="yellow"/);
   assert.match(xml, /\[A COMPLETAR: CV do coordenador\]/);
+  assert.match(xml, /<w:t>PrepBid<\/w:t>/);
+  assert.match(xml, /<w:t>CONTRATOS<\/w:t>/);
+  assert.match(xml, new RegExp(`<w:background w:color="${PB.paper}"`));
 });
 
-test('docx roundtrip preserves section text', async () => {
+test('docx roundtrip preserves section text e a marca', async () => {
   const buf = buildDocx({
     title: 'Proposta — Conservação de espaços verdes',
     subtitle: 'Município de Sintra',
     note: 'Rascunho gerado pelo PrepBid.',
     sections: [
-      { title: 'Memória descritiva', body: 'A empresa propõe a manutenção anual.\n\nInclui monda e rega.' },
+      { title: 'Memória descritiva', body: 'A empresa propõe a manutenção anual.\n\nInclui monda e 12 500 € de materiais.' },
       { title: 'Referências', body: '[A COMPLETAR: referência de projeto semelhante em X]' },
     ],
     footer: 'A submissão no portal é manual.',
@@ -35,9 +99,25 @@ test('docx roundtrip preserves section text', async () => {
   assert.ok(buf.length > 100);
   assert.equal(buf.readUInt32LE(0), 0x04034b50);
   const text = await extractDocxText(buf);
+  assert.match(text, /^PrepBid\nCONTRATOS\nPÚBLICOS\n/);
   assert.match(text, /Proposta — Conservação de espaços verdes/);
   assert.match(text, /Memória descritiva/);
   assert.match(text, /manutenção anual/);
+  assert.match(text, /12 500 €/);
   assert.match(text, /\[A COMPLETAR: referência de projeto semelhante em X\]/);
   assert.match(text, /A submissão no portal é manual/);
+
+  const styles = await readDocxPart(buf, 'word/styles.xml');
+  assert.ok(styles);
+  const stylesXml = styles.toString('utf8');
+  assert.match(stylesXml, new RegExp(FONT_SANS));
+  assert.doesNotMatch(stylesXml, /<w:i\b/);
+  assert.doesNotMatch(stylesXml, /<w:b\b/);
+  assert.doesNotMatch(stylesXml, /Calibri/);
+
+  const doc = await readDocxPart(buf, 'word/document.xml');
+  assert.ok(doc);
+  const docXml = doc.toString('utf8');
+  assert.match(docXml, /IBM Plex Mono/);
+  assert.match(docXml, /12 500 €/);
 });
