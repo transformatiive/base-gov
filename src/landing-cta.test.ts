@@ -52,6 +52,8 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.match(landing, /<span class="tag">Contratos<br>públicos<\/span>/);
   assert.match(landing, /band band--paper/);
   assert.match(landing, /band band--surface/);
+  assert.match(landing, /pb-wordmark pb-wordmark--reverse">PrepBid</);
+  assert.match(landing, /band--ink/);
   assert.doesNotMatch(landing, /Prep<em>Bid<\/em>/);
   assert.doesNotMatch(landing, /family=Fraunces/);
   assert.match(landing, /Assistente para ganhar concursos/);

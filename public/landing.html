@@ -105,6 +105,7 @@
     .band{padding:64px 0}
     .band--paper{background:var(--pb-paper)}
     .band--surface{background:var(--pb-surface)}
+    .band--ink{background:var(--pb-ink);color:var(--pb-paper)}
     .band--hero,.band--foot{padding:0}
     .band--surface .step,
     .band--surface .plan,
@@ -250,14 +251,16 @@
     .prop-chips .mid{background:var(--pb-amber-tint);color:var(--pb-amber)}
     .prop-chips .bad{background:var(--pb-garnet-tint);color:var(--pb-garnet)}
 
-    /* Footer */
-    .foot{padding-top:24px;padding-bottom:24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-    .foot .c{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+    /* Footer — reversa 03: tinta, palavra papel */
+    .foot{padding-top:28px;padding-bottom:28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+    .foot .foot-brand{text-decoration:none;color:var(--pb-paper)}
+    .foot .foot-brand:hover{text-decoration:none;color:var(--pb-paper)}
+    .foot .c{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--pb-paper)}
     .foot .c .logo-mark{width:20px;height:20px;border-radius:var(--pb-radius)}
     .foot .c .logo-mark svg{width:20px;height:20px}
-    .foot .links{display:flex;gap:20px;font-size:12.5px;color:var(--muted)}
-    .foot .links a{color:var(--muted)}
-    .foot .links a:hover{color:var(--brand)}
+    .foot .links{display:flex;gap:20px;font-size:12.5px}
+    .foot .links a{color:var(--pb-paper)}
+    .foot .links a:hover{color:var(--pb-green-light)}
 
     /* Depoimentos + FAQ (abaixo dos planos) */
     .quotes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
@@ -702,10 +705,11 @@
   </div>
   </div>
 
-  <div class="band band--paper band--foot">
+  <footer class="band band--ink band--foot">
   <div class="wrap foot">
+    <a class="foot-brand" href="/"><span class="pb-wordmark pb-wordmark--reverse">PrepBid</span></a>
     <div class="c">
-      PrepBid © 2026 · um produto da <strong>Transformatiive, Lda.</strong> · Fonte: Portal BASE — IMPIC / dados.gov.pt
+      © 2026 · um produto da <strong>Transformatiive, Lda.</strong> · Fonte: Portal BASE — IMPIC / dados.gov.pt
     </div>
     <div class="links">
       <a href="/guias">Guias</a>
@@ -715,7 +719,7 @@
       <a href="/app/#/registo">Começar grátis</a>
     </div>
   </div>
-  </div>
+  </footer>
 
   <script>
     (function () {
