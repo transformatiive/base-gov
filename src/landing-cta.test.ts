@@ -48,6 +48,10 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.doesNotMatch(landing, /M4\.5 12a7\.5/);
   assert.doesNotMatch(landing, /m9 14 2 2 4-4/);
   assert.match(landing, /class="pb-wordmark">PrepBid</);
+  assert.match(landing, /class="brand-rule"/);
+  assert.match(landing, /<span class="tag">Contratos<br>públicos<\/span>/);
+  assert.match(landing, /band band--paper/);
+  assert.match(landing, /band band--surface/);
   assert.doesNotMatch(landing, /Prep<em>Bid<\/em>/);
   assert.doesNotMatch(landing, /family=Fraunces/);
   assert.match(landing, /Assistente para ganhar concursos/);
