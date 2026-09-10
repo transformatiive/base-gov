@@ -9,6 +9,8 @@
  *   node scripts/setup-concursivo-cloudflare.mjs            # só verifica disponibilidade
  *   node scripts/setup-concursivo-cloudflare.mjs --register # compra + DNS + email
  *   node scripts/setup-concursivo-cloudflare.mjs --route    # só Email Routing + Sending na zona existente
+ *   node scripts/setup-concursivo-cloudflare.mjs --www      # CNAME www.prepbid.com (proxied)
+ *   node scripts/setup-concursivo-cloudflare.mjs --purge    # limpa cache de robots.txt / sitemap.xml
  *
  * Destino de reencaminhamento: MAIL_FORWARD_TO (default info@transformatiive.com).
  * A Cloudflare envia um email de confirmação a esse endereço — é preciso abrir a ligação.
@@ -21,6 +23,8 @@ const FORWARD_TO = process.env.MAIL_FORWARD_TO || 'info@transformatiive.com';
 const APP_ORIGIN = process.env.RAILWAY_APP_HOST || 'basegov-robot-production.up.railway.app';
 const REGISTER = process.argv.includes('--register');
 const ROUTE = process.argv.includes('--route');
+const WWW = process.argv.includes('--www');
+const PURGE = process.argv.includes('--purge');
 const API = 'https://api.cloudflare.com/client/v4';
 
 if (!ACCOUNT_ID || !TOKEN) {
@@ -196,6 +200,28 @@ function printRailwayHints() {
   console.log('  MAIL_FROM="PrepBid <noreply@prepbid.com>"');
   console.log('  SUPPORT_EMAIL=info@transformatiive.com');
   console.log('  APP_URL=https://prepbid.com');
+}
+
+async function purgeCrawlerCache(zoneId) {
+  const files = [
+    `https://${DOMAIN}/robots.txt`,
+    `https://${DOMAIN}/sitemap.xml`,
+    `https://${DOMAIN}/llms.txt`,
+    `https://${DOMAIN}/llms-full.txt`,
+    `https://www.${DOMAIN}/robots.txt`,
+    `https://www.${DOMAIN}/sitemap.xml`,
+  ];
+  const res = await cf('POST', `/zones/${zoneId}/purge_cache`, { files });
+  if (!res.json?.success) fail('purge_cache', res);
+  console.log('Cache limpa:', files.join(', '));
+}
+
+if (WWW || PURGE) {
+  const zone = await findZone();
+  console.log('Zona:', zone.id, zone.status);
+  if (WWW) await ensureDnsCname(zone.id, `www.${DOMAIN}`, APP_ORIGIN);
+  if (PURGE) await purgeCrawlerCache(zone.id);
+  process.exit(0);
 }
 
 if (ROUTE) {

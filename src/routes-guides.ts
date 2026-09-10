@@ -3,6 +3,7 @@ import { ingestPublicPage } from './routes-usage.js';
 import { auth, requireAuth } from './auth.js';
 import { config } from './config.js';
 import { pool } from './db.js';
+import { applyCrawlerNoStore } from './crawler-cache.js';
 import {
   GUIDE_AGENT_SPEC,
   guideRecordFromRow,
@@ -54,8 +55,7 @@ async function listPublished(): Promise<GuideRecord[]> {
 }
 
 function crawlerNoStore(reply: FastifyReply): void {
-  reply.header('Cache-Control', 'public, max-age=0, must-revalidate');
-  reply.header('CDN-Cache-Control', 'no-store');
+  applyCrawlerNoStore(reply);
 }
 
 export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<void> {
