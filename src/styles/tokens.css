@@ -1,0 +1,105 @@
+/* PrepBid — design tokens v1.0
+ * Single source of truth for colour, type and shape.
+ * Import once, at the top of the app's global stylesheet.
+ * Rule: components consume tokens only. No raw hex values in component files.
+ */
+
+:root {
+  /* ---- Ink & paper ---------------------------------------------------- */
+  --pb-ink:            #141613;  /* all primary text, the wordmark, dark surfaces */
+  --pb-ink-80:         rgba(20, 22, 19, 0.80);
+  --pb-ink-60:         rgba(20, 22, 19, 0.60);  /* secondary text, metadata */
+  --pb-ink-42:         rgba(20, 22, 19, 0.42);  /* labels, axis ticks */
+  --pb-ink-12:         rgba(20, 22, 19, 0.12);  /* borders */
+  --pb-ink-06:         rgba(20, 22, 19, 0.06);  /* hairlines, table zebra */
+
+  --pb-paper:          #EFEDE7;  /* app background, marketing background */
+  --pb-surface:        #FFFFFF;  /* cards, panels, table rows */
+  --pb-surface-sunken: #E7E4DC;  /* wells, empty chart areas */
+
+  /* ---- Accent (action & positive state) ------------------------------- */
+  --pb-green:          #1C6B4C;  /* primary buttons, links, active nav, key data series */
+  --pb-green-hover:    #175A40;
+  --pb-green-light:    #4FA37E;  /* accent ON ink surfaces only */
+  --pb-green-tint:     #E4EDE7;  /* active nav background, "Interessa" chip */
+  --pb-green-tint-2:   #F1F6F2;  /* chart series step 2 */
+
+  --pb-grey:           #6E7269;  /* tertiary text, disabled */
+
+  /* ---- State ---------------------------------------------------------- */
+  --pb-amber:          #B4741C;  /* prazo urgente, score ring, "Em preparação" */
+  --pb-amber-tint:     #FBF2E4;
+  --pb-garnet:         #8C2F2F;  /* prazo ultrapassado, não avançar, destructive */
+  --pb-garnet-tint:    #FAEBEA;
+
+  /* ---- Type ----------------------------------------------------------- */
+  --pb-font-sans: Archivo, system-ui, -apple-system, sans-serif;
+  --pb-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Headings: sans 600, negative tracking. Never a serif, never italic. */
+  --pb-h1: 600 28px/1.15 var(--pb-font-sans);
+  --pb-h2: 600 20px/1.2  var(--pb-font-sans);
+  --pb-h3: 600 15px/1.3  var(--pb-font-sans);
+  --pb-heading-tracking: -0.025em;
+
+  --pb-body:      400 14px/1.55 var(--pb-font-sans);
+  --pb-body-sm:   400 12.5px/1.5 var(--pb-font-sans);
+
+  /* Mono carries every number and machine string: € values, deadlines,
+   * scores, CPV codes, procedure references, counts. */
+  --pb-numeric:   500 14px/1.3 var(--pb-font-mono);
+  --pb-numeric-l: 500 34px/1   var(--pb-font-mono);
+
+  /* Eyebrow labels: DIA A DIA, RADAR, MERCADO, table heads, chip text. */
+  --pb-label:          500 8.5px/1 var(--pb-font-mono);
+  --pb-label-tracking: 0.2em;
+
+  /* ---- Wordmark -------------------------------------------------------
+   * The logo is live text, not an image. There is no icon.
+   * Sidebar / app header: 19px. Never below 19px on screen.        */
+  --pb-wordmark:          600 19px/1 var(--pb-font-sans);
+  --pb-wordmark-tracking: -0.038em;
+
+  /* ---- Shape ----------------------------------------------------------
+   * Flat and institutional: 1px borders do the separating, not shadows. */
+  --pb-radius:     4px;
+  --pb-radius-sm:  3px;
+  --pb-border:     1px solid var(--pb-ink-12);
+  --pb-shadow:     none;
+
+  /* ---- Charts ---------------------------------------------------------
+   * Sequential bars are ink at descending opacity; green marks only the
+   * series the user is meant to act on. Never a green wall of bars. */
+  --pb-chart-1: var(--pb-ink);
+  --pb-chart-2: rgba(20, 22, 19, 0.55);
+  --pb-chart-3: rgba(20, 22, 19, 0.32);
+  --pb-chart-4: rgba(20, 22, 19, 0.16);
+  --pb-chart-accent: var(--pb-green);
+  --pb-chart-grid: var(--pb-ink-06);
+}
+
+/* Base ------------------------------------------------------------------ */
+body { background: var(--pb-paper); color: var(--pb-ink); font: var(--pb-body); }
+h1, h2, h3 { letter-spacing: var(--pb-heading-tracking); font-weight: 600; font-style: normal; }
+a { color: var(--pb-green); }
+a:hover { color: var(--pb-ink); }
+
+/* Wordmark -------------------------------------------------------------- */
+.pb-wordmark {
+  font: var(--pb-wordmark);
+  letter-spacing: var(--pb-wordmark-tracking);
+  color: var(--pb-ink);
+}
+.pb-wordmark--reverse { color: var(--pb-paper); }
+
+/* Eyebrow --------------------------------------------------------------- */
+.pb-label {
+  font: var(--pb-label);
+  letter-spacing: var(--pb-label-tracking);
+  text-transform: uppercase;
+  color: var(--pb-ink-42);
+}
+
+/* Numbers --------------------------------------------------------------- */
+.pb-num  { font: var(--pb-numeric); font-variant-numeric: tabular-nums; }
+.pb-num-l{ font: var(--pb-numeric-l); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }

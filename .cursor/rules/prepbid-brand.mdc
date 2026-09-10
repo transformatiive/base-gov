@@ -1,0 +1,96 @@
+---
+description: PrepBid brand and UI rules. Apply to every file that renders UI.
+globs: ["**/*.{tsx,jsx,ts,js,css,scss,html}"]
+alwaysApply: true
+---
+
+# PrepBid — brand rules
+
+Read `src/styles/tokens.css` before writing any style. Components consume
+tokens; they never contain raw colour, font or radius values.
+
+## Hard rules
+
+1. **No layout changes.** These rules govern colour, type, and shape only.
+   Do not add, remove, reorder, or re-nest elements. Do not change widths,
+   grid/flex structure, padding scale, or breakpoints unless the task
+   explicitly asks for it.
+2. **No new hex values.** If a colour you need is not in `tokens.css`, stop
+   and ask. Do not invent a shade, and do not use Tailwind palette colours
+   (`green-600`, `slate-800`, …) — map to a token.
+3. **The logo is live text.** `<span class="pb-wordmark">PrepBid</span>`.
+   No image, no SVG, no icon, no favicon glyph beside it. Never split the
+   word across two weights, two colours, or an italic — that is the
+   forbidden lockup. Never letterspace it, italicise it, or scale it
+   horizontally. Minimum 19px on screen.
+4. **No serif and no italic anywhere.** All type is Archivo (UI) or IBM
+   Plex Mono (data).
+5. **Green is an accent, never a ground.** `--pb-green` is for primary
+   buttons, links, active nav, and the one data series the user should act
+   on. Large surfaces are `--pb-ink` or `--pb-surface`. Never a page,
+   panel, or full chart of green.
+6. **Flat.** `box-shadow` is not used. Separation comes from
+   `--pb-border` (1px) and `--pb-radius` (4px). No card shadows, no
+   elevation scale, no rounded-2xl.
+
+## Type assignment
+
+| Content | Token |
+|---|---|
+| Page and section headings | `--pb-h1` / `--pb-h2` / `--pb-h3` + `--pb-heading-tracking` |
+| Body copy, nav items, buttons | `--pb-body` / `--pb-body-sm` |
+| Every number: € values, deadlines, dates, scores, counts, percentages | `--pb-numeric` (`.pb-num`) |
+| Machine strings: CPV codes, procedure references, NIF | `--pb-font-mono` |
+| Eyebrows, table heads, chips, axis ticks | `--pb-label` + `.pb-label` |
+
+Numbers always get `font-variant-numeric: tabular-nums` so columns align.
+Portuguese formatting: space as thousands separator, comma as decimal,
+`€` after the number with a space — `868 780 €`, `15,6 M €`.
+
+## Colour assignment
+
+- Page background `--pb-paper`; cards and table rows `--pb-surface`.
+- All text `--pb-ink`; metadata `--pb-ink-60`; labels `--pb-ink-42`.
+- Primary button: `--pb-green` background, `--pb-paper` text.
+  Secondary button: `--pb-surface` background, `--pb-ink` text,
+  `--pb-border`.
+- Active nav item: `--pb-green-tint` background, `--pb-green` text.
+- State: `Interessa` → green tint chip; `Em preparação` → `--pb-amber`;
+  overdue / `Prazo ultrapassado` / `não avançar` → `--pb-garnet`, as a
+  3px left border on the card plus mono text, not a pink fill.
+- Kanban columns are titled with coloured text and a 2px bottom rule in
+  that state's colour. Column bodies stay `--pb-paper`; never a tinted
+  column background.
+- Dark panels (the "Em jogo" summary, the active stat tile) are
+  `--pb-ink`, with `--pb-green-light` for the accent number inside.
+
+## Charts
+
+- Sequential bars: `--pb-chart-1` → `--pb-chart-4` (ink at descending
+  opacity). Grid lines `--pb-chart-grid`. Axis ticks `.pb-label`.
+- `--pb-chart-accent` marks at most one bar or series per chart — the peak
+  month, the user's own share, the item to act on — and its axis tick
+  takes the same colour.
+- Value labels sit above the bar in mono, 10px.
+- No gradients, no drop shadows, no 3D, no rounded bar caps.
+
+## Scores
+
+The score ring is `conic-gradient(--pb-amber 0 <score>%, --pb-ink-12 <score>% 100%)`
+with a `--pb-surface` inner circle and the number in mono. Rings in
+lower-priority lists use `--pb-ink` instead of amber.
+
+## Accessibility
+
+Body text meets 4.5:1 against its background — use full-opacity ink on
+green, amber, and ink surfaces, never an alpha-muted colour on a coloured
+ground. `--pb-green-light` is for graphics and large numerals on ink
+only, not body copy.
+
+## Voice
+
+Portuguese (pt-PT), pre-2011 spelling as already used in the product
+(`activa`, `electrónica`). Short, factual sentences. No exclamation
+marks, no emoji, no marketing adjectives. Labels are nouns
+(`Renovações`, not `Ver renovações`). Never invent a number: unknown
+values render `[A COMPLETAR]`.
