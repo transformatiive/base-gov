@@ -1,5 +1,18 @@
 import { deflateRawSync } from 'node:zlib';
 import yauzl from 'yauzl';
+import {
+  CONTENT_TYPES,
+  DOC_RELS,
+  FONT_MONO,
+  FONT_SANS,
+  FONT_SANS_SEMIBOLD,
+  FONT_TABLE,
+  PB,
+  RELS,
+  SETTINGS,
+  STYLES,
+  buildVariantALockupXml,
+} from './docx-brand.js';
 
 /** Gera e lê documentos .docx (OOXML) sem dependências extra — ZIP + WordprocessingML. */
 
@@ -91,75 +104,55 @@ function buildZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
-</Types>`;
-
-const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`;
-
-const DOC_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`;
-
-const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:style w:type="paragraph" w:styleId="Normal" w:default="1">
-    <w:name w:val="Normal"/>
-    <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr>
-    <w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Title">
-    <w:name w:val="Title"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="173F35"/></w:rPr>
-    <w:pPr><w:spacing w:after="80"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Subtitle">
-    <w:name w:val="Subtitle"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:sz w:val="22"/><w:color w:val="4C5551"/><w:i/></w:rPr>
-    <w:pPr><w:spacing w:after="240"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading1">
-    <w:name w:val="heading 1"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="173F35"/></w:rPr>
-    <w:pPr><w:spacing w:before="280" w:after="120"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Note">
-    <w:name w:val="Note"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:sz w:val="18"/><w:color w:val="7D8681"/><w:i/></w:rPr>
-  </w:style>
-</w:styles>`;
-
 const PLACEHOLDER_RE = /(\[A COMPLETAR:[^\]]+\])/g;
+const DATA_RE = /(\d{8}(?:-\d)?|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,3}(?:[ \u00A0]\d{3})+(?:[.,]\d+)?(?:\s*€)?|(?:\d+[.,]\d+|\d+)\s*€|\d+[.,]?\d*\s*%)/g;
 
-function runsFromText(text: string): string {
+function rFonts(name: string): string {
+  return `<w:rFonts w:ascii="${name}" w:hAnsi="${name}" w:cs="${name}" w:eastAsia="${name}"/>`;
+}
+
+function textRun(text: string, rPr: string): string {
+  const pr = rPr ? `<w:rPr>${rPr}</w:rPr>` : '';
+  return `<w:r>${pr}<w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r>`;
+}
+
+function placeholderRun(text: string): string {
+  return textRun(
+    text,
+    `${rFonts(FONT_SANS_SEMIBOLD)}<w:color w:val="${PB.amber}"/><w:shd w:val="clear" w:color="auto" w:fill="${PB.amberTint}"/>`,
+  );
+}
+
+function numberedRuns(text: string): string {
+  const parts = text.split(DATA_RE);
+  return parts.map((part) => {
+    if (!part) return '';
+    DATA_RE.lastIndex = 0;
+    if (DATA_RE.test(part)) {
+      DATA_RE.lastIndex = 0;
+      return textRun(part, `${rFonts(FONT_MONO)}<w:color w:val="${PB.ink}"/>`);
+    }
+    DATA_RE.lastIndex = 0;
+    return textRun(part, `${rFonts(FONT_SANS)}<w:color w:val="${PB.ink}"/>`);
+  }).join('');
+}
+
+function runsFromText(text: string, numeric: boolean): string {
   const parts = text.split(PLACEHOLDER_RE);
   return parts.map((part) => {
     if (!part) return '';
-    const t = `<w:t xml:space="preserve">${xmlEsc(part)}</w:t>`;
     if (PLACEHOLDER_RE.test(part) || /^\[A COMPLETAR:/.test(part)) {
       PLACEHOLDER_RE.lastIndex = 0;
-      return `<w:r><w:rPr><w:highlight w:val="yellow"/><w:color w:val="9C5700"/><w:b/></w:rPr>${t}</w:r>`;
+      return placeholderRun(part);
     }
     PLACEHOLDER_RE.lastIndex = 0;
-    return `<w:r>${t}</w:r>`;
+    return numeric ? numberedRuns(part) : textRun(part, '');
   }).join('');
 }
 
 function para(style: string, text: string): string {
   const pPr = style === 'Normal' ? '' : `<w:pPr><w:pStyle w:val="${xmlEsc(style)}"/></w:pPr>`;
-  return `<w:p>${pPr}${runsFromText(text)}</w:p>`;
+  return `<w:p>${pPr}${runsFromText(text, style === 'Normal')}</w:p>`;
 }
 
 export interface DocxSection {
@@ -176,7 +169,7 @@ export interface DocxProposalInput {
 }
 
 export function buildProposalDocumentXml(input: DocxProposalInput): string {
-  const parts: string[] = [para('Title', input.title)];
+  const parts: string[] = [buildVariantALockupXml(), para('Title', input.title)];
   if (input.subtitle) parts.push(para('Subtitle', input.subtitle));
   if (input.note) parts.push(para('Note', input.note));
   for (const section of input.sections) {
@@ -189,7 +182,8 @@ export function buildProposalDocumentXml(input: DocxProposalInput): string {
   }
   if (input.footer) parts.push(para('Note', input.footer));
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:background w:color="${PB.paper}"/>
   <w:body>
     ${parts.join('\n    ')}
     <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr>
@@ -204,6 +198,8 @@ export function buildDocx(input: DocxProposalInput): Buffer {
     { name: '_rels/.rels', data: Buffer.from(RELS, 'utf8') },
     { name: 'word/_rels/document.xml.rels', data: Buffer.from(DOC_RELS, 'utf8') },
     { name: 'word/styles.xml', data: Buffer.from(STYLES, 'utf8') },
+    { name: 'word/settings.xml', data: Buffer.from(SETTINGS, 'utf8') },
+    { name: 'word/fontTable.xml', data: Buffer.from(FONT_TABLE, 'utf8') },
     { name: 'word/document.xml', data: Buffer.from(document, 'utf8') },
   ]);
 }
@@ -237,6 +233,10 @@ export function textFromDocumentXml(xml: string): string {
     if (line) lines.push(line);
   }
   return lines.join('\n');
+}
+
+export function readDocxPart(buf: Buffer, name: string): Promise<Buffer | null> {
+  return readZipEntry(buf, name);
 }
 
 function readZipEntry(buf: Buffer, name: string): Promise<Buffer | null> {
