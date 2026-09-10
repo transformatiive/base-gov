@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { cloudflareSendBody, cloudflareSendUrl } from './mail.js';
 
 test('cloudflareSendUrl aponta para a API de Email Sending da conta', () => {
@@ -37,4 +38,11 @@ test('cloudflareSendBody aceita vários destinatários', () => {
   );
   assert.deepEqual(body.to, ['a@x.pt', 'b@x.pt']);
   assert.equal(body.reply_to, undefined);
+});
+
+test('o reencaminhamento de @prepbid.com aponta para info@transformatiive.com', () => {
+  const script = readFileSync(new URL('../scripts/setup-concursivo-cloudflare.mjs', import.meta.url), 'utf8');
+  assert.match(script, /MAIL_FORWARD_TO \|\| 'info@transformatiive\.com'/);
+  assert.match(script, /--route/);
+  assert.match(script, /addRule\(zoneId, 'info'\)/);
 });

@@ -97,9 +97,11 @@ export async function sendMail(msg: {
     console.warn('[mail] envio desativado:', mailDisabledHint(), msg.subject);
     return { ok: false, skipped: true, error: 'mail_disabled' };
   }
+  const replyTo = (msg.replyTo && String(msg.replyTo).trim()) || config.mail.supportEmail || undefined;
+  const payload = replyTo ? { ...msg, replyTo } : msg;
   try {
-    if (provider === 'cloudflare') return await sendViaCloudflare(msg);
-    return await sendViaResend(msg);
+    if (provider === 'cloudflare') return await sendViaCloudflare(payload);
+    return await sendViaResend(payload);
   } catch (err) {
     console.error('[mail] erro de rede:', String(err).slice(0, 200));
     return { ok: false, error: String(err).slice(0, 200) };

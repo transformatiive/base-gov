@@ -87,7 +87,7 @@ export const config = {
     cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
     from: process.env.MAIL_FROM || '',            // ex.: "PrepBid <noreply@prepbid.com>"
-    supportEmail: process.env.SUPPORT_EMAIL || '',
+    supportEmail: process.env.SUPPORT_EMAIL || '', // Reply-To; inbox real (ex. info@transformatiive.com)
   },
 
   // Digest segunda-feira a esta hora (Europa/Lisboa). Lembretes 7/2 dias no mesmo tick.
