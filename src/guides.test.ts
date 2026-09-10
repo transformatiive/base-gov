@@ -175,7 +175,7 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
 
 test('robots.txt e sitemap.xml saem com Cache-Control curto para a CDN', () => {
   const src = readFileSync(new URL('./routes-guides.ts', import.meta.url), 'utf8');
-  assert.match(src, /CDN-Cache-Control['"]?, 'no-store'/);
+  assert.match(src, /applyCrawlerNoStore\(reply\)/);
   assert.match(src, /crawlerNoStore\(reply\)/);
 });
 

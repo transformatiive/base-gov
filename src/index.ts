@@ -14,6 +14,8 @@ import { registerPipelineRoutes } from './pipeline.js';
 import { registerCompanyProfileRoutes } from './company-profile.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerAiFeedbackRoutes } from './ai-feedback.js';
+import { purgeCrawlerDocuments, registerWwwApexRedirect } from './crawler-cache.js';
+import { publicSiteOrigin } from './guides.js';
 import { registerGuideAgentRoutes, registerPublicGuideRoutes } from './routes-guides.js';
 import { ingestPublicPage, registerUsageRoutes } from './routes-usage.js';
 import { cacheControlForPublicFile } from './static-cache.js';
@@ -88,8 +90,17 @@ async function main(): Promise<void> {
   await registerUsageRoutes(app);
 
   app.get('/health', async () => ({ ok: true }));
+  registerWwwApexRedirect(app, publicSiteOrigin(config.appBaseUrl));
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
+  void purgeCrawlerDocuments({
+    origin: publicSiteOrigin(config.appBaseUrl),
+    token: config.mail.cloudflareApiToken,
+  }).then((result) => {
+    if (result.skipped) return;
+    if (result.ok) app.log.info('Cloudflare: cache de robots/sitemap limpa');
+    else app.log.warn({ err: result.error }, 'Cloudflare: não limpei robots/sitemap (falta Cache Purge no token?)');
+  });
   startWorker();
   startOpendataWorker();
   startScheduler();

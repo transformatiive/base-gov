@@ -44,5 +44,7 @@ test('o reencaminhamento de @prepbid.com aponta para info@transformatiive.com', 
   const script = readFileSync(new URL('../scripts/setup-concursivo-cloudflare.mjs', import.meta.url), 'utf8');
   assert.match(script, /MAIL_FORWARD_TO \|\| 'info@transformatiive\.com'/);
   assert.match(script, /--route/);
+  assert.match(script, /--www/);
+  assert.match(script, /--purge/);
   assert.match(script, /addRule\(zoneId, 'info'\)/);
 });
