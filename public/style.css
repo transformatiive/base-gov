@@ -384,6 +384,7 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
   .toolbar > div:last-child { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .hoje-head { gap: 12px; margin-bottom: 16px; }
   .hoje-head h1 { font-size: 22px; }
+  .hoje-head-actions { width: 100%; }
   .d-actions { width: 100%; flex-wrap: wrap; }
   .d-actions > button, .d-actions > a { flex: 1 1 auto; }
   .d-actions button { justify-content: center; }
@@ -493,6 +494,7 @@ body.login-bg { background: var(--pb-paper); }
 .hoje-head .day { font-size: 12px; color: var(--muted); font-weight: 500; }
 .hoje-head h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0 0; }
 .hoje-head h1 .u { color: var(--brand); border-bottom: 3px solid var(--accent-line); }
+.hoje-head-actions { display: flex; gap: 10px; align-items: center; flex: none; flex-wrap: wrap; min-width: 0; }
 .hoje-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
 .hoje-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .sec-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; flex-wrap: wrap; }

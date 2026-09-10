@@ -3396,7 +3396,7 @@ async function renderHoje(opts = {}) {
         ${recolha ? `<div class="last-recolha">${esc(recolha)}</div>` : ''}
         ${recolhaPendente ? '<p class="hint" style="margin:.5rem 0 0">A primeira recolha deste perfil ainda está a decorrer — os números vão aparecendo à medida que o corpus é cruzado com os termos e CPV.</p>' : ''}
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex:none">
+      <div class="hoje-head-actions">
         <select id="ctx-select" data-guide="hoje-ctx" aria-label="Atividade">
           ${profiles.map((p) => `<option value="${p.id}" ${String(p.id) === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>

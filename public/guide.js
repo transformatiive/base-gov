@@ -49,6 +49,11 @@
   var activeRoot = null;
   var resizeHandler = null;
   var escHandler = null;
+  var MOBILE_MQ = '(max-width: 900px)';
+
+  function isMobileLayout() {
+    return !!(w.matchMedia && w.matchMedia(MOBILE_MQ).matches);
+  }
 
   function bindEsc(fn) {
     unbindEsc();
@@ -211,6 +216,7 @@
    */
   function startSteps(steps, cbs) {
     cbs = cbs || {};
+    if (isMobileLayout()) return;
     stop();
     running = true;
     var list = (steps || []).slice();
@@ -305,6 +311,7 @@
 
     resizeHandler = function () {
       if (!running) return;
+      if (isMobileLayout()) { finish('skip'); return; }
       var step = list[idx];
       var el = queryStep(step);
       if (el) {
@@ -327,6 +334,7 @@
 
   function maybeSplash() {
     return new Promise(function (resolve) {
+      if (isMobileLayout()) { resolve(); return; }
       var onboard = false;
       try { onboard = sessionStorage.getItem('br_onboard') === '1'; } catch (e) { /* ignore */ }
       var p = load();
@@ -397,6 +405,7 @@
 
   function startMenuTour() {
     return new Promise(function (resolve) {
+      if (isMobileLayout()) { resolve(); return; }
       var steps = menuSteps();
       if (!steps.length) { resolve(); return; }
       startSteps(steps, {
@@ -408,6 +417,7 @@
 
   function maybeScreenCoach(id) {
     return new Promise(function (resolve) {
+      if (isMobileLayout()) { resolve(); return; }
       var p = load();
       if (p.optOut || p.screens[id] || running) { resolve(); return; }
       var spec = w.BRHelpCatalog && w.BRHelpCatalog.screens && w.BRHelpCatalog.screens[id];
@@ -440,7 +450,7 @@
   }
 
   function afterView(id) {
-    if (running) return;
+    if (isMobileLayout() || running) return;
     var p = load();
     if (p.optOut) return;
     maybeScreenCoach(id);
@@ -480,6 +490,14 @@
     },
     isRunning: isRunning,
     isNavigating: function () { return navigating; },
+    isMobileLayout: isMobileLayout,
     _viewReady: signalViewReady,
   };
+
+  if (w.matchMedia) {
+    var mq = w.matchMedia(MOBILE_MQ);
+    var onMq = function () { if (mq.matches && running) stop(); };
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onMq);
+    else if (typeof mq.addListener === 'function') mq.addListener(onMq);
+  }
 })(window);
