@@ -47,8 +47,9 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.doesNotMatch(landing, /var sel = '[^']*\.hero-cta/);
   assert.doesNotMatch(landing, /M4\.5 12a7\.5/);
   assert.doesNotMatch(landing, /m9 14 2 2 4-4/);
-  assert.match(landing, /cx="21\.15"/);
-  assert.match(landing, /Prep<em>Bid<\/em>/);
+  assert.match(landing, /class="pb-wordmark">PrepBid</);
+  assert.doesNotMatch(landing, /Prep<em>Bid<\/em>/);
+  assert.doesNotMatch(landing, /family=Fraunces/);
   assert.match(landing, /Assistente para ganhar concursos/);
 });
 
@@ -81,5 +82,23 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=75/);
+  assert.match(index, /app\.js\?v=76/);
+});
+
+test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
+  const src = readFileSync(join(root, 'src/styles/tokens.css'), 'utf8');
+  const pub = readFileSync(join(root, 'public/tokens.css'), 'utf8');
+  assert.equal(pub, src);
+});
+
+test('wordmark da app e dos guias é texto PrepBid, sem SVG nem itálico', () => {
+  const appJs = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const index = readFileSync(join(root, 'public/index.html'), 'utf8');
+  const article = renderGuideArticleHtml('https://prepbid.example', sample);
+  assert.match(appJs, /class="pb-wordmark">PrepBid</);
+  assert.doesNotMatch(appJs, /MARK_SVG/);
+  assert.match(index, /class="pb-wordmark">PrepBid</);
+  assert.match(article, /class="pb-wordmark">PrepBid</);
+  assert.doesNotMatch(article, /Prep<em>Bid<\/em>/);
+  assert.doesNotMatch(article, /family=Fraunces/);
 });

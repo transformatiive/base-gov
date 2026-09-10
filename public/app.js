@@ -115,8 +115,8 @@ const endDaysBadge = (d) => {
   const diff = Math.round((new Date(d) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
   if (Number.isNaN(diff)) return '';
   return diff >= 0
-    ? ` <span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6">faltam ${diff} dia(s)</span>`
-    : ` <span class="badge" style="background:#eef1ef;color:#4c5551">terminou há ${-diff} dia(s)</span>`;
+    ? ` <span class="badge" style="background:var(--pb-green-tint);color:var(--pb-green);border-color:var(--pb-ink-12)">faltam ${diff} dia(s)</span>`
+    : ` <span class="badge" style="background:var(--pb-ink-06);color:var(--pb-ink-60)">terminou há ${-diff} dia(s)</span>`;
 };
 const fmtCompact = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { notation: 'compact', maximumFractionDigits: 1 }) + ' €');
 const fmtEuro0 = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €');
@@ -162,18 +162,18 @@ function hojePipelineDue(it) {
 }
 /* Acordo-quadro: canal de venda distinto (contratação centralizada/ESPAP). */
 const isAcordoQuadro = (o) => /acordo[-\s]?quadro/i.test([o?.contract_designation, o?.announcement_type, o?.model_type, o?.contracting_procedure_type, o?.contract_type].filter(Boolean).join(' '));
-const AQ_BADGE = '<span class="badge" style="background:#e4efe8;color:#2c6353;border-color:#cfe2d6" title="Acordo-quadro — canal de contratação centralizada">AQ</span>';
-/* Pares tint (fundo, texto) do design system v2 — chips de score/estado. */
-const scorePair = (s) => (s >= 70 ? ['#e4efe8', '#2c6353'] : s >= 45 ? ['#fdf6e8', '#8a6a1e'] : ['#eef1ef', '#7d8681']);
+const AQ_BADGE = '<span class="badge" style="background:var(--pb-green-tint);color:var(--pb-green);border-color:var(--pb-ink-12)" title="Acordo-quadro — canal de contratação centralizada">AQ</span>';
+/* Pares tint (fundo, texto) do design system — chips de score/estado. */
+const scorePair = (s) => (s >= 70 ? ['var(--pb-green-tint)', 'var(--pb-green)'] : s >= 45 ? ['var(--pb-amber-tint)', 'var(--pb-amber)'] : ['var(--pb-ink-06)', 'var(--pb-ink-60)']);
 const scoreChip = (s, title) => {
   const [bg, fg] = scorePair(s);
-  return `<span class="score" style="background:${bg};color:${fg}"${title ? ` title="${title}"` : ''}>${s}</span>`;
+  return `<span class="score pb-num" style="background:${bg};color:${fg}"${title ? ` title="${title}"` : ''}>${s}</span>`;
 };
-const FIT_BG = '#e4efe8', FIT_FG = '#2c6353';
-const fitChip = (f, title) => `<span class="score" style="background:${FIT_BG};color:${FIT_FG}"${title ? ` title="${title}"` : ''}>${f}</span>`;
+const FIT_BG = 'var(--pb-green-tint)', FIT_FG = 'var(--pb-green)';
+const fitChip = (f, title) => `<span class="score pb-num" style="background:${FIT_BG};color:${FIT_FG}"${title ? ` title="${title}"` : ''}>${f}</span>`;
 const typeChip = (t) => (t === 'anuncio_aberto'
-  ? '<span class="badge" style="background:#f7e9e4;color:#c2543a;border-color:#ecc9bf">Concurso</span>'
-  : '<span class="badge" style="background:#fdf6e8;color:#8a6a1e;border-color:#ecd9ac">Renovação</span>');
+  ? '<span class="badge" style="background:var(--pb-garnet-tint);color:var(--pb-garnet);border-color:var(--pb-ink-12)">Concurso</span>'
+  : '<span class="badge" style="background:var(--pb-amber-tint);color:var(--pb-amber);border-color:var(--pb-ink-12)">Renovação</span>');
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 /* Ícones SVG inline (traço, 24x24). */
@@ -214,12 +214,8 @@ function hydrateNavIcons() {
   });
 }
 
-const MARK_SVG = (size = 32) =>
-  `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#173f35"/><path fill="#e9f2ee" d="M7.4 11.15c0-1.05.85-1.9 1.9-1.9h3.55c.4 0 .77.18 1.02.48l.85 1.04h8.04c1.05 0 1.9.85 1.9 1.9v10.55c0 1.05-.85 1.9-1.9 1.9H9.3c-1.05 0-1.9-.85-1.9-1.9V11.15z"/><path fill="#b7d4c4" d="M9.3 9.25h3.55l.78 1.02H9.3V9.25z"/><path stroke="#173f35" stroke-opacity=".22" stroke-width="1.35" stroke-linecap="round" d="M10.6 15.15h6.1M10.6 18h4.9"/><circle cx="21.15" cy="19.25" r="4.55" fill="#173f35"/><path d="M19.15 19.3l1.32 1.42 2.78-2.98" stroke="#e9f2ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-
-/* Wordmark PrepBid (Fraunces + dossier; igual ao do header). */
-const wordmark = (size = 32) =>
-  `<span class="wordmark">${MARK_SVG(size)}<span class="wm-type">Prep<em>Bid</em></span></span>`;
+const wordmark = () =>
+  '<span class="wordmark"><span class="pb-wordmark">PrepBid</span></span>';
 
 const BOOT_PHRASES = [
   'A pesquisar concursos abertos…',
@@ -260,14 +256,11 @@ function showBootSplash() {
   }, 2300);
 }
 
-/* Donut de score (0-100). Circunferência do arco (r=22) ≈ 138. */
+/* Donut de score (0-100): conic-gradient, número em mono. */
 const scoreDonut = (score, color, size = 52) => {
   const s = Math.max(0, Math.min(100, Number(score) || 0));
-  const dash = `${Math.round((s / 100) * 138)} 138`;
-  return `<svg width="${size}" height="${size}" viewBox="0 0 52 52" aria-hidden="true">
-    <circle cx="26" cy="26" r="22" fill="none" stroke="#eef1ef" stroke-width="5"></circle>
-    <circle cx="26" cy="26" r="22" fill="none" stroke="${color}" stroke-width="5" stroke-dasharray="${dash}" stroke-linecap="round" transform="rotate(-90 26 26)"></circle>
-    <text x="26" y="30" font-size="14" font-weight="700" text-anchor="middle" fill="#191c1e" font-family="Schibsted Grotesk">${s}</text></svg>`;
+  const accent = color || 'var(--pb-amber)';
+  return `<span class="score-ring pb-num" style="--sr:${s}%;--sr-c:${accent};width:${size}px;height:${size}px">${s}</span>`;
 };
 
 async function api(path, opts = {}) {
@@ -509,14 +502,14 @@ function pipelineIdOf(o) {
 
 function plTone(status) {
   switch (status) {
-    case 'interessa': return { bg: '#e4efe8', fg: '#2c6353', bd: '#cfe2d6' };
-    case 'preparacao': return { bg: '#fdf6e8', fg: '#8a6a1e', bd: '#ecd9ac' };
-    case 'submetida': return { bg: '#e9f2ee', fg: '#173f35', bd: '#b7d4c4' };
-    case 'ganha': return { bg: '#2c6353', fg: '#e9f2ee', bd: '#2c6353' };
-    case 'perdida': return { bg: '#f7e9e4', fg: '#c2543a', bd: '#ecc9bf' };
-    case 'descartada': return { bg: '#eef1ef', fg: '#7d8681', bd: '#dfe3e0' };
-    case 'nova': return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
-    default: return { bg: '#eef1ef', fg: '#4c5551', bd: '#dfe3e0' };
+    case 'interessa': return { bg: 'var(--pb-green-tint)', fg: 'var(--pb-green)', bd: 'var(--pb-ink-12)' };
+    case 'preparacao': return { bg: 'var(--pb-amber-tint)', fg: 'var(--pb-amber)', bd: 'var(--pb-ink-12)' };
+    case 'submetida': return { bg: 'var(--pb-green-tint-2)', fg: 'var(--pb-green)', bd: 'var(--pb-ink-12)' };
+    case 'ganha': return { bg: 'var(--pb-green)', fg: 'var(--pb-paper)', bd: 'var(--pb-green)' };
+    case 'perdida': return { bg: 'var(--pb-garnet-tint)', fg: 'var(--pb-garnet)', bd: 'var(--pb-ink-12)' };
+    case 'descartada': return { bg: 'var(--pb-ink-06)', fg: 'var(--pb-ink-60)', bd: 'var(--pb-ink-12)' };
+    case 'nova': return { bg: 'var(--pb-ink-06)', fg: 'var(--pb-ink-60)', bd: 'var(--pb-ink-12)' };
+    default: return { bg: 'var(--pb-ink-06)', fg: 'var(--pb-ink-60)', bd: 'var(--pb-ink-12)' };
   }
 }
 
@@ -787,7 +780,7 @@ async function startFichaAi({ kind, id, force = false }) {
             <div class="card" style="margin-top:0.6rem">
               <div class="toolbar"><h3 style="margin:0">Dossier de resposta (com placeholders)</h3>
                 <a href="${url}" download="dossier-resposta.doc"><button class="btn-secondary">${ico('download')} Descarregar .doc</button></a></div>
-              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
+              <pre style="white-space:pre-wrap;font-size:0.85rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--pb-radius);padding:0.9rem;max-height:480px;overflow:auto">${esc(t.markdown)}</pre>
             </div>`;
         } catch (err) {
           document.getElementById('ai-template-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
@@ -1012,7 +1005,7 @@ function upgradePanel(info) {
     <div class="eyebrow" style="color:var(--brand)">Plano ${req}</div>
     <h2 style="margin:.4rem 0 .3rem">Funcionalidade do plano ${req}</h2>
     <p class="muted" style="margin:0 0 1rem">${esc(info?.message || 'Esta funcionalidade requer um plano superior.')}</p>
-    <p><a class="btn" href="#/planos" style="display:inline-block;padding:.6rem 1.2rem;background:var(--brand);color:#fff;border-radius:8px;text-decoration:none">Ver planos</a></p>
+    <p><a class="btn" href="#/planos" style="display:inline-block;padding:.6rem 1.2rem;background:var(--pb-green);color:var(--pb-paper);border-radius:var(--pb-radius);text-decoration:none">Ver planos</a></p>
   </div>`;
 }
 
@@ -1509,9 +1502,9 @@ async function renderPlans() {
     else if (p.key === 'free') cta = `<button type="button" class="btn-secondary" data-act="downgrade">Passar para Grátis</button>`;
     else if (p.key === 'pro' && canTrial) cta = `<button class="plan-cta" data-act="trial">Experimentar 7 dias grátis</button>`;
     else cta = `<button class="plan-cta" data-plan="${p.key}" data-act="checkout">${current === 'free' ? 'Subscrever' : 'Mudar para ' + PLAN_LABEL[p.key]}</button>`;
-    return `<div class="plan-box${isCurrent ? ' current' : ''}" style="flex:1;min-width:210px;border:1px solid ${isCurrent ? 'var(--brand)' : 'var(--line,#e2e8f0)'};border-radius:12px;padding:1.1rem;display:flex;flex-direction:column;gap:.6rem">
+    return `<div class="plan-box${isCurrent ? ' current' : ''}" style="flex:1;min-width:210px;border:1px solid ${isCurrent ? 'var(--brand)' : 'var(--pb-ink-12)'};border-radius:var(--pb-radius);padding:1.1rem;display:flex;flex-direction:column;gap:.6rem">
       <div class="eyebrow" style="color:var(--brand)">${PLAN_LABEL[p.key]}</div>
-      <div style="font-size:1.7rem;font-weight:700">${paid ? eur(p.price_cents) + ' €' : 'Grátis'}${paid ? '<span style="font-size:.8rem;font-weight:400;color:var(--muted,#64748b)"> + IVA / mês</span>' : ''}</div>
+      <div style="font-size:1.7rem;font-weight:700">${paid ? eur(p.price_cents) + ' €' : 'Grátis'}${paid ? '<span style="font-size:.8rem;font-weight:400;color:var(--pb-ink-60)"> + IVA / mês</span>' : ''}</div>
       <ul style="list-style:none;padding:0;margin:.2rem 0;font-size:.85rem;line-height:1.7">${(PLAN_FEATURES[p.key] || []).map((f) => `<li>✓ ${esc(f)}</li>`).join('')}</ul>
       <div style="margin-top:auto">${cta}</div>
     </div>`;
@@ -1694,7 +1687,7 @@ async function renderAccount() {
   const period = billingPeriodLine(summary);
   const ai = caps.ai_usage || { used: 0, cap: 0, enabled: false };
   const pct = ai.cap > 0 ? Math.min(100, Math.round((ai.used / ai.cap) * 100)) : 0;
-  const barColor = ai.level === 'capped' || ai.level === 'alert' ? '#e11d48' : (ai.level === 'warn' ? '#d97706' : 'var(--brand)');
+  const barColor = ai.level === 'capped' || ai.level === 'alert' ? 'var(--pb-garnet)' : (ai.level === 'warn' ? 'var(--pb-amber)' : 'var(--brand)');
   const resetLine = ai.reset_label
     ? `Reinicia a ${ai.reset_label}.`
     : '';
@@ -1710,8 +1703,8 @@ async function renderAccount() {
       <p class="muted" style="margin:0 0 1.2rem">${esc(window._me?.username ?? '')}${c.nif ? ' · NIF ' + esc(c.nif) : ''}</p>
 
       <div class="inline" style="gap:1rem;flex-wrap:wrap;align-items:stretch">
-        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem" data-guide="acct-plan">
-          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Plano</div>
+        <div style="flex:1;min-width:220px;border:1px solid var(--pb-ink-12);border-radius:var(--pb-radius);padding:1rem" data-guide="acct-plan">
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--pb-ink-60);text-transform:uppercase">Plano</div>
           <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${PLAN_LABEL[plan]}</div>
           <div class="muted" style="font-size:.85rem">${esc(period)}</div>
           <div class="bill-actions">
@@ -1722,10 +1715,10 @@ async function renderAccount() {
           <div id="bill-result"></div>
         </div>
 
-        <div style="flex:1;min-width:220px;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:1rem">
-          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--muted,#64748b);text-transform:uppercase">Análises de IA</div>
-          <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${ai.used}${ai.cap > 0 ? ` <span style="font-size:.9rem;font-weight:400;color:var(--muted,#64748b)">/ ${ai.cap}</span>` : ''}</div>
-          ${ai.cap > 0 ? `<div style="height:6px;background:var(--panel-2,#eef2f7);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
+        <div style="flex:1;min-width:220px;border:1px solid var(--pb-ink-12);border-radius:var(--pb-radius);padding:1rem">
+          <div class="lbl" style="font-size:.7rem;letter-spacing:.06em;color:var(--pb-ink-60);text-transform:uppercase">Análises de IA</div>
+          <div style="font-size:1.4rem;font-weight:700;margin:.2rem 0">${ai.used}${ai.cap > 0 ? ` <span style="font-size:.9rem;font-weight:400;color:var(--pb-ink-60)">/ ${ai.cap}</span>` : ''}</div>
+          ${ai.cap > 0 ? `<div style="height:6px;background:var(--pb-ink-06);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor}"></div></div>` : '<div class="muted" style="font-size:.85rem">Sem análises de IA no plano Grátis.</div>'}
           <div class="muted" style="font-size:.78rem;margin-top:.5rem">${ai.cap > 0
             ? `${ai.remaining ?? Math.max(0, ai.cap - ai.used)} restantes neste ciclo. ${resetLine}${ai.enabled && ai.level === 'capped' ? ' Novas análises estão bloqueadas.' : ''}`
             : 'Contagem informativa.'}</div>
@@ -1734,9 +1727,9 @@ async function renderAccount() {
 
       ${renderInvoicesBlock(invoices)}
       ${renderSeatsBlock(seats, seatUsed, seatMax, plan)}
-      <div id="company-profile-block" data-guide="acct-profile" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      <div id="company-profile-block" data-guide="acct-profile" style="margin-top:1.4rem;border-top:1px solid var(--pb-ink-12);padding-top:1rem"></div>
       ${renderProposalProfileBlock(propProfile, plan)}
-      <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem"></div>
+      <div id="notify-block" style="margin-top:1.4rem;border-top:1px solid var(--pb-ink-12);padding-top:1rem"></div>
       ${renderCancelAccountBlock()}
     </div>`;
 
@@ -1762,7 +1755,7 @@ function seatOccupancy(seats, caps) {
 
 function renderProposalProfileBlock(profile, plan) {
   if (profile === 'locked' || (profile == null && !can('geracao_propostas'))) {
-    return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    return `<div style="margin-top:1.4rem;border-top:1px solid var(--pb-ink-12);padding-top:1rem">
       <h3 style="margin:0 0 .4rem">Perfil para propostas</h3>
       <p class="muted">Disponível no plano Business: habilitações, referências e margem mínima reutilizados em todos os concursos.</p>
     </div>`;
@@ -1770,7 +1763,7 @@ function renderProposalProfileBlock(profile, plan) {
   const p = profile || { legal_name: '', nif: '', cae: '', certifications: [], technical_capabilities: '', portfolio: '', references: [], key_team: [], min_margin_pct: '', notes: '', missing: [] };
   const refs = (p.references || []).map((r) => `${r.project || ''} | ${r.client || ''} | ${r.year || ''} | ${r.value || ''}`).join('\n');
   const team = (p.key_team || []).map((t) => `${t.name || ''} | ${t.role || ''} | ${t.cv_summary || ''}`).join('\n');
-  return `<div style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+  return `<div style="margin-top:1.4rem;border-top:1px solid var(--pb-ink-12);padding-top:1rem">
     <h3 style="margin:0 0 .3rem">Perfil para propostas</h3>
     <p class="muted" style="margin:0 0 .8rem">Preenchido uma vez e reutilizado em todos os rascunhos. O que faltar é marcado no .docx, nunca inventado.</p>
     ${(p.missing || []).length ? `<p class="hint">Ainda em falta: ${esc(p.missing.join(', '))}</p>` : ''}
@@ -1868,12 +1861,12 @@ function renderSeatsBlock(seats, used, max, plan) {
     <tr><td>${esc([m.first_name, m.last_name].filter(Boolean).join(' ') || m.username)}</td>
         <td class="muted">${esc(m.email || m.username)}</td>
         <td>${m.is_admin ? '<span class="chip">admin</span>' : ''}</td>
-        <td style="text-align:right">${m.id === window._me?.user_id || (seats?.members || []).length <= 1 ? '' : `<button class="lnk seat-rm" data-id="${m.id}" style="color:#e11d48">Remover</button>`}</td></tr>`).join('');
+        <td style="text-align:right">${m.id === window._me?.user_id || (seats?.members || []).length <= 1 ? '' : `<button class="lnk seat-rm" data-id="${m.id}" style="color:var(--pb-garnet)">Remover</button>`}</td></tr>`).join('');
   const invites = (seats?.invites || []).map((i) => `
     <tr><td colspan="2" class="muted">${esc(i.email)} <span class="chip">convite pendente</span></td><td></td>
-        <td style="text-align:right"><button class="lnk seat-inv-rm" data-id="${i.id}" style="color:#e11d48">Cancelar</button></td></tr>`).join('');
+        <td style="text-align:right"><button class="lnk seat-inv-rm" data-id="${i.id}" style="color:var(--pb-garnet)">Cancelar</button></td></tr>`).join('');
   return `
-    <div data-guide="acct-seats" style="margin-top:1.4rem;border-top:1px solid var(--line,#e2e8f0);padding-top:1rem">
+    <div data-guide="acct-seats" style="margin-top:1.4rem;border-top:1px solid var(--pb-ink-12);padding-top:1rem">
       <div class="inline" style="justify-content:space-between;align-items:baseline">
         <h3 style="margin:0">Equipa <span class="muted" style="font-size:.85rem;font-weight:400">(${used}/${max} lugares)</span></h3>
       </div>
@@ -2203,17 +2196,17 @@ async function renderContract(id) {
 
   // Cronologia — só entradas com data válida, por ordem cronológica
   const crono = [];
-  if (c.publication_date) crono.push({ d: c.publication_date, dot: '#9aa6a0', label: 'publicação no BASE' });
-  if (c.signing_date) crono.push({ d: c.signing_date, dot: '#9aa6a0', label: `celebração${c.execution_deadline ? ` · prazo ${esc(String(c.execution_deadline))}` : ''}` });
+  if (c.publication_date) crono.push({ d: c.publication_date, dot: 'var(--pb-ink-42)', label: 'publicação no BASE' });
+  if (c.signing_date) crono.push({ d: c.signing_date, dot: 'var(--pb-ink-42)', label: `celebração${c.execution_deadline ? ` · prazo ${esc(String(c.execution_deadline))}` : ''}` });
   if (c.estimated_end_date) {
     const contactar = new Date(Math.max(Date.now(), new Date(c.estimated_end_date).getTime() - 120 * 86400000)).toISOString().slice(0, 10);
-    crono.push({ d: contactar, dot: '#c99a3c', label: 'contacto comercial sugerido' });
-    crono.push({ d: c.estimated_end_date, dot: '#c2543a', label: 'fim previsto — renovação', strong: true });
+    crono.push({ d: contactar, dot: 'var(--pb-amber)', label: 'contacto comercial sugerido' });
+    crono.push({ d: c.estimated_end_date, dot: 'var(--pb-garnet)', label: 'fim previsto — renovação', strong: true });
   }
   crono.sort((a, b) => new Date(a.d) - new Date(b.d));
   const cronoHtml = crono.map((r, i) => `<div class="crono-row">
     <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
-    <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${dPt(r.d)}</b> · ${r.label}</div></div>`).join('');
+    <div class="body"><b${r.strong ? ' style="color:var(--pb-garnet)"' : ''}>${dPt(r.d)}</b> · ${r.label}</div></div>`).join('');
 
   // Badge do fim previsto
   let fimBadge = '';
@@ -2263,7 +2256,7 @@ async function renderContract(id) {
             id: 'mods', label: `Modificações (${c.modifications.length})`,
             html: `<div class="crono">
             ${c.modifications.map((mo, i) => `<div class="crono-row">
-              <div class="crono-mark"><span class="crono-dot" style="background:#c99a3c"></span>${i < c.modifications.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
+              <div class="crono-mark"><span class="crono-dot" style="background:var(--pb-amber)"></span>${i < c.modifications.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
               <div class="body">${mo.date ? `<b>${fmtDate(mo.date)}</b> · ` : ''}${esc(mo.label)}${mo.price_text ? ` <span class="muted">(${esc(mo.price_text)})</span>` : ''}</div>
             </div>`).join('')}
           </div>
@@ -2285,7 +2278,7 @@ async function renderContract(id) {
             if (c.total_effective_price == null) return '';
             const diverge = Number.isFinite(ini) && Number.isFinite(eff) && ini > 0 && Math.abs(eff - ini) / ini >= 0.005;
             const pct = diverge ? Math.round(((eff - ini) / ini) * 100) : 0;
-            return `<div class="eff">preço efetivo: ${fmtPrice(c.total_effective_price)}${diverge ? ` <span class="fim-badge" style="background:#e9b99a">${pct > 0 ? '+' : ''}${pct}% · contrato modificado</span>` : ''}</div>`;
+            return `<div class="eff">preço efetivo: ${fmtPrice(c.total_effective_price)}${diverge ? ` <span class="fim-badge" style="background:var(--pb-amber-tint)">${pct > 0 ? '+' : ''}${pct}% · contrato modificado</span>` : ''}</div>`;
           })()}
           <div class="sep">
             <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="k">FIM PREVISTO</span>${fimBadge}</div>
@@ -2364,7 +2357,7 @@ async function renderProfiles() {
     const holder = document.getElementById('cpv-chips');
     if (!holder) return;
     holder.innerHTML = cpvSelected.map((c, i) => `
-      <span style="display:inline-flex;align-items:center;gap:0.3rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:0.15rem 0.6rem;font-size:0.8rem">
+      <span style="display:inline-flex;align-items:center;gap:0.3rem;background:var(--pb-green-tint);border:1px solid var(--pb-ink-12);border-radius:999px;padding:0.15rem 0.6rem;font-size:0.8rem">
         <strong>${esc(c.code)}</strong> ${esc((c.designation || '').slice(0, 40))}
         <a href="#" onclick="event.preventDefault(); window._cpvRemove(${i})" aria-label="Remover" style="font-weight:700">&times;</a>
       </span>`).join('');
@@ -2442,7 +2435,7 @@ async function renderInsightTab(el, q, tab, p) {
     const fitKey = (o) => `${o.type}:${o.type === 'anuncio_aberto' ? o.announcement_id : o.contract_id}`;
     const fits = window._fitCache?.[q] ?? {};
     const matrix = renderPriorityMatrix(d.items, fits);
-    const scoreBarColor = (o) => (o.type === 'anuncio_aberto' ? '#c2543a' : o.score >= 70 ? '#173f35' : o.score >= 50 ? '#5e8a7a' : '#9aa6a0');
+    const scoreBarColor = (o) => (o.type === 'anuncio_aberto' ? 'var(--pb-chart-accent)' : o.score >= 70 ? 'var(--pb-chart-1)' : o.score >= 50 ? 'var(--pb-chart-2)' : 'var(--pb-chart-3)');
     const subLine = (o) => {
       if (o.type === 'anuncio_aberto') return `CONCURSO ABERTO · prazo de propostas a ${o.days_left} dias`;
       return o.recurrence && o.recurrence > 1
@@ -2564,7 +2557,7 @@ async function renderInsightTab(el, q, tab, p) {
       </tbody></table>
       ${pagerHtml(d.total, d.page ?? page, d.size ?? size)}
       <div style="margin-top:1.4rem">
-        <div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">Concursos europeus (TED)</span><span class="sh">acima dos limiares UE · fonte Tenders Electronic Daily</span></div>
+        <div class="sec-head"><span class="sd" style="background:var(--pb-green)"></span><span class="st">Concursos europeus (TED)</span><span class="sh">acima dos limiares UE · fonte Tenders Electronic Daily</span></div>
         <div id="ted-panel" class="card" style="margin:0"><p class="muted" style="margin:0">A procurar no TED…</p></div>
       </div>`;
     bindPipelineChips(el);
@@ -2612,7 +2605,7 @@ async function renderInsightTab(el, q, tab, p) {
     const chart = (data, metric, label) => {
       const max = Math.max(1, ...data.map((m) => m[metric]));
       return `<h3>${label}</h3><div class="chart-wrap"><div class="bar-chart">
-        ${data.map((m) => `<div class="bar" style="height:${Math.round((m[metric] / max) * 100)}%">
+        ${data.map((m) => `<div class="bar${m[metric] === max ? ' accent' : ''}" style="height:${Math.round((m[metric] / max) * 100)}%">
           <b>${metric === 'total_value' ? fmtCompact(m[metric]) : m[metric]}</b><span>${MONTHS[m.month - 1]}</span></div>`).join('')}
       </div></div>`;
     };
@@ -2719,8 +2712,8 @@ async function renderInsightTab(el, q, tab, p) {
     const d = await api(`/api/insights/competitors${q}`);
     const maxShare = Math.max(1, ...d.items.map((c) => Number(c.share_pct) || 0));
     const ownNif = (window._me?.company?.nif || '').replace(/\D/g, '');
-    const quotaColor = (share, own) => (own ? '#c2543a'
-      : share >= 25 ? '#173f35' : share >= 15 ? '#2c6353' : share >= 8 ? '#5e8a7a' : '#8fb3a4');
+    const quotaColor = (share, own) => (own ? 'var(--pb-chart-accent)'
+      : share >= 25 ? 'var(--pb-chart-1)' : share >= 15 ? 'var(--pb-chart-2)' : share >= 8 ? 'var(--pb-chart-3)' : 'var(--pb-chart-4)');
     const row = (c) => {
       const own = ownNif && String(c.nif ?? '').replace(/\D/g, '') === ownNif;
       const share = Number(c.share_pct) || 0;
@@ -2947,7 +2940,7 @@ function aiModalClose() {
   }
 }
 
-const fitColor = (f) => (f >= 75 ? '#173f35' : f >= 45 ? '#c99a3c' : '#9aa6a0');
+const fitColor = (f) => (f >= 75 ? 'var(--pb-green)' : f >= 45 ? 'var(--pb-amber)' : 'var(--pb-ink-42)');
 
 /* Matriz de priorização: X = dias até à data-chave, Y = valor, bolha = recorrência, cor = fit IA ou tipo. */
 function renderPriorityMatrix(items, fits) {
@@ -2963,22 +2956,22 @@ function renderPriorityMatrix(items, fits) {
   // grelha Y: 4 níveis da escala sqrt, com o valor real correspondente
   const yGrid = [0.25, 0.5, 0.75, 1].map((f) => {
     const yy = padT + (1 - f) * (H - padT - padB);
-    return `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#eef2f7"/>
-      <text x="${padL - 6}" y="${yy + 3}" font-size="10" fill="#64748b" text-anchor="end">${fmtCompact(f * f * maxVal)}</text>`;
+    return `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="var(--pb-chart-grid)"/>
+      <text x="${padL - 6}" y="${yy + 3}" font-size="10" fill="var(--pb-ink-42)" text-anchor="end">${fmtCompact(f * f * maxVal)}</text>`;
   }).join('');
   // grelha X: de 30 em 30 dias (máx 8 marcas)
   const stepDays = maxDays > 240 ? 60 : 30;
   let xGrid = '';
   for (let d = stepDays; d <= maxDays; d += stepDays) {
-    xGrid += `<line x1="${x(d)}" y1="${padT}" x2="${x(d)}" y2="${H - padB}" stroke="${d === 30 ? '#cbd5e1' : '#eef2f7'}" ${d === 30 ? 'stroke-dasharray="4 4"' : ''}/>
-      <text x="${x(d)}" y="${H - padB + 14}" font-size="10" fill="#64748b" text-anchor="middle">${d}d</text>`;
+    xGrid += `<line x1="${x(d)}" y1="${padT}" x2="${x(d)}" y2="${H - padB}" stroke="${d === 30 ? 'var(--pb-ink-12)' : 'var(--pb-chart-grid)'}" ${d === 30 ? 'stroke-dasharray="4 4"' : ''}/>
+      <text x="${x(d)}" y="${H - padB + 14}" font-size="10" fill="var(--pb-ink-42)" text-anchor="middle">${d}d</text>`;
   }
 
   window._matrixPts = pts;
   window._matrixFits = fits ?? {};
   const dot = (o, i) => {
     const fit = fits?.[key(o)];
-    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? '#c2543a' : '#173f35');
+    const color = fit ? fitColor(fit.fit) : (o.type === 'anuncio_aberto' ? 'var(--pb-chart-accent)' : 'var(--pb-ink)');
     const r = 3 + Math.min(11, Math.sqrt(o.value / maxVal) * 11);
     return `<a href="${esc(o.internal_url ?? '#')}"><circle data-mi="${i}" cx="${x(Number(o.days_left))}" cy="${y(o.value)}" r="${r}"
       fill="${color}" fill-opacity="0.55" stroke="${color}" style="cursor:pointer"></circle></a>`;
@@ -2989,11 +2982,11 @@ function renderPriorityMatrix(items, fits) {
     <p class="muted" style="margin:0 0 0.4rem">Cima-esquerda = agir já (valor alto, prazo próximo). Dimensão da bolha = valor do negócio. ${Object.keys(fits ?? {}).length ? 'Cor = adequação IA (verde alto).' : 'Vermelho = concurso aberto, verde = renovação.'}</p>
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="min-width:640px;max-width:100%">
       ${yGrid}${xGrid}
-      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#e2e8f0"/>
-      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="#e2e8f0"/>
-      <text x="${x(30) + 4}" y="${padT + 10}" font-size="10" fill="#94a3b8">30 dias</text>
-      <text x="${W - padR}" y="${H - 8}" font-size="10" fill="#64748b" text-anchor="end">dias até à data-chave →</text>
-      <text x="${padL - 6}" y="${H - padB + 3}" font-size="10" fill="#64748b" text-anchor="end">0 €</text>
+      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--pb-ink-12)"/>
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--pb-ink-12)"/>
+      <text x="${x(30) + 4}" y="${padT + 10}" font-size="10" fill="var(--pb-ink-42)">30 dias</text>
+      <text x="${W - padR}" y="${H - 8}" font-size="10" fill="var(--pb-ink-42)" text-anchor="end">dias até à data-chave →</text>
+      <text x="${padL - 6}" y="${H - padB + 3}" font-size="10" fill="var(--pb-ink-42)" text-anchor="end">0 €</text>
       ${pts.map((o, i) => dot(o, i)).join('')}
     </svg></div>`;
 }
@@ -3001,7 +2994,7 @@ function renderPriorityMatrix(items, fits) {
 /* Mapa vetorial (MapLibre GL + OpenFreeMap "positron", estilo mapcn). */
 /* Rampa azul do design v2: 4 níveis visíveis sobre o basemap claro
    (os tons mais claros da rampa completa desapareciam com opacidade baixa). */
-const MAP_COLORS = ['#dfe7e2', '#a7cdbc', '#3f8a70', '#173f35'];
+const MAP_COLORS = ['rgba(20, 22, 19, 0.16)', 'rgba(20, 22, 19, 0.32)', 'rgba(20, 22, 19, 0.55)', '#141613'];
 const MAP_PLAY_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2l9 5-9 5z"/></svg>';
 const MAP_PAUSE_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10"/><rect x="8" y="2" width="3" height="10"/></svg>';
 
@@ -3015,7 +3008,7 @@ function mapColor(value, maxV) {
 // Raio ancorado ao máximo do período completo, limitado a 4-22px.
 const mapRadius = (value, refV) => (value > 0 ? Math.min(22, 4 + Math.sqrt(value / Math.max(1, refV)) * 18) : 3);
 const mapPopup = (i) =>
-  `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><em>clique para detalhe do distrito</em>`;
+  `<strong>${esc(i.district)}</strong><br>${i.count} contrato(s)<br>Total: ${fmtCompact(i.total_value)}<br>Médio: ${fmtCompact(i.avg_value)}<br><span>clique para detalhe do distrito</span>`;
 
 let glMap = null;
 let glReady = false;
@@ -3028,7 +3021,7 @@ const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 const MAP_STYLE_FALLBACK = {
   version: 8,
   sources: {},
-  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#e8edf3' } }],
+  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#EFEDE7' } }],
 };
 
 function districtsToGeoJSON(items, refV) {
@@ -3340,9 +3333,9 @@ async function renderHoje(opts = {}) {
       <div class="ti">${escTitle(it.title ?? '')}</div>
       <div class="su">${esc(it.entity ?? '—')} · prazo ${fmtDateDMY(it.deadline)}</div></div></div>`;
   const pipeHtml = pipeDue.length ? `<div class="hoje-pipe" data-guide="hoje-pipe">
-      ${mine.length ? `<div class="sec-head"><span class="sd" style="background:#173f35"></span><span class="st">A minha responsabilidade</span></div>
+      ${mine.length ? `<div class="sec-head"><span class="sd" style="background:var(--pb-green)"></span><span class="st">A minha responsabilidade</span></div>
         <div class="opp-cards">${mine.map(pipeCard).join('')}</div>` : ''}
-      <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">No pipeline</span>${
+      <div class="sec-head"><span class="sd" style="background:var(--pb-garnet)"></span><span class="st">No pipeline</span>${
         pipeDue.length > 6
           ? `<a class="sh" href="#/pipeline">ver todas (${pipeDue.length}) →</a>`
           : '<span class="sh">prazos próximos</span>'
@@ -3357,7 +3350,7 @@ async function renderHoje(opts = {}) {
     const showScore = can('score_fit') && o.score != null;
     const showIa = can('analise_ia');
     return `<div class="opp-card" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
-      ${showScore ? scoreDonut(o.score, o.type === 'anuncio_aberto' ? '#c2543a' : '#c99a3c') : ''}
+      ${showScore ? scoreDonut(o.score, o.type === 'anuncio_aberto' ? 'var(--pb-amber)' : 'var(--pb-ink)') : ''}
       <div style="min-width:0">
         <div class="k"><span class="mini-chip ${chipCls(o)}">${esc(chipText(o))}</span>${fit ? `<span class="fit">adequação IA ${fit.fit}/100</span>` : ''}</div>
         <div class="ti">${escTitle(o.title ?? '')}</div>
@@ -3371,7 +3364,7 @@ async function renderHoje(opts = {}) {
       </div></div>`;
   };
   const prepRow = (o) => `<div class="prep-row" onclick="location.hash='${esc(o.internal_url ?? '#')}'">
-    ${scoreDonut(o.score, '#c99a3c', 44)}
+    ${scoreDonut(o.score, 'var(--pb-ink)', 44)}
     <div><div class="ti">${escTitle(o.title ?? '')}</div><div class="su">${esc(o.entity ?? '—')}</div></div>
     <div class="cd">contactar até<br><b>${contactar(o.key_date)}</b></div>
     <div class="vl">${fmtCompact(o.value)}</div></div>`;
@@ -3414,15 +3407,15 @@ async function renderHoje(opts = {}) {
       <div class="hoje-col">
         ${pipeHtml}
         <div>
-          <div class="sec-head"><span class="sd" style="background:#c2543a"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
+          <div class="sec-head"><span class="sd" style="background:var(--pb-garnet)"></span><span class="st">Agir esta semana</span><span class="sh">prazo &lt; 30 dias</span></div>
           <div class="opp-cards" data-guide="hoje-agir">${agir.map(agirCard).join('') || '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem prazos nos próximos 30 dias.</p></div>'}</div>
         </div>
         <div>
-          <div class="sec-head"><span class="sd" style="background:#c99a3c"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
+          <div class="sec-head"><span class="sd" style="background:var(--pb-amber)"></span><span class="st">Preparar</span><span class="sh">renovações a 1-6 meses</span></div>
           ${preparar.length ? `<div class="prep-card">${preparar.map(prepRow).join('')}</div>` : '<div class="card" style="margin:0"><p class="muted" style="margin:0">Sem renovações nesta janela.</p></div>'}
         </div>
         ${monitorizar.length ? `<div>
-          <div class="sec-head"><span class="sd" style="background:#9aa6a0"></span><span class="st">Monitorizar</span><a class="sh" href="#/radar/opportunities">${monitorizar.length} oportunidade${monitorizar.length === 1 ? '' : 's'} a mais de 6 meses · ver todas →</a></div>
+          <div class="sec-head"><span class="sd" style="background:var(--pb-ink-42)"></span><span class="st">Monitorizar</span><a class="sh" href="#/radar/opportunities">${monitorizar.length} oportunidade${monitorizar.length === 1 ? '' : 's'} a mais de 6 meses · ver todas →</a></div>
           <div class="monitor-card">${monitorizar.slice(0, 4).map((o) => `<span><b>${esc(o.entity ?? '—')}</b> · ${escTitleMax(o.title ?? '', 44)} · ${fmtCompact(o.value)}</span>`).join('')}</div>
         </div>` : ''}
       </div>
@@ -3514,7 +3507,7 @@ async function renderPipeline() {
       const colItems = open.filter((i) => i.status === col.id);
       const tone = plTone(col.id);
       html += `<div class="pl-col" data-status="${col.id}"${col.id === 'interessa' ? ' data-guide="pl-col-interessa"' : ''}>
-        <h3 class="pl-col-h" style="background:${tone.bg};color:${tone.fg};border:1px solid ${tone.bd}">${esc(col.label)} <span class="pl-col-count">(${colItems.length})</span></h3>
+        <h3 class="pl-col-h" style="color:${tone.fg}">${esc(col.label)} <span class="pl-col-count">(${colItems.length})</span></h3>
         <div class="pl-col-body">${colItems.map(card).join('') || '<p class="muted pl-empty">—</p>'}</div>
       </div>`;
     }
@@ -3971,12 +3964,12 @@ async function renderAnnouncement(id) {
       : `<span class="fim-badge past">EXPIRADO</span>`;
   }
   const crono = [];
-  if (a.dr_publication_date) crono.push({ d: a.dr_publication_date, dot: '#9aa6a0', label: 'publicação em Diário da República' });
-  if (a.proposal_deadline_date) crono.push({ d: a.proposal_deadline_date, dot: a.is_open ? '#c2543a' : '#9aa6a0', label: `prazo de propostas${a.is_open ? ' — a decorrer' : ' — expirado'}`, strong: a.is_open });
+  if (a.dr_publication_date) crono.push({ d: a.dr_publication_date, dot: 'var(--pb-ink-42)', label: 'publicação em Diário da República' });
+  if (a.proposal_deadline_date) crono.push({ d: a.proposal_deadline_date, dot: a.is_open ? 'var(--pb-garnet)' : 'var(--pb-ink-42)', label: `prazo de propostas${a.is_open ? ' — a decorrer' : ' — expirado'}`, strong: a.is_open });
   crono.sort((x, y) => new Date(x.d) - new Date(y.d));
   const cronoHtml = crono.map((r, i) => `<div class="crono-row">
     <div class="crono-mark"><span class="crono-dot" style="background:${r.dot}"></span>${i < crono.length - 1 ? '<span class="crono-line"></span>' : ''}</div>
-    <div class="body"><b${r.strong ? ' style="color:#c2543a"' : ''}>${fmtDatePt(r.d)}</b> · ${r.label}</div></div>`).join('');
+    <div class="body"><b${r.strong ? ' style="color:var(--pb-garnet)"' : ''}>${fmtDatePt(r.d)}</b> · ${r.label}</div></div>`).join('');
   if ((location.hash.split('?')[0]) !== `#/announcements/${id}`) return;
 
   app.innerHTML = `
@@ -4037,7 +4030,7 @@ async function renderAnnouncement(id) {
 
 function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
   const rec = an.go_no_go?.recomendacao;
-  const badgeGo = { go: ['AVANÇAR', '#2c6353', 'go'], condicional: ['COM RESERVAS', '#b26a00', 'condicional'], 'no-go': ['NÃO AVANÇAR', '#c2543a', 'nogo'] }[rec] ?? ['?', '#7d8681', 'condicional'];
+  const badgeGo = { go: ['AVANÇAR', 'var(--pb-green)', 'go'], condicional: ['COM RESERVAS', 'var(--pb-amber)', 'condicional'], 'no-go': ['NÃO AVANÇAR', 'var(--pb-garnet)', 'nogo'] }[rec] ?? ['?', 'var(--pb-ink-60)', 'condicional'];
   const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
   const habHtml = hab
     ? `<ul style="margin:0.2rem 0 0.6rem 1.2rem">${hab.map((i) => `<li>${esc(i.text)} — <strong>${esc(i.label || i.status)}</strong></li>`).join('')}</ul>${an.habilitacao_hint ? `<p class="hint">${esc(an.habilitacao_hint)}</p>` : ''}`
@@ -4337,7 +4330,7 @@ async function renderEntity(id) {
   const usesAQ = (r.procedure_types ?? []).some((pt) => /acordo[-\s]?quadro/i.test(pt.type || ''));
   const vulnerable = !isBuyer && trend === 'down' && conc != null && conc >= 50;
   const signals = [];
-  if (trend) signals.push(`Atividade <b style="color:${trend === 'up' ? '#2c6353' : trend === 'down' ? '#c2543a' : '#4c5551'}">${trend === 'up' ? 'em crescimento' : trend === 'down' ? 'em declínio' : 'estável'}</b> face ao ano anterior.`);
+  if (trend) signals.push(`Atividade <b style="color:${trend === 'up' ? 'var(--pb-green)' : trend === 'down' ? 'var(--pb-garnet)' : 'var(--pb-ink-60)'}">${trend === 'up' ? 'em crescimento' : trend === 'down' ? 'em declínio' : 'estável'}</b> face ao ano anterior.`);
   if (conc != null && topCp) signals.push(`<b>${conc}%</b> do valor ${isBuyer ? 'adjudicado a' : 'proveniente de'} <b>${esc(topCp.name)}</b>${conc >= 50 ? ' — dependência elevada.' : '.'}`);
   if (usesAQ) signals.push(isBuyer ? 'Compra ao abrigo de <b>acordos-quadro</b> — para fornecer é preciso estar no AQ.' : 'Fornece ao abrigo de <b>acordos-quadro</b>.');
 
@@ -4384,8 +4377,8 @@ async function renderEntity(id) {
         </div>` : ''}
         ${future ? `<div class="d-price" style="padding:16px 20px">
           <div class="k" style="letter-spacing:0.06em">PRÓXIMA JANELA</div>
-          <p style="font-size:12.5px;color:var(--accent-line);margin:6px 0 0;line-height:1.55">Um contrato termina a <b style="color:#fff">${fmtDatePt(future.end_date)}</b>. Contactar cerca de 4 meses antes.</p>
-          <a href="#/contracts/${future.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;color:#fff;border-bottom:1px solid var(--on-dark-muted)">Ver contrato →</a>
+          <p style="font-size:12.5px;color:var(--accent-line);margin:6px 0 0;line-height:1.55">Um contrato termina a <b style="color:var(--pb-paper)">${fmtDatePt(future.end_date)}</b>. Contactar cerca de 4 meses antes.</p>
+          <a href="#/contracts/${future.id}" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;color:var(--pb-paper);border-bottom:1px solid var(--on-dark-muted)">Ver contrato →</a>
         </div>` : ''}
       </div>
     </div>`;
@@ -4585,7 +4578,7 @@ async function renderAdmin() {
   });
 
   // Estado da configuração (Stripe / Moloni / email)
-  const okMark = (v) => v ? '<span style="color:#2c6353">✓</span>' : '<span class="error">✗</span>';
+  const okMark = (v) => v ? '<span style="color:var(--pb-green)">✓</span>' : '<span class="error">✗</span>';
   (async () => {
     const box = document.getElementById('setup-state');
     if (!box) return;
@@ -4610,7 +4603,7 @@ async function renderAdmin() {
     try {
       const r = await api(path, { method: 'POST' });
       out.innerHTML = `<div class="hint"><strong>${label} — concluído.</strong> Copie os valores abaixo e peça para os guardar nas variáveis de ambiente:</div>
-        <pre style="white-space:pre-wrap;font-size:.78rem;background:var(--panel-2,#f6f8fb);padding:.6rem;border-radius:8px;overflow:auto">${esc(JSON.stringify(r, null, 2))}</pre>`;
+        <pre style="white-space:pre-wrap;font-size:.78rem;background:var(--pb-ink-06);padding:.6rem;border-radius:var(--pb-radius);overflow:auto">${esc(JSON.stringify(r, null, 2))}</pre>`;
     } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   };
   const bind = (id, path, label) => { const b = document.getElementById(id); if (b) b.onclick = () => setupRun(path, label); };
