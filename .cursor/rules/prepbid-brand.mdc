@@ -23,7 +23,7 @@ colour, font or radius values.
    No image, no SVG, no icon, no favicon glyph beside it. Never split the
    word across two weights, two colours, or an italic — that is the
    forbidden lockup. Never letterspace it, italicise it, or scale it
-   horizontally. Minimum 19px on screen.
+   horizontally. Size 21px on screen (`--pb-wordmark-size`); never below 19px.
 4. **No serif and no italic anywhere.** All type is Archivo (UI) or IBM
    Plex Mono (data).
 5. **Green is an accent, never a ground.** `--pb-green` is for primary

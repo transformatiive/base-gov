@@ -15,7 +15,7 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
-  <link rel="stylesheet" href="/tokens.css?v=2">
+  <link rel="stylesheet" href="/tokens.css?v=3">
   <style>
     :root{
       --brand:var(--pb-green); --brand-dark:var(--pb-green-hover); --on:var(--pb-paper); --on-muted:var(--pb-green-light);
@@ -53,11 +53,6 @@
     .nav{position:sticky;top:0;z-index:400;background:var(--panel);border-bottom:1px solid var(--line);isolation:isolate}
     .nav-in{display:flex;align-items:center;justify-content:space-between;padding-top:16px;padding-bottom:16px;gap:12px;min-width:0}
     .brand{display:flex;align-items:center;gap:0;min-width:0;flex:1}
-    .brand .name,.brand .pb-wordmark{font:var(--pb-wordmark);letter-spacing:var(--pb-wordmark-tracking);color:var(--pb-ink);font-style:normal;flex:none}
-    .brand .name em{font-style:normal;font-weight:inherit;color:inherit}
-    /* Variante A: filete 1px a 20 % de tinta, 66 % da maiúscula; intervalos 0,28×M. */
-    .brand-rule{width:1px;height:calc(19px * 0.7 * 0.66);margin-inline:calc(19px * 0.83 * 0.28);background:var(--pb-ink);opacity:.2;flex:none;align-self:center}
-    .brand .tag{display:block;font-family:var(--pb-font-sans);font-weight:500;font-size:7.5px;line-height:1.2;letter-spacing:.2em;text-transform:uppercase;color:var(--pb-grey);flex:none}
     .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:var(--ink2)}
     .nav-links a{color:var(--ink2)}
     .nav-links a:hover{color:var(--brand)}
@@ -283,7 +278,7 @@
       .hero{grid-template-columns:minmax(0,1fr);gap:36px;padding-top:44px;padding-bottom:44px}
       h1.hero-h{font-size:34px;max-width:none}
       .nav-toggle{display:inline-flex}
-      .brand .tag,.brand-rule{display:none}
+      .brand .pb-lockup-tag,.brand .brand-rule{display:none}
       .nav.nav-open .nav-toggle .ico-menu{display:none}
       .nav.nav-open .nav-toggle .ico-close{display:block}
       .nav-links{
@@ -312,7 +307,7 @@
       .nav-cta{gap:6px}
       .nav-cta .enter{display:inline-flex;padding:8px 12px;border:1px solid var(--line);background:var(--pb-surface);white-space:nowrap}
       .nav-cta .start{display:none}
-      .brand .tag,.brand-rule{display:none}
+      .brand .pb-lockup-tag,.brand .brand-rule{display:none}
       .eyebrow{font-size:11px;padding:6px 12px;white-space:normal;line-height:1.35;max-width:100%}
       h1.hero-h{font-size:28px;line-height:1.18;margin-bottom:14px}
       .hero{padding-top:28px;padding-bottom:32px;gap:24px}
@@ -354,10 +349,10 @@
 <body>
   <div class="nav">
     <div class="wrap nav-in">
-      <a class="brand" href="/">
+      <a class="brand pb-lockup" href="/">
         <span class="pb-wordmark">PrepBid</span>
         <span class="brand-rule" aria-hidden="true"></span>
-        <span class="tag">Contratos<br>públicos</span>
+        <span class="pb-lockup-tag">Contratos<br>públicos</span>
       </a>
       <div class="nav-links" id="land-nav-links">
         <a href="#como">Como funciona</a>

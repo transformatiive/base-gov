@@ -49,7 +49,7 @@ test('CTAs da landing abrem a app e o teste grátis é uma ligação', () => {
   assert.doesNotMatch(landing, /m9 14 2 2 4-4/);
   assert.match(landing, /class="pb-wordmark">PrepBid</);
   assert.match(landing, /class="brand-rule"/);
-  assert.match(landing, /<span class="tag">Contratos<br>públicos<\/span>/);
+  assert.match(landing, /<span class="pb-lockup-tag">Contratos<br>públicos<\/span>/);
   assert.match(landing, /band band--paper/);
   assert.match(landing, /band band--surface/);
   assert.match(landing, /pb-wordmark pb-wordmark--reverse">PrepBid</);
@@ -88,13 +88,14 @@ test('Carteira usa copy em português, não mesa de trabalho', () => {
   assert.match(appJs, /A carteira da empresa — arraste as cartas entre colunas/);
   assert.match(catalog, /A carteira da empresa\. Arraste as cartas entre Interessa/);
   assert.match(index, /catalog\.js\?v=6/);
-  assert.match(index, /app\.js\?v=78/);
+  assert.match(index, /app\.js\?v=79/);
 });
 
 test('tokens.css em public/ é cópia de src/styles/tokens.css', () => {
   const src = readFileSync(join(root, 'src/styles/tokens.css'), 'utf8');
   const pub = readFileSync(join(root, 'public/tokens.css'), 'utf8');
   assert.equal(pub, src);
+  assert.match(src, /--pb-wordmark-size:\s*21px/);
 });
 
 test('wordmark da app e dos guias é texto PrepBid, sem SVG nem itálico', () => {
@@ -104,6 +105,8 @@ test('wordmark da app e dos guias é texto PrepBid, sem SVG nem itálico', () =>
   assert.match(appJs, /class="pb-wordmark">PrepBid</);
   assert.doesNotMatch(appJs, /MARK_SVG/);
   assert.match(index, /class="pb-wordmark">PrepBid</);
+  assert.match(index, /class="brand-rule"/);
+  assert.match(index, /pb-lockup-tag">Contratos<br>públicos/);
   assert.match(article, /class="pb-wordmark">PrepBid</);
   assert.doesNotMatch(article, /Prep<em>Bid<\/em>/);
   assert.doesNotMatch(article, /family=Fraunces/);
@@ -124,7 +127,7 @@ test('landing HTML não espera pelo INSERT de analytics', () => {
   assert.doesNotMatch(indexTs, /await ingestPublicPage/);
   assert.match(landing, /media="print" onload="this\.media='all'"/);
   assert.match(index, /media="print" onload="this\.media='all'"/);
-  assert.match(landing, /tokens\.css\?v=2/);
+  assert.match(landing, /tokens\.css\?v=3/);
 });
 
 test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {

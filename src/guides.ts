@@ -713,7 +713,7 @@ function headChrome(): string {
   <link rel="preload" as="style" href="${fonts}">
   <link rel="stylesheet" href="${fonts}" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="${fonts}"></noscript>
-  <link rel="stylesheet" href="/legal.css?v=2">`;
+  <link rel="stylesheet" href="/legal.css?v=3">`;
 }
 
 function navHtml(kind: 'index' | 'article'): string {
@@ -721,7 +721,7 @@ function navHtml(kind: 'index' | 'article'): string {
     ? '<a class="enter" href="/app/#/login">Entrar</a>'
     : '<a class="enter" href="/guias">Guias</a>';
   return `<div class="legal-nav"><div class="in">
-    <a class="brand" href="/"><span class="pb-wordmark">PrepBid</span></a>
+    <a class="brand pb-lockup" href="/"><span class="pb-wordmark">PrepBid</span><span class="brand-rule" aria-hidden="true"></span><span class="pb-lockup-tag">Contratos<br>públicos</span></a>
     <div class="nav-cta">${enter}<a class="start" href="/app/#/registo">Começar grátis</a></div>
   </div></div>`;
 }

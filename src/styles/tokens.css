@@ -56,8 +56,9 @@
 
   /* ---- Wordmark -------------------------------------------------------
    * The logo is live text, not an image. There is no icon.
-   * Sidebar / app header: 19px. Never below 19px on screen.        */
-  --pb-wordmark:          600 19px/1 var(--pb-font-sans);
+   * Sidebar / app header: 21px. Never below 19px on screen.        */
+  --pb-wordmark-size:     21px;
+  --pb-wordmark:          600 var(--pb-wordmark-size)/1 var(--pb-font-sans);
   --pb-wordmark-tracking: -0.038em;
 
   /* ---- Shape ----------------------------------------------------------
@@ -91,6 +92,29 @@ a:hover { color: var(--pb-ink); }
   color: var(--pb-ink);
 }
 .pb-wordmark--reverse { color: var(--pb-paper); }
+
+/* Variante A: palavra + filete + descritivo em duas linhas */
+.pb-lockup { display: flex; align-items: center; gap: 0; min-width: 0; }
+.pb-lockup .brand-rule {
+  width: 1px;
+  height: calc(var(--pb-wordmark-size) * 0.7 * 0.66);
+  margin-inline: calc(var(--pb-wordmark-size) * 0.83 * 0.28);
+  background: var(--pb-ink);
+  opacity: 0.2;
+  flex: none;
+  align-self: center;
+}
+.pb-lockup-tag {
+  display: block;
+  font-family: var(--pb-font-sans);
+  font-weight: 500;
+  font-size: calc(var(--pb-wordmark-size) * 0.395);
+  line-height: 1.2;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pb-grey);
+  flex: none;
+}
 
 /* Eyebrow --------------------------------------------------------------- */
 .pb-label {
