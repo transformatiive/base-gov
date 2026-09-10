@@ -54,14 +54,14 @@ Nada entra nesta área: nem texto, nem filetes, nem imagem.
 
 | Suporte | Palavra |
 |---|---|
-| Ecrã | **19 px** (`--pb-wordmark`) |
+| Ecrã | **21 px** (`--pb-wordmark-size`) |
 | Impresso | **15 mm** (≈ 42,5 pt) |
 
 Abaixo de **30 px** o descritivo e o filete saem: usa-se só a palavra
 (variante C). Não existe versão de ícone — em favicon e app usa-se o **P
 recortado** do logótipo (rectângulo tinta, raio 4 px), não um pictograma.
 
-Na app, nav / sidebar / wordmark de ecrã: 19 px. Não descer abaixo.
+Na app, nav / sidebar / wordmark de ecrã: 21 px. Não descer abaixo de 19 px.
 
 ---
 
@@ -149,7 +149,7 @@ Regular **400** · Medium **500** · SemiBold **600**.
 |---|---|
 | `--pb-h1` / `--pb-h2` / `--pb-h3` | Títulos de página e secção |
 | `--pb-body` / `--pb-body-sm` | Corpo, nav, botões |
-| `--pb-wordmark` | Palavra PrepBid (19 px / 600 / −0.038 em) |
+| `--pb-wordmark` | Palavra PrepBid (21 px / 600 / −0.038 em) |
 
 ### IBM Plex Mono — dados
 
@@ -186,7 +186,7 @@ Bold 700 na marca, serif.
 
 ### Cabeçalho do site / nav
 
-Variante **A**, palavra a **19 px**, filete e descritivo em duas linhas.
+Variante **A**, palavra a **21 px**, filete e descritivo em duas linhas.
 Abaixo do lockup corre a barra separadora de **1 px** que fecha o topo da
 barra lateral. Variante **C** só abaixo de 160 px de largura.
 

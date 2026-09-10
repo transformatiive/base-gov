@@ -62,7 +62,7 @@ test('sidebar: grupos, ordem e ícone em cada opção', () => {
     assert.match(appJs, new RegExp(`^\\s+${name}:`, 'm'), `ICON_PATHS em falta: ${name}`);
   }
   assert.match(nav, /id="nav-admin"[^>]*hidden/);
-  assert.match(html, /style\.css\?v=51/);
+  assert.match(html, /style\.css\?v=52/);
   assert.match(html, /guide\.js\?v=3/);
   assert.match(appJs, /A pesquisar concursos abertos/);
   assert.match(html, /class="pb-wordmark">PrepBid</);

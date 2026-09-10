@@ -1,5 +1,5 @@
 /* PrepBid — tokens (src/styles/tokens.css). Aliases keep existing selectors. */
-@import url("/tokens.css?v=2");
+@import url("/tokens.css?v=3");
 :root {
   --brand: var(--pb-green);
   --brand-dark: var(--pb-green-hover);
@@ -127,7 +127,7 @@ th, .nav-group-label, .stat .l, .eyebrow, .opp-tr.head, .comp-row.head, .ent-row
 .side-foot button { padding: 0.4rem 0.7rem; font-size: 0.8rem; flex: none; }
 
 /* Wordmark: live text, no icon, no italic (prepbid-brand.mdc) */
-.wordmark { display: flex; align-items: center; gap: 0.65rem; color: var(--pb-ink); }
+.wordmark { display: flex; align-items: center; gap: 0; color: var(--pb-ink); }
 .wordmark:hover { text-decoration: none; color: var(--pb-ink); }
 .wordmark > .mark, .wordmark > svg.mark { display: none; }
 .wordmark .wm-type,
@@ -136,10 +136,10 @@ th, .nav-group-label, .stat .l, .eyebrow, .opp-tr.head, .comp-row.head, .ent-row
   letter-spacing: var(--pb-wordmark-tracking);
   color: var(--pb-ink);
   font-style: normal;
+  flex: none;
 }
 .wordmark .wm-type em { font-style: normal; font-weight: inherit; color: inherit; letter-spacing: inherit; }
 .wordmark .accent { color: var(--pb-ink); }
-.wordmark .tag { font: var(--pb-label); letter-spacing: var(--pb-label-tracking); color: var(--pb-ink-42); text-transform: uppercase; margin-left: 0.4rem; }
 
 
 /* Score ring: conic-gradient, surface inner disc, mono number */
@@ -343,6 +343,7 @@ dl.detail dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
   #topbar .wordmark { padding: 10px 8px; gap: 0.5rem; }
   #topbar .wordmark > .mark { width: 28px; height: 28px; }
   #topbar .wordmark .wm-type { font-size: 1.28rem; }
+  #topbar .brand-rule, #topbar .pb-lockup-tag { display: none; }
   .nav-toggle {
     display: inline-flex; align-items: center; justify-content: center;
     margin-left: auto; flex: none; width: 42px; height: 42px; padding: 0;
