@@ -214,8 +214,10 @@ function hydrateNavIcons() {
   });
 }
 
-const wordmark = () =>
-  '<span class="wordmark"><span class="pb-wordmark">PrepBid</span></span>';
+const wordmark = (size) => {
+  const lg = Number(size) >= 24;
+  return `<span class="wordmark"><span class="pb-wordmark${lg ? ' pb-wordmark--lg' : ''}">PrepBid</span></span>`;
+};
 
 const BOOT_PHRASES = [
   'A pesquisar concursos abertos…',

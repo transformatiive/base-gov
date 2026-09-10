@@ -1,4 +1,4 @@
-@import url("/tokens.css?v=2");
+@import url("/tokens.css?v=3");
 /* Estilo partilhado das páginas legais (privacidade, termos, cookies) */
 :root{
   --brand:var(--pb-green); --brand-dark:var(--pb-green-hover); --on:var(--pb-paper);

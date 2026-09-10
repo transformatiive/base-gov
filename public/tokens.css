@@ -56,8 +56,10 @@
 
   /* ---- Wordmark -------------------------------------------------------
    * The logo is live text, not an image. There is no icon.
-   * Sidebar / app header: 19px. Never below 19px on screen.        */
+   * 1a: Archivo 600, one weight, one colour, tracked tight.
+   * Nav / sidebar: 19px. Splash / login: --pb-wordmark-lg. Never below 19px. */
   --pb-wordmark:          600 19px/1 var(--pb-font-sans);
+  --pb-wordmark-lg:       600 48px/1 var(--pb-font-sans);
   --pb-wordmark-tracking: -0.038em;
 
   /* ---- Shape ----------------------------------------------------------
@@ -89,6 +91,12 @@ a:hover { color: var(--pb-ink); }
   font: var(--pb-wordmark);
   letter-spacing: var(--pb-wordmark-tracking);
   color: var(--pb-ink);
+  font-style: normal;
+  font-weight: 600;
+}
+.pb-wordmark--lg {
+  font: var(--pb-wordmark-lg);
+  letter-spacing: var(--pb-wordmark-tracking);
 }
 .pb-wordmark--reverse { color: var(--pb-paper); }
 
