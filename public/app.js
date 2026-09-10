@@ -4456,18 +4456,47 @@ const AI_KIND_LABEL = {
 };
 const STATUS_LABEL = { trialing: 'Em teste', active: 'Ativa', past_due: 'Pagamento pendente', canceled: 'Cancelada' };
 
+function adminPersonName(u) {
+  return [u?.first_name, u?.last_name].filter(Boolean).join(' ').trim();
+}
+function adminPersonMail(u) {
+  return String(u?.email || u?.username || '').trim();
+}
+function adminWhoCell(u) {
+  const name = adminPersonName(u);
+  const mail = adminPersonMail(u);
+  if (name && mail && name.toLowerCase() !== mail.toLowerCase()) {
+    return `${esc(name)}<div class="muted" style="font-size:.8rem">${esc(mail)}</div>`;
+  }
+  return esc(mail || '—');
+}
+function companyUsers(c) {
+  const raw = c && c.users;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 async function renderAdmin() {
   topbar.hidden = false;
   if (!window._me?.is_admin) { app.innerHTML = '<div class="card error">Acesso reservado a administradores.</div>'; return; }
   app.innerHTML = '<div class="card"><p class="muted">A carregar…</p></div>';
-  let stats, companies, feedback, notif, aiFb;
+  let stats, companies, feedback, notif, aiFb, users;
   try {
-    [stats, companies, feedback, notif, aiFb] = await Promise.all([
+    [stats, companies, feedback, notif, aiFb, users] = await Promise.all([
       api('/api/admin/stats'),
       api('/api/admin/companies'),
       api('/api/admin/feedback').catch(() => ({ items: [] })),
       api('/api/admin/notifications').catch(() => ({ items: [] })),
       api('/api/admin/ai-feedback').catch(() => ({ by_reason: [], by_cpv: [], items: [] })),
+      api('/api/admin/users').catch(() => ({ items: [] })),
     ]);
   } catch (e) { app.innerHTML = `<div class="card error">${esc(e.message)}</div>`; return; }
 
@@ -4485,20 +4514,25 @@ async function renderAdmin() {
       <td>${esc(s.kind === 'anuncios' ? 'Anúncios' : 'Contratos')}</td>
       <td>${esc(s.term || '—')}</td>
       <td>${esc(s.status || '—')}</td>
-      <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+      <td>${esc(s.company || '—')}<div class="muted" style="font-size:.8rem">${adminWhoCell(s)}</div></td>
     </tr>`).join('');
 
   const planOpts = (cur) => ['free', 'pro', 'business'].map((p) => `<option value="${p}"${p === cur ? ' selected' : ''}>${PLAN_LABEL[p]}</option>`).join('');
   const statusOpts = (cur) => ['trialing', 'active', 'past_due', 'canceled'].map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`).join('');
-  const userLine = (u) => `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span class="muted">${esc(u.email || u.username)}${u.is_admin ? ' · admin' : ''}${
-        u.terms_accepted_at ? ` · <span title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}${
-        u.ai_used != null ? ` · IA ${u.ai_used}${u.ai_reset_at ? ` · reset ${new Date(u.ai_reset_at).toLocaleDateString('pt-PT')}` : ''}` : ''}</span>
-      <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(u.email || u.username)}">repor password</button></div>`;
+  const userLine = (u) => {
+    const name = adminPersonName(u);
+    const mail = adminPersonMail(u);
+    const who = name && mail && name.toLowerCase() !== mail.toLowerCase() ? `${esc(name)} · ${esc(mail)}` : esc(mail || '—');
+    return `<div class="adm-user" style="font-size:.8rem;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span>${who}${u.is_admin ? ' · admin' : ''}${
+        u.terms_accepted_at ? ` · <span class="muted" title="Termos ${esc(u.terms_version || '')} aceites">termos ✓ ${fmtDate(u.terms_accepted_at)}</span>` : ''}${
+        u.ai_used != null ? ` · <span class="muted">IA ${u.ai_used}${u.ai_reset_at ? ` · reset ${new Date(u.ai_reset_at).toLocaleDateString('pt-PT')}` : ''}</span>` : ''}</span>
+      <button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(mail)}">repor password</button></div>`;
+  };
   const compRows = (companies.items || []).map((c) => `
     <tr data-id="${c.id}">
       <td><strong>${esc(c.name)}</strong>${c.nif ? `<div class="muted" style="font-size:.8rem">NIF ${esc(c.nif)}</div>` : ''}
-        ${(c.users || []).map(userLine).join('')}</td>
+        ${companyUsers(c).map(userLine).join('')}</td>
       <td>${c.n_users}</td>
       <td>${c.n_profiles}</td>
       <td>${c.ai_month ?? 0}</td>
@@ -4526,6 +4560,7 @@ async function renderAdmin() {
 
       <div class="admin-stats">
         ${stat('Empresas', t.companies ?? 0, `${stats.signups?.last7 ?? 0} novas (7d)`)}
+        ${stat('Utilizadores', t.users ?? 0, 'inscritos')}
         ${stat('Pagantes', sub.paying ?? 0, 'subscrição ativa')}
         ${stat('Em trial', sub.trialing ?? 0, 'Pro 7 dias')}
         ${stat('Free / inativas', sub.free_inactive ?? 0, null)}
@@ -4551,6 +4586,26 @@ async function renderAdmin() {
         <div style="overflow-x:auto"><table class="admin-table">
           <thead><tr><th>Quando</th><th>Tipo</th><th>Termo</th><th>Estado</th><th>Quem</th></tr></thead>
           <tbody>${searchRecent || '<tr><td colspan="5" class="muted">Sem pesquisas.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-top:1.2rem">
+        <div class="inline" style="justify-content:space-between;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:.8rem">
+          <h3 style="margin:0">Utilizadores inscritos</h3>
+          <input type="search" id="adm-user-q" placeholder="Filtrar por nome, email ou empresa" style="min-width:220px;flex:1;max-width:320px">
+        </div>
+        <p class="muted" style="margin:0 0 .6rem;font-size:.85rem">${(users.items || []).length} conta(s) — nome, email e empresa de cada inscrição.</p>
+        <div style="overflow-x:auto"><table class="admin-table">
+          <thead><tr><th>Nome</th><th>Email</th><th>Empresa</th><th>Plano</th><th>Inscrito</th><th></th></tr></thead>
+          <tbody id="admin-users">${(users.items || []).map((u) => `
+            <tr>
+              <td>${esc(adminPersonName(u) || '—')}${u.is_admin ? ' <span class="chip">admin</span>' : ''}</td>
+              <td>${esc(adminPersonMail(u) || '—')}</td>
+              <td>${esc(u.company || '—')}</td>
+              <td>${esc(PLAN_LABEL[normalizeAdminPlan(u.plan)] || u.plan || '—')}</td>
+              <td class="muted" style="white-space:nowrap">${u.created_at ? new Date(u.created_at).toLocaleDateString('pt-PT') : '—'}</td>
+              <td><button class="lnk rp-user" data-uid="${u.id}" data-email="${esc(adminPersonMail(u))}">repor password</button></td>
+            </tr>`).join('') || '<tr><td colspan="6" class="muted">Sem utilizadores.</td></tr>'}</tbody>
         </table></div>
       </div>
 
@@ -4609,7 +4664,7 @@ async function renderAdmin() {
         <div style="overflow-x:auto"><table class="admin-table">
           <thead><tr><th>Quando</th><th>User</th><th>Tipo</th><th>Ref</th><th>Estado</th></tr></thead>
           <tbody>${(notif?.items || []).map((n) => `<tr>
-            <td>${fmtDateDMY(n.created_at)}</td><td>${esc(n.email || n.username || n.user_id)}</td>
+            <td>${fmtDateDMY(n.created_at)}</td><td>${adminWhoCell(n)}</td>
             <td>${esc(n.kind)}</td><td class="muted">${esc(n.ref)}</td><td>${esc(n.status)}</td>
           </tr>`).join('') || '<tr><td colspan="5" class="muted">Sem envios.</td></tr>'}</tbody>
         </table></div>
@@ -4624,6 +4679,14 @@ async function renderAdmin() {
         <ul>${(aiFb?.by_cpv || []).filter((r) => r.cpv).map((r) => `<li>${esc(r.cpv)}: ${r.n}</li>`).join('') || '<li>—</li>'}</ul>
       </div>
     </div>`;
+
+  const userQ = document.getElementById('adm-user-q');
+  if (userQ) userQ.oninput = () => {
+    const n = userQ.value.trim().toLowerCase();
+    document.querySelectorAll('#admin-users tr').forEach((tr) => {
+      tr.hidden = Boolean(n) && !tr.innerText.toLowerCase().includes(n);
+    });
+  };
 
   app.querySelectorAll('.rp-user').forEach((btn) => btn.onclick = async () => {
     const pw = prompt(`Nova password para ${btn.dataset.email} (mín. 8 caracteres):`);
@@ -4765,7 +4828,7 @@ async function renderUsageAdmin() {
     <td>${esc(e.module)}</td>
     <td class="muted">${esc(e.action || e.path || '')}</td>
     <td>${esc(e.origin || '—')}</td>
-    <td>${esc(e.company || '—')}${e.username ? `<div class="muted" style="font-size:.8rem">${esc(e.username)}</div>` : ''}</td>
+    <td>${esc(e.company || '—')}<div class="muted" style="font-size:.8rem">${adminWhoCell(e)}</div></td>
   </tr>`).join('');
   const sk = data.searches?.kpis || {};
   const sKindRows = (data.searches?.by_kind || []).map((r) => `<tr>
@@ -4782,7 +4845,7 @@ async function renderUsageAdmin() {
     <td>${esc(s.term || '—')}</td>
     <td>${esc(s.status || '—')}</td>
     <td>${s.total_scraped ?? '—'} / ${s.total_reported ?? '—'}</td>
-    <td>${esc(s.company || '—')}${s.username ? `<div class="muted" style="font-size:.8rem">${esc(s.username)}</div>` : ''}</td>
+    <td>${esc(s.company || '—')}<div class="muted" style="font-size:.8rem">${adminWhoCell(s)}</div></td>
   </tr>`).join('');
 
   app.innerHTML = `
