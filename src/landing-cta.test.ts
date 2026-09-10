@@ -145,5 +145,6 @@ test('cartão Business: o verde fica no ribbon, não no plano inteiro', () => {
     landing,
     /<div class="pfine"><a href="\/app\/#\/registo">Experimente o Business 7 dias grátis, sem cartão<\/a><\/div>/,
   );
-  assert.match(landing, /\.plan \.btn\{[^}]*margin:auto 0 8px/);
+  assert.match(landing, /\.plan \.ptag\{[^}]*min-height:4\.5em/);
+  assert.match(landing, /\.plan ul\{[^}]*margin:auto 0 0/);
 });
