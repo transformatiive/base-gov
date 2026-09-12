@@ -1,7 +1,7 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { config } from './config.js';
-import { GUIDE_SEED, markdownToHtml, parseGuidePayload } from './guides.js';
+import { GUIDE_SEED, inferGuideTags, markdownToHtml, parseGuidePayload } from './guides.js';
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
@@ -550,12 +550,14 @@ CREATE TABLE IF NOT EXISTS guide_articles (
   markdown      TEXT NOT NULL,
   body_html     TEXT NOT NULL,
   faq           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags          TEXT[] NOT NULL DEFAULT '{}',
   status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
   published_at  TIMESTAMPTZ,
   author_agent  TEXT NOT NULL DEFAULT 'human' CHECK (author_agent IN ('claude','grok','grok-bot','human')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE guide_articles ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_guide_articles_status ON guide_articles (status, published_at DESC);
 
 -- Utilização do produto (páginas, módulos, acções, origem). Sem IP.
@@ -652,10 +654,11 @@ export async function seedGuides(): Promise<void> {
       throw new Error(`[seed] guia inválido ${seed.slug}: ${parsed.error}`);
     }
     const html = markdownToHtml(parsed.value.markdown);
+    const tags = parsed.value.tags.length ? parsed.value.tags : inferGuideTags(seed.slug, seed.title);
     const ins = await pool.query(
       `INSERT INTO guide_articles
-         (slug, title, description, lede, intent, markdown, body_html, faq, status, published_at, author_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'published', now(), 'human')
+         (slug, title, description, lede, intent, markdown, body_html, faq, tags, status, published_at, author_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'published', now(), 'human')
        ON CONFLICT (slug) DO NOTHING
        RETURNING slug`,
       [
@@ -667,8 +670,24 @@ export async function seedGuides(): Promise<void> {
         parsed.value.markdown,
         html,
         JSON.stringify(parsed.value.faq),
+        tags,
       ],
     );
     if (ins.rowCount) console.log(`[seed] guia publicado: ${parsed.value.slug}`);
+  }
+  await backfillGuideTags();
+}
+
+async function backfillGuideTags(): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT slug, title FROM guide_articles WHERE cardinality(COALESCE(tags, '{}')) = 0`,
+  );
+  for (const row of rows as { slug: string; title: string }[]) {
+    const tags = inferGuideTags(row.slug, row.title);
+    if (!tags.length) continue;
+    await pool.query('UPDATE guide_articles SET tags = $2 WHERE slug = $1 AND cardinality(COALESCE(tags, \'{}\')) = 0', [
+      row.slug,
+      tags,
+    ]);
   }
 }
