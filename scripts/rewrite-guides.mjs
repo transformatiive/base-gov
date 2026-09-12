@@ -4,6 +4,8 @@
  *
  * Não envia published_at — a data fica na BD.
  * Nunca usa o slug reservado o-que-e-o-base-gov.
+ * Ação do leitor só no PrepBid (perfil, radar, carteira, alertas, «agir esta semana»).
+ * Não mandar filtrar / pesquisar / acompanhar no BASE, Portal BASE, base.gov ou «BASE / radar».
  *
  * Uso:
  *   APP_API_KEY=… node scripts/rewrite-guides.mjs
@@ -27,7 +29,7 @@ export const GUIDES = [
 
 Um **acordo-quadro** fixa condições (preços, catálogo, prazos) com um ou vários operadores por um período. A adjudicação concreta — o trabalho ou o fornecimento — acontece depois, nas **segundas fases** (consultas internas, miniconcursos ou encomendas). Quem não ficou na adesão, em regra, não entra nessas fases.
 
-O corpus público (Portal BASE e Diário da República) publica a adesão e, mais tarde, os contratos. O sítio onde a equipa vê o tipo de procedimento e decide se age esta semana é o **PrepBid**, não a pesquisa manual em base.gov.pt.
+No **PrepBid**, o tipo de procedimento e o CPV aparecem no radar já cortados pelo perfil. Aí se decide se age esta semana — adesão, segunda fase ou renovação.
 
 ## Porque importa na estratégia comercial?
 
@@ -41,9 +43,9 @@ Ignorar acordos-quadro é perder um canal de contratação centralizada (ESPAP, 
 
 Confirme duração do acordo, número máximo de aderentes, regras das segundas fases, caução e se há obrigação de responder a consultas. Um «não» na adesão custa o canal durante anos; um «sim» mal preparado custa caução e capacidade.
 
-## Como o PrepBid ajuda sem substituir as peças?
+## Como acompanhar oportunidades de acordos-quadro?
 
-O perfil (CPV, distritos, valor) corta o ruído. O radar mostra o anúncio de adesão e, no histórico da entidade, os contratos já lançados ao abrigo de AQ. A carteira guarda o go. O Portal BASE continua a ser a fonte; o filtro do dia a dia é o PrepBid.
+No **PrepBid**, filtre no radar por tipo de procedimento e CPV. Marque a adesão na **carteira**, use alertas e a lista «agir esta semana» para prazos curtos, e o radar de renovações para o fim do acordo. O trabalho diário é no PrepBid; as peças continuam na plataforma electrónica.
 
 Confirme o CCP e as peças. Isto não é aconselhamento jurídico.`,
     faq: [
@@ -60,7 +62,7 @@ Confirme o CCP e as peças. Isto não é aconselhamento jurídico.`,
       {
         question: 'Onde vejo os contratos já lançados ao abrigo de um acordo?',
         answer:
-          'No histórico público da entidade (corpus do Portal BASE), que o PrepBid mostra na ficha da entidade e nos contratos associados — sem ir filtrar à mão no portal.',
+          'No PrepBid: ficha da entidade e contratos associados, já alinhados ao perfil. Não monte uma pesquisa à parte para acompanhar o acordo.',
       },
     ],
   },
@@ -77,7 +79,7 @@ Confirme o CCP e as peças. Isto não é aconselhamento jurídico.`,
 
 O tipo de procedimento — publicado no Diário da República e no corpus do Portal BASE — determina se a sua empresa sequer pode concorrer. No **concurso público** (e equivalentes abertos) qualquer operador que cumpra o programa apresenta proposta. No **ajuste direto** a entidade escolhe um operador, sem abertura geral. Entre os dois existe a **consulta prévia**: convite a vários operadores, ainda sem anúncio aberto a todos.
 
-No **PrepBid** esse campo vem no radar e na ficha. Não precisa de ir a base.gov.pt filtrar procedimentos à mão para saber se ainda está a tempo.
+No **PrepBid** esse campo vem no radar e na ficha — é aí que se vê se ainda está a tempo.
 
 ## Porque a entidade escolhe um tipo e não outro?
 
@@ -96,7 +98,7 @@ Há exceções (urgência, exclusividade técnica, contratos de muito baixo valo
 
 ## Como usar o histórico para não chegar tarde?
 
-Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto vai provavelmente ao mesmo objeto. No PrepBid, o **radar de renovações** estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair. O Portal BASE e o DR são as fontes; «agir esta semana» é no PrepBid.
+Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto vai provavelmente ao mesmo objeto. No PrepBid, o **radar de renovações** estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair. «Agir esta semana» é a lista do PrepBid, com prazo e renovação.
 
 Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não substitui o jurista da proposta.`,
     faq: [
@@ -112,7 +114,7 @@ Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não subs
       {
         question: 'Onde vejo o tipo de procedimento?',
         answer:
-          'No anúncio do Diário da República e na ficha do procedimento (dados do Portal BASE). No PrepBid esse campo aparece no radar — é o que diz se ainda está a tempo de concorrer.',
+          'No PrepBid, na ficha do concurso e no radar. É esse campo que diz se ainda está a tempo de concorrer.',
       },
     ],
   },
@@ -122,7 +124,7 @@ Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não subs
     description:
       'A fundamentação dos contratos de ajuste direto explica porque a entidade não abriu concurso. No PrepBid lê-se na ficha do contrato e da entidade, a partir do corpus do Portal BASE.',
     lede:
-      'A fundamentação do ajuste direto é a justificação publicada pela entidade no corpus do Portal BASE. No PrepBid serve para ler o padrão do comprador — não para ir filtrar contratos à mão em base.gov.pt.',
+      'A fundamentação do ajuste direto é a justificação publicada pela entidade. No PrepBid lê-se na ficha do contrato e da entidade, para o padrão do comprador.',
     intent: 'informativa',
     tags: ['ajuste-direto', 'entidades', 'historico'],
     markdown: `## O que é a fundamentação no ajuste direto?
@@ -141,18 +143,18 @@ Não use a fundamentação para acusar a entidade. Use-a para decidir se vale a 
 - Compare valores e prazos de execução com contratos semelhantes da mesma entidade.
 - Uma amostra de um contrato não é um padrão; três ou quatro no mesmo CPV já são um sinal.
 
-O PrepBid agrega o histórico da entidade. O Portal BASE é a fonte; o sítio onde se lê o padrão e se marca a carteira é o PrepBid.
+O PrepBid agrega o histórico da entidade. O sítio onde se lê o padrão e se marca a carteira é o PrepBid.
 
 ## O que fazer com o padrão?
 
-Marque a entidade, ajuste o perfil (CPV, distritos) e deixe o radar avisar a janela de contacto. «Agir esta semana» não é abrir a pesquisa do BASE; é a lista do PrepBid com prazo e renovação.
+Marque a entidade, ajuste o perfil (CPV, distritos) e deixe o radar avisar a janela de contacto. «Agir esta semana» é a lista do PrepBid com prazo e renovação.
 
 Confirme o CCP e o contrato concreto. Não é aconselhamento jurídico.`,
     faq: [
       {
         question: 'A fundamentação do ajuste direto está no Diário da República?',
         answer:
-          'Em regra está no contrato publicado no corpus do Portal BASE. No PrepBid lê-se na ficha do contrato, sem montar a pesquisa no portal.',
+          'Em regra está no contrato. No PrepBid lê-se na ficha do contrato, ao lado de CPV, valor e prazos.',
       },
       {
         question: 'Posso usar a fundamentação para impugnar o contrato?',
@@ -172,7 +174,7 @@ Confirme o CCP e o contrato concreto. Não é aconselhamento jurídico.`,
     description:
       'Classe e categorias do alvará de construção condicionam a habilitação em empreitadas públicas. No PrepBid o perfil corta concursos incompatíveis antes de gastar o mapa de quantidades.',
     lede:
-      'Sem a classe e as categorias de alvará pedidas no programa, a proposta de empreitada corre risco de exclusão. No PrepBid esse corte começa no perfil — não numa varredura manual do Portal BASE.',
+      'Sem a classe e as categorias de alvará pedidas no programa, a proposta de empreitada corre risco de exclusão. No PrepBid esse corte começa no perfil.',
     intent: 'informativa',
     tags: ['alvara', 'habilitacao', 'empreitadas'],
     markdown: `## Porque o alvará decide o go/no-go?
@@ -185,7 +187,7 @@ Em empreitadas, o **alvará** (classe e categorias) é o primeiro filtro de habi
 - Possibilidade (ou não) de agrupamentos / subempreitada para completar categorias.
 - Valor do contrato face à classe: um teto de alvará abaixo do preço base é um não, salvo regra expressa nas peças.
 
-O anúncio no DR e as peças na plataforma trazem o requisito. O **PrepBid** já cortou geografia, CPV e valor no perfil; a leitura do alvará confirma o go. O Portal BASE é corpus, não o sítio onde se gere este filtro.
+O anúncio no DR e as peças na plataforma trazem o requisito. O **PrepBid** já cortou geografia, CPV e valor no perfil; a leitura do alvará confirma o go.
 
 ## Como filtrar oportunidades com o alvará em mente?
 
@@ -208,9 +210,9 @@ Confirme o CCP, o alvará em vigor e as peças. Não é aconselhamento jurídico
           'Só se as peças e o regime do alvará o permitirem. Confirme o programa; não assume. Este guia não substitui o jurista da proposta.',
       },
       {
-        question: 'O Portal BASE valida o meu alvará?',
+        question: 'O PrepBid valida o meu alvará automaticamente?',
         answer:
-          'Não. O BASE publica procedimentos e contratos. O cruzamento com a habilitação da empresa faz-se no perfil e na triagem do PrepBid.',
+          'O perfil e a triagem cruzam geografia, CPV e valor. A classe e as categorias confirmam-se na leitura do programa, na carteira.',
       },
     ],
   },
@@ -243,7 +245,7 @@ Classe de alvará em falta, certificação fora de âmbito, prazo na plataforma 
 
 ## Como documentar a leitura na carteira?
 
-Passe o concurso da lista «agir esta semana» para a **carteira** com uma linha go / condicional / no-go. O digest de segunda e os lembretes (Pro) só servem se a linha existir. O Portal BASE não faz esta pasta; é corpus.
+Passe o concurso da lista «agir esta semana» para a **carteira** com uma linha go / condicional / no-go. O digest de segunda e os lembretes (Pro) só servem se a linha existir. Essa pasta é a carteira do PrepBid.
 
 Confirme sempre as peças concretas. Não é aconselhamento jurídico.`,
     faq: [
@@ -253,9 +255,9 @@ Confirme sempre as peças concretas. Não é aconselhamento jurídico.`,
           'Não. No PrepBid o perfil e o radar deixam uma lista curta. O caderno lê-se só nos que passaram CPV, geografia, valor e prazo.',
       },
       {
-        question: 'Onde estão as peças se não estão no Portal BASE?',
+        question: 'Onde estão as peças do concurso?',
         answer:
-          'Na plataforma eletrónica indicada no anúncio (Vortal, acinGov e outras). O BASE indexa; a entrega e muitas peças correm na plataforma.',
+          'Na plataforma eletrónica indicada no anúncio (Vortal, acinGov e outras). No PrepBid a ficha aponta o canal; a entrega é sempre na plataforma.',
       },
       {
         question: 'A análise de IA do PrepBid substitui esta leitura?',
@@ -270,7 +272,7 @@ Confirme sempre as peças concretas. Não é aconselhamento jurídico.`,
     description:
       'Caução provisória e garantia de boa execução: montante, forma e prazo nas peças. No PrepBid entre na decisão go/no-go da carteira antes de pedir o documento à banca.',
     lede:
-      'A caução e as garantias são condições de habilitação ou de contrato: confirme montante, forma e prazo nas peças antes de fechar o preço. No PrepBid isso entra no go/no-go da carteira, não numa lista nacional do Portal BASE.',
+      'A caução e as garantias são condições de habilitação ou de contrato: confirme montante, forma e prazo nas peças antes de fechar o preço. No PrepBid isso entra no go/no-go da carteira.',
     intent: 'informativa',
     tags: ['caucao', 'habilitacao', 'prazos'],
     markdown: `## Caução e garantia — são a mesma coisa?
@@ -287,7 +289,7 @@ Peça o documento **depois** do go na **carteira** do PrepBid, não para todos o
 
 ## Como a caução entra na decisão de concorrer?
 
-Uma caução pesada num concurso de margem curta é um não comercial, mesmo com CPV certo. O Portal BASE não calcula isto; o sítio da decisão é o PrepBid, com as peças da plataforma.
+Uma caução pesada num concurso de margem curta é um não comercial, mesmo com CPV certo. O sítio da decisão é o PrepBid, com as peças da plataforma.
 
 Confirme CCP e peças. Não é aconselhamento jurídico nem financeiro.`,
     faq: [
@@ -302,9 +304,9 @@ Confirme CCP e peças. Não é aconselhamento jurídico nem financeiro.`,
           'Depois do go na carteira do PrepBid, com margem para o prazo da plataforma. Não para todos os anúncios que passaram no radar.',
       },
       {
-        question: 'O histórico do BASE diz o valor da caução?',
+        question: 'O histórico público diz o valor da caução?',
         answer:
-          'Raramente de forma fiável. O valor está nas peças do procedimento concreto. O BASE é corpus de contratos; as regras desta proposta estão no caderno.',
+          'Raramente de forma fiável. O valor está nas peças do procedimento concreto. As regras desta proposta estão no caderno.',
       },
     ],
   },
@@ -312,7 +314,7 @@ Confirme CCP e peças. Não é aconselhamento jurídico nem financeiro.`,
     slug: 'como-analisar-um-concorrente-no-portal-base',
     title: 'Como analisar um concorrente com o histórico público de adjudicações',
     description:
-      'Estudar adjudicatários por CPV, valores e entidades no corpus do Portal BASE. No PrepBid isso está no módulo de concorrentes — sem dados privados e sem filtrar à mão em base.gov.pt.',
+      'Estudar adjudicatários por CPV, valores e entidades no corpus do Portal BASE. No PrepBid isso está no módulo de concorrentes — sem dados privados.',
     lede:
       'O histórico público de adjudicações mostra onde o concorrente ganha, a que valores e com que entidades. No PrepBid essa leitura está no módulo de concorrentes, sobre o corpus do Portal BASE.',
     intent: 'comercial',
@@ -329,7 +331,7 @@ Pode ver o que já é público: adjudicatário (NIF), entidade, CPV, valores, da
 4. Liste as entidades onde é incumbente — são janelas de renovação.
 5. Decida se ataca, evita ou acompanha.
 
-Isto faz-se na ficha de concorrente do PrepBid, não numa pesquisa manual na base.gov.pt.
+Isto faz-se na ficha de concorrente do PrepBid.
 
 ## Como usar isto na decisão go/no-go?
 
@@ -342,9 +344,9 @@ Erros de CPV, agrupamentos e nomes mal normalizados partem o padrão. Amostra cu
 Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
     faq: [
       {
-        question: 'Preciso de ir ao Portal BASE para analisar um concorrente?',
+        question: 'Onde analiso um concorrente no dia a dia?',
         answer:
-          'Não. O BASE é a fonte pública. No PrepBid o módulo de concorrentes já consolida NIF, quota e entidades a partir desse corpus.',
+          'No PrepBid, no módulo de concorrentes: NIF, quota e entidades já consolidados. Não monte uma pesquisa à parte.',
       },
       {
         question: 'O PrepBid mostra propostas perdedoras?',
@@ -374,7 +376,7 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
 - **Preço / memória:** mapa de quantidades e texto técnico.
 - **Submissão:** plataforma eletrónica (Vortal, acinGov, etc.), assinatura e recibo.
 
-O Portal BASE não distribui tarefas. É corpus. A mesa da semana é o PrepBid e a **carteira**.
+A mesa da semana é o PrepBid e a **carteira**.
 
 ## Que ritual semanal funciona?
 
@@ -382,7 +384,7 @@ Segunda: digest e lista «agir esta semana». Terça–quarta: cadernos dos «si
 
 ## Que ferramentas importam de facto?
 
-Um perfil com CPV, distritos e valor; um radar que não mistura limpezas com empreitadas; uma carteira partilhada. Folhas soltas e «vou ver no BASE» todas as manhãs não são um processo.
+Um perfil com CPV, distritos e valor; um radar que não mistura limpezas com empreitadas; uma carteira partilhada. Folhas soltas e uma lista nacional sem perfil não são um processo.
 
 ## Quais são os sinais de equipa subdimensionada?
 
@@ -403,7 +405,7 @@ Conta grátis, sem cartão, sem reunião comercial. Teste Pro 7 dias nos planos.
       {
         question: 'Onde a equipa deve olhar de manhã?',
         answer:
-          'Para o ecrã Hoje do PrepBid («agir esta semana»), não para a pesquisa nacional do Portal BASE.',
+          'Para o ecrã Hoje do PrepBid («agir esta semana»).'
       },
     ],
   },
@@ -422,7 +424,7 @@ O preço base é o teto do procedimento, não o preço de mercado. Em empreitada
 
 ## Qual é o método?
 
-A forma honesta é olhar para concursos comparáveis já publicados no corpus do Portal BASE — mesmo CPV, de preferência a mesma entidade — e ver o rácio adjudicado / preço base. No PrepBid (plano Business) essa estimativa aparece na ficha; não precisa de montar a amostra à mão em base.gov.pt.
+A forma honesta é olhar para concursos comparáveis já publicados no corpus do Portal BASE — mesmo CPV, de preferência a mesma entidade — e ver o rácio adjudicado / preço base. No PrepBid (plano Business) essa estimativa aparece na ficha.
 
 1. Recolhe contratos comparáveis dos últimos 24 meses no mesmo CPV, alargando 8→4→2 dígitos só se a amostra for curta.
 2. Prefere o rácio *adjudicado / preço base histórico* quando o anúncio original ainda está no corpus; senão, escala o adjudicado contra o preço base atual, deitando fora rácios absurdos (fora de cerca de 0,2–1,15).
@@ -462,14 +464,14 @@ Estimativa estatística com dados públicos. Confirme as peças e a sua conta de
     slug: 'como-saber-quais-concursos-sao-relevantes',
     title: 'Como saber quais concursos públicos são relevantes para a sua empresa',
     description:
-      'No PrepBid, filtrar concursos relevantes com CPV, distritos, valor e o histórico que se repete — em vez de varrer o Portal BASE todas as manhãs.',
+      'No PrepBid, filtrar concursos relevantes com CPV, distritos, valor e o histórico que se repete — no perfil e no radar.',
     lede:
       'Um concurso é relevante quando coincide com o que faz, onde executa, o valor em que consegue habilitar-se — e quando ainda há prazo. No PrepBid isso fica no perfil e no radar.',
     intent: 'comercial',
     tags: ['radar', 'perfil', 'cpv'],
     markdown: `## Porque as palavras no título não bastam?
 
-Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. No **PrepBid** esses cortes ficam no perfil da empresa e aplicam-se ao radar — o Portal BASE é o corpus público, não a ferramenta de filtro do dia a dia. Isto aplica-se a empreitadas, energia e saúde, não a um dump nacional de limpezas e papelaria.
+Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. No **PrepBid** esses cortes ficam no perfil da empresa e aplicam-se ao radar. Isto aplica-se a empreitadas, energia e saúde, não a um dump nacional de limpezas e papelaria.
 
 ## Como começar pelo CPV?
 
@@ -499,9 +501,9 @@ O ecrã útil é «agir esta semana» — prazo a menos de 30 dias, e as linhas 
           'No PrepBid: CPV da atividade, distritos e intervalo de valor no perfil, cruzados com o histórico da entidade. Palavras no título não bastam.',
       },
       {
-        question: 'O Portal BASE já faz este filtro?',
+        question: 'Onde filtro concursos relevantes no dia a dia?',
         answer:
-          'Não. O Portal BASE é a fonte pública: lista o que foi publicado. Não cruza o seu alvará, a geografia nem as renovações. Esse filtro faz-se no perfil e no radar do PrepBid.',
+          'No perfil e no radar do PrepBid: CPV, distritos, valor e histórico da entidade. Não num inbox nacional sem perfil.',
       },
       {
         question: 'Quando um concurso deixa de ser relevante?',
@@ -516,7 +518,7 @@ O ecrã útil é «agir esta semana» — prazo a menos de 30 dias, e as linhas 
     description:
       'Empreitadas de obras públicas em Portugal: alvará, mapa de quantidades e critérios. No PrepBid filtre CPV, distrito e valor no perfil antes de abrir o caderno.',
     lede:
-      'Em empreitadas, filtre primeiro por alvará, CPV e distrito no perfil do PrepBid; só depois invista no mapa de quantidades. O Portal BASE é o corpus, não a lista de trabalho da manhã.',
+      'Em empreitadas, filtre primeiro por alvará, CPV e distrito no perfil do PrepBid; só depois invista no mapa de quantidades. A lista de trabalho da manhã é o radar do PrepBid.',
     intent: 'comercial',
     tags: ['empreitadas', 'alvara', 'radar'],
     markdown: `## Por onde começar numa empreitada pública?
@@ -543,9 +545,9 @@ Conta grátis, sem cartão. Teste Pro 7 dias nos planos.`,
           'Não. Filtra e prioriza. O preço da empreitada continua a sair do mapa, da memória descritiva e da sua estrutura de custos.',
       },
       {
-        question: 'Devo olhar para todas as empreitadas publicadas no BASE?',
+        question: 'Devo olhar para todas as empreitadas publicadas no país?',
         answer:
-          'Não. O corpus é nacional; a sua lista é o radar do PrepBid com o perfil da empresa (CPV, distritos, valor, alvará na triagem).',
+          'Não. A sua lista é o radar do PrepBid com o perfil da empresa (CPV, distritos, valor, alvará na triagem).',
       },
       {
         question: 'Quando contacto a câmara numa renovação de obras?',
@@ -565,7 +567,7 @@ Conta grátis, sem cartão. Teste Pro 7 dias nos planos.`,
     tags: ['energia', 'cpv', 'radar'],
     markdown: `## Que objetos entram neste radar?
 
-Fotovoltaico, eficiência em edifícios, iluminação pública, manutenção de AVAC, gestão de energia. Títulos como «fornecimento e instalação» misturam objectos; o **CPV** no perfil do **PrepBid** separa-os. O Portal BASE publica tudo; o filtro do dia é o radar.
+Fotovoltaico, eficiência em edifícios, iluminação pública, manutenção de AVAC, gestão de energia. Títulos como «fornecimento e instalação» misturam objectos; o **CPV** no perfil do **PrepBid** separa-os. O filtro do dia é o radar do PrepBid.
 
 ## O que verificar além do preço?
 
@@ -594,7 +596,7 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
       {
         question: 'Onde vejo o incumbente da manutenção?',
         answer:
-          'No histórico da entidade no PrepBid (contratos do corpus do Portal BASE), não numa pesquisa avulsa no portal todas as manhãs.',
+          'No histórico da entidade no PrepBid, na ficha — não numa ronda avulsa todas as manhãs.',
       },
     ],
   },
@@ -602,14 +604,14 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
     slug: 'concursos-publicos-para-pme-por-onde-comecar',
     title: 'Concursos públicos para PME: por onde começar no PrepBid',
     description:
-      'PME que entram em contratação pública em Portugal: primeiros filtros no perfil do PrepBid (CPV, geografia, valor), habilitação e erros a evitar — sem varrer o Portal BASE.',
+      'PME que entram em contratação pública em Portugal: primeiros filtros no perfil do PrepBid (CPV, geografia, valor), habilitação e erros a evitar.',
     lede:
-      'Comece por poucos CPV, distritos onde executa e valores compatíveis com a habilitação, no perfil do PrepBid — não pela lista nacional completa do Portal BASE.',
+      'Comece por poucos CPV, distritos onde executa e valores compatíveis com a habilitação, no perfil do PrepBid — não por uma lista nacional sem recorte.',
     intent: 'comercial',
     tags: ['pme', 'perfil', 'radar'],
     markdown: `## Qual é o erro clássico da primeira PME?
 
-Abrir a pesquisa nacional e tentar «não perder nada». Isso mistura objectos, distritos e valores que a empresa não executa. O **PrepBid** existe para o contrário: um **perfil** estreito e um radar útil. O Portal BASE é o arquivo público, não o inbox da manhã.
+Abrir a pesquisa nacional e tentar «não perder nada». Isso mistura objectos, distritos e valores que a empresa não executa. O **PrepBid** existe para o contrário: um **perfil** estreito e um radar útil. O inbox da manhã é «agir esta semana».
 
 ## Que habilitação mínima pôr em ordem?
 
@@ -628,7 +630,7 @@ Confirme CCP e peças. Não é aconselhamento jurídico.`,
       {
         question: 'Por onde começa uma PME em concursos públicos?',
         answer:
-          'Pelo perfil no PrepBid (CPV, distritos, valor) e pela pasta de habilitação. Não pela lista completa do Portal BASE.',
+          'Pelo perfil no PrepBid (CPV, distritos, valor) e pela pasta de habilitação.'
       },
       {
         question: 'O plano grátis chega para começar?',
@@ -661,7 +663,7 @@ Objeto e lotes, requisitos regulatórios, critério (preço vs. qualidade), praz
 
 ## Que sinais há no histórico da entidade?
 
-Quem é o incumbente daquele dispositivo, a que preço, se o hospital compra por AQ ou por concurso aberto. Dados do corpus do Portal BASE, na ficha da entidade no PrepBid — não numa ronda manual em base.gov.pt.
+Quem é o incumbente daquele dispositivo, a que preço, se o hospital compra por AQ ou por concurso aberto. Na ficha da entidade no PrepBid, a partir do histórico público — não numa ronda manual à parte.
 
 ## Que erros evitar?
 
@@ -699,7 +701,7 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico nem regulatório.`,
 
 É um procedimento em que a entidade **convida** operadores (em regra três ou mais) a apresentar proposta, sem anúncio aberto a todos. Não é concurso público nem ajuste direto. O convite e as peças correm na plataforma eletrónica indicada.
 
-O tipo vem publicado no corpus (DR / Portal BASE). No **PrepBid** aparece no radar: se não foi convidado, este anúncio não é um go — é inteligência sobre o comprador.
+No **PrepBid** o tipo aparece no radar: se não foi convidado, este anúncio não é um go — é inteligência sobre o comprador.
 
 ## Quem pode apresentar proposta?
 
@@ -711,7 +713,7 @@ Calendário mais curto, relação com a entidade mais pesada, os mesmos riscos f
 
 ## Como preparar a empresa para ser convidada?
 
-Histórico no mesmo objeto, execução irrepreensível, presença comercial **antes** do convite. O radar de renovações e a ficha da entidade no PrepBid mostram o padrão de consultas e ajustes. O Portal BASE é a fonte desses contratos; o plano de contacto é no PrepBid.
+Histórico no mesmo objeto, execução irrepreensível, presença comercial **antes** do convite. O radar de renovações e a ficha da entidade no PrepBid mostram o padrão de consultas e ajustes. O plano de contacto é no PrepBid.
 
 Confirme o CCP e o convite concreto. Não é aconselhamento jurídico.`,
     faq: [
@@ -723,7 +725,7 @@ Confirme o CCP e o convite concreto. Não é aconselhamento jurídico.`,
       {
         question: 'Como sei que um procedimento é consulta prévia?',
         answer:
-          'Pelo tipo de procedimento no anúncio (dados do DR / BASE). No PrepBid esse campo vem na ficha do concurso, no radar.',
+          'No PrepBid esse campo vem na ficha do concurso, no radar.'
       },
       {
         question: 'O que faço se a entidade só usa consulta prévia no meu CPV?',
@@ -753,7 +755,7 @@ No **PrepBid**, a análise de IA (Pro) extrai critérios e red flags das peças.
 
 ## Como decidir a estratégia?
 
-Se o preço vale 90 %, a memória bonita não salva. Se a qualidade vale 40 %, um desconto agressivo pode perder. Use o histórico da entidade (corpus do BASE, na ficha PrepBid) só como contexto — o critério deste procedimento está nas peças.
+Se o preço vale 90 %, a memória bonita não salva. Se a qualidade vale 40 %, um desconto agressivo pode perder. Use o histórico da entidade (na ficha PrepBid) só como contexto — o critério deste procedimento está nas peças.
 
 ## Onde poupar tempo na triagem?
 
@@ -782,18 +784,18 @@ Confirme as peças. Não é aconselhamento jurídico.`,
     slug: 'diario-da-republica-e-anuncios-de-concursos',
     title: 'Diário da República e anúncios: o marco oficial, o trabalho no PrepBid',
     description:
-      'O anúncio no Diário da República dá publicidade oficial ao procedimento. O PrepBid vigia esses anúncios no radar; o Portal BASE e as plataformas são fontes e canais, não o filtro do dia a dia.',
+      'O anúncio no Diário da República dá publicidade oficial ao procedimento. O PrepBid vigia esses anúncios no radar já cortados pelo perfil. As plataformas electrónicas são o canal de peças e de entrega.',
     lede:
-      'O anúncio no Diário da República é o marco oficial de muitos procedimentos. No PrepBid os anúncios entram no radar já filtrados pelo perfil; o Portal BASE e a plataforma eletrónica completam o corpus e a entrega.',
+      'O anúncio no Diário da República é o marco oficial de muitos procedimentos. No PrepBid os anúncios entram no radar já filtrados pelo perfil; a plataforma electrónica é o canal de peças e de entrega.',
     intent: 'informativa',
     tags: ['diario-da-republica', 'anuncios', 'radar'],
     markdown: `## Qual é o papel do Diário da República?
 
 O **DR** dá publicidade oficial a muitos anúncios de procedimento: objeto, prazos, tipo, plataforma. Não é o sítio onde a empresa gere a semana. É uma **fonte**. O **PrepBid** recolhe anúncios e cruza-os com o perfil (CPV, distritos, valor) no radar.
 
-## Como se articula com o Portal BASE?
+## Como se articula o anúncio com o radar do PrepBid?
 
-O Portal BASE indexa procedimentos e contratos (corpus de transparência). O DR publica o anúncio oficial. A plataforma eletrónica (Vortal, acinGov, etc.) é o canal de peças e de submissão. Três papéis diferentes. Nenhum substitui o perfil e a lista «agir esta semana» no PrepBid.
+O DR dá publicidade oficial. O PrepBid recolhe o anúncio, aplica o perfil e põe o que interessa no radar e em «agir esta semana». A plataforma electrónica (Vortal, acinGov, etc.) é o canal de peças e de submissão.
 
 ## Que campos do anúncio ler de imediato?
 
@@ -801,7 +803,7 @@ Tipo de procedimento, prazo de propostas, CPV, preço base, distrito, plataforma
 
 ## Como reduzir a dependência de «abrir o DR todos os dias»?
 
-Deixe o radar trabalhar sobre o corpus. Segunda-feira o digest (grátis) resume o que entrou na janela. A carteira guarda os gos. Abrir o DR ou o BASE à mão é exceção (peça em falta, dúvida pontual), não o processo.
+Deixe o radar trabalhar. Segunda-feira o digest (grátis) resume o que entrou na janela. A carteira guarda os gos. Abrir o DR à mão é exceção (peça em falta), não o processo.
 
 Confirme o anúncio concreto. Não é aconselhamento jurídico.`,
     faq: [
@@ -811,9 +813,9 @@ Confirme o anúncio concreto. Não é aconselhamento jurídico.`,
           'Não. O DR é a fonte oficial do anúncio. O PrepBid organiza esses anúncios no radar, já cortados pelo perfil da empresa.',
       },
       {
-        question: 'O Portal BASE substitui o DR?',
+        question: 'O PrepBid substitui o Diário da República?',
         answer:
-          'Não. Indexa e organiza procedimentos e contratos. O anúncio oficial sai no DR; a proposta entrega-se na plataforma eletrónica.',
+          'Não. O DR é a fonte oficial do anúncio. O PrepBid organiza esses anúncios no radar, já cortados pelo perfil da empresa.',
       },
       {
         question: 'Onde vejo o prazo de propostas?',
@@ -826,7 +828,7 @@ Confirme o anúncio concreto. Não é aconselhamento jurídico.`,
     slug: 'distritos-e-geografia-na-escolha-de-concursos',
     title: 'Distritos e geografia: como o perfil do PrepBid corta concursos inviáveis',
     description:
-      'Filtrar concursos por distrito e logística no perfil do PrepBid: evitar propostas em que o deslocamento e a supervisão destroem a margem, sem varrer o mapa nacional do Portal BASE.',
+      'Filtrar concursos por distrito e logística no perfil do PrepBid: evitar propostas em que o deslocamento e a supervisão destroem a margem, sem uma lista nacional sem recorte geográfico.',
     lede:
       'Geografia importa: distritos onde tem equipa, alvará e logística batem títulos nacionais apelativos mas inexecutáveis. No PrepBid esse corte é um campo do perfil, aplicado ao radar.',
     intent: 'comercial',
@@ -839,11 +841,11 @@ Uma empreitada ou uma manutenção a 400 km come margem em deslocação, estalei
 
 Onde tem gente, alvará, fornecedores e histórico de execução. Acrescente um distrito vizinho só se a logística aguentar. Não copie a lista nacional «para não perder nada» — perde tempo.
 
-O mapa por distrito no PrepBid mostra onde está o dinheiro e as renovações, sobre o corpus público. O Portal BASE não aplica o seu raio de acção.
+O mapa por distrito no PrepBid mostra onde está o dinheiro e as renovações, já recortados pelo perfil.
 
 ## Como cruzar com o histórico?
 
-Se nunca executou nos Açores e o caderno pede presença local, é no-go. Se a câmara do distrito vizinho já o conhece, a renovação pesa mais. Fichas de entidade e carteira, não pesquisa manual no portal.
+Se nunca executou nos Açores e o caderno pede presença local, é no-go. Se a câmara do distrito vizinho já o conhece, a renovação pesa mais. Fichas de entidade e carteira no PrepBid, não uma pesquisa nacional à mão.
 
 ## Que erros evitar?
 
@@ -857,9 +859,9 @@ Conta grátis, sem cartão. Ajuste o perfil e volte ao radar.`,
           'No perfil do PrepBid, com os distritos onde executa. O radar aplica o corte ao corpus de anúncios e contratos.',
       },
       {
-        question: 'O Portal BASE filtra pelos meus distritos automaticamente?',
+        question: 'O PrepBid filtra pelos meus distritos automaticamente?',
         answer:
-          'Não. O BASE é a fonte nacional. O recorte geográfico da empresa é o perfil do PrepBid.',
+          'Sim, se os distritos estiverem no perfil. Esse recorte aplica-se ao radar e a «agir esta semana».',
       },
       {
         question: 'E os concursos com vários distritos de execução?',
@@ -889,7 +891,7 @@ Pasta de habilitação permanente, checklist no dia 1 do go, submissão com marg
 
 Porque as regras de exclusão são formais. O corpus do Portal BASE está cheio de contratos ganhos por segundo classificado depois de exclusão do primeiro. Leia o programa deste procedimento, não o hábito do último.
 
-O Portal BASE não entrega a proposta. A plataforma eletrónica sim. O PrepBid é a mesa da triagem e dos prazos.
+A plataforma electrónica entrega a proposta. O PrepBid é a mesa da triagem e dos prazos.
 
 Confirme as peças. Não é aconselhamento jurídico.`,
     faq: [
@@ -929,7 +931,7 @@ DEUCP ou declaração de honra, documentos de habilitação jurídica, económic
 
 ## Como organizar a equipa?
 
-Triagem no **PrepBid** (perfil + radar + «agir esta semana») → go na **carteira** → pasta. Montar DEUCP para anúncios que o perfil já excluía é o desperdício clássico. O Portal BASE não gere esta fila.
+Triagem no **PrepBid** (perfil + radar + «agir esta semana») → go na **carteira** → pasta. Montar DEUCP para anúncios que o perfil já excluía é o desperdício clássico. Essa fila é o radar e a carteira do PrepBid.
 
 ## Que erros clássicos evitar?
 
@@ -948,9 +950,9 @@ Confirme as peças. Não é aconselhamento jurídico.`,
           'Tenha uma pasta permanente. A pasta *deste* concurso começa depois do go na carteira do PrepBid, com o prazo da plataforma à vista.',
       },
       {
-        question: 'O BASE valida a habilitação da minha empresa?',
+        question: 'O PrepBid valida a habilitação da minha empresa?',
         answer:
-          'Não. Publica contratos e procedimentos. A habilitação desta proposta está nas peças e na sua pasta.',
+          'A triagem no radar não substitui a pasta. A habilitação desta proposta está nas peças e nos seus documentos.',
       },
     ],
   },
@@ -960,7 +962,7 @@ Confirme as peças. Não é aconselhamento jurídico.`,
     description:
       'Ler os contratos em que a sua empresa foi adjudicatária (CPV, entidades, valores) no corpus do Portal BASE. No PrepBid o NIF consolida esse histórico para o perfil e a proposta.',
     lede:
-      'O histórico público da sua empresa valida CPV, referências e entidades onde já executou. No PrepBid usa-se na triagem, no perfil e na proposta — o Portal BASE é a fonte, não a ferramenta de trabalho.',
+      'O histórico público da sua empresa valida CPV, referências e entidades onde já executou. No PrepBid usa-se na triagem, no perfil e na proposta.',
     intent: 'comercial',
     tags: ['historico', 'nif', 'perfil'],
     markdown: `## O que diz o histórico público sobre si?
@@ -984,7 +986,7 @@ Conta grátis, sem cartão. Ajuste o perfil com os CPV reais.`,
       {
         question: 'Como vejo os contratos da minha empresa?',
         answer:
-          'No PrepBid, pelo NIF, sobre o corpus público do Portal BASE. Não precisa de montar a pesquisa no portal todas as vezes.',
+          'No PrepBid, pelo NIF. A ficha já consolida o histórico — não monte uma pesquisa à parte todas as vezes.',
       },
       {
         question: 'Devo copiar esses CPV para o perfil?',
@@ -1017,7 +1019,7 @@ Se é requisito mínimo (exclusão) ou pontuação; se o âmbito do certificado 
 
 ## Como decidir o go/no-go sem drama?
 
-Não tem o certificado mínimo → no-go, carteira fechada. Tem mas o âmbito é outro → no-go ou condicional com jurista. Tem e o critério pontua → go com evidência na pasta. O Portal BASE não valida o seu certificado; é corpus de contratos.
+Não tem o certificado mínimo → no-go, carteira fechada. Tem mas o âmbito é outro → no-go ou condicional com jurista. Tem e o critério pontua → go com evidência na pasta. A conferência do certificado é na triagem e na pasta, depois do radar.
 
 ## Que erros são frequentes?
 
@@ -1070,7 +1072,7 @@ Regras de adjudicação cruzada, limite de lotes por concorrente, preço anormal
 3. Caução por lote ou global?
 4. Posso executar vários ao mesmo tempo?
 
-Marque na **carteira** o lote, não só o anúncio. O Portal BASE lista o procedimento; a decisão operacional é no PrepBid.
+Marque na **carteira** o lote, não só o anúncio. A decisão operacional (por lote) é no PrepBid, na carteira.
 
 Confirme as peças. Não é aconselhamento jurídico.`,
     faq: [
@@ -1112,7 +1114,7 @@ O **mapa de quantidades** é a grelha de preço. A **memória descritiva** (e pe
 4. Mapa: preço.
 5. Esclarecimentos na plataforma se houver contradição.
 
-Não inverta 4 e 1. O Portal BASE não faz esta ordem; é corpus.
+Não inverta 4 e 1. Essa ordem é o fluxo PrepBid: radar → carteira → peças.
 
 ## Quando pedir esclarecimentos?
 
@@ -1145,7 +1147,7 @@ Confirme as peças. Não é aconselhamento jurídico.`,
     slug: 'o-que-e-o-cpv-em-concursos-publicos',
     title: 'O que é o CPV em concursos públicos e como usá-lo no PrepBid',
     description:
-      'O CPV classifica o objeto do contrato em oito dígitos. No PrepBid é o filtro principal do perfil e do radar — melhor do que palavras no título, com o Portal BASE só como corpus.',
+      'O CPV classifica o objeto do contrato em oito dígitos. No PrepBid é o filtro principal do perfil e do radar — melhor do que palavras no título, a partir do histórico público já no PrepBid.',
     lede:
       'O CPV é o código de oito dígitos que classifica o objeto do contrato; filtra melhor do que palavras no título. No PrepBid os seus códigos ficam no perfil e aplicam-se ao radar.',
     intent: 'informativa',
@@ -1156,7 +1158,7 @@ O **Vocabulário Comum para Contratos Públicos** é um código hierárquico (di
 
 ## Porque o título do concurso não chega?
 
-Porque o título é prosa. «Intervenção no edifício escolar» pode ser empreitada, avac, mobiliário ou inspeção. O CPV, o distrito e o valor no perfil cortam isto no radar. O Portal BASE traz o código no anúncio e no contrato; não aplica o seu perfil.
+Porque o título é prosa. «Intervenção no edifício escolar» pode ser empreitada, avac, mobiliário ou inspeção. O CPV, o distrito e o valor no perfil cortam isto no radar. O código vem no anúncio e no contrato; o perfil do PrepBid é que o aplica ao radar.
 
 ## Como montar a sua lista de CPV?
 
@@ -1206,7 +1208,7 @@ O **Portal BASE** (base.gov.pt) é o sistema de informação dos contratos públ
 
 ## Para que serve a uma empresa que concorre?
 
-Como fonte: saber o que foi publicado, quem ganhou, a que preço, com que fundamento. Esses dados alimentam o perfil, o radar, os concorrentes e as renovações **no PrepBid**. Ir todas as manhãs à pesquisa do BASE para «filtrar o dia» é o anti-padrão que este produto substitui.
+Como fonte: saber o que foi publicado, quem ganhou, a que preço, com que fundamento. Esses dados alimentam o perfil, o radar, os concorrentes e as renovações **no PrepBid**. O anti-padrão é tratar a fonte pública como inbox; o filtro do dia é o radar.
 
 ## O que o Portal BASE não faz?
 
@@ -1215,26 +1217,26 @@ Como fonte: saber o que foi publicado, quem ganhou, a que preço, com que fundam
 - Não estima a janela de contacto das renovações à medida da empresa.
 - Não substitui o DR nem a plataforma de entrega da proposta.
 
-## Como deve usar o BASE no fluxo PrepBid?
+## Como entra esta fonte no fluxo PrepBid?
 
-Como referência pontual (um documento, uma dúvida de contrato) e como origem do corpus que o PrepBid já indexa. O trabalho diário: **perfil → radar → Hoje → carteira**. Conta grátis, sem cartão, sem reunião comercial.
+Como origem do corpus que o PrepBid já indexa. O trabalho diário: **perfil → radar → Hoje → carteira**. Conta grátis, sem cartão, sem reunião comercial.
 
 Confirme sempre o CCP e as peças do procedimento concreto. Este guia explica o papel da fonte; não é aconselhamento jurídico.`,
     faq: [
       {
         question: 'O Portal BASE é obrigatório para apresentar proposta?',
         answer:
-          'Não. A proposta entrega-se na plataforma eletrónica indicada no anúncio. O BASE é a fonte pública de consulta e transparência dos contratos.',
+          'Não. A proposta entrega-se na plataforma eletrónica indicada no anúncio. O Portal BASE é a fonte pública de transparência; o radar e a carteira são no PrepBid.',
       },
       {
-        question: 'Devo filtrar concursos todas as manhãs em base.gov.pt?',
+        question: 'Onde filtro concursos todas as manhãs?',
         answer:
-          'Não. Esse filtro (CPV, distritos, valor, prazo) faz-se no perfil e no radar do PrepBid. O BASE é o corpus, não o inbox.',
+          'No perfil e no radar do PrepBid (CPV, distritos, valor, prazo). A lista útil é «agir esta semana», não um inbox nacional.',
       },
       {
         question: 'O PrepBid substitui o Portal BASE?',
         answer:
-          'Não substitui a fonte oficial. Organiza o mesmo universo público para a sua empresa: radar, renovações, concorrentes e carteira.',
+          'Não substitui a fonte pública. Organiza o mesmo universo para a sua empresa: radar, renovações, concorrentes e carteira.',
       },
     ],
   },
@@ -1259,16 +1261,16 @@ Credenciais, certificados de assinatura, perfil da empresa na plataforma, espaç
 
 Plataforma errada, submissão depois da hora, ficheiro rejeitado, assinatura inválida, caução não carregada. Os lembretes Pro do PrepBid (7 e 2 dias) existem para esta margem — se a linha estiver na carteira.
 
-## Qual é a relação com o Portal BASE?
+## Qual é a relação com o PrepBid?
 
-O BASE é corpus de transparência. A plataforma é o balcão de *este* procedimento. O PrepBid é a mesa de triagem. Não misture os três.
+A plataforma é o balcão de *este* procedimento (peças e submissão). O PrepBid é a mesa de triagem (radar, prazos, carteira). Não misture os dois.
 
 Confirme as instruções da plataforma e as peças. Não é aconselhamento jurídico.`,
     faq: [
       {
-        question: 'Posso entregar a proposta no Portal BASE?',
+        question: 'Posso entregar a proposta no PrepBid?',
         answer:
-          'Não. A entrega é na plataforma eletrónica indicada no anúncio. O BASE não é o balcão de submissão.',
+          'Não. A entrega é na plataforma eletrónica indicada no anúncio. O PrepBid não submete por si.',
       },
       {
         question: 'O PrepBid submete a proposta na Vortal?',
@@ -1297,7 +1299,7 @@ Porque o prazo da **plataforma** não negocia. Esclarecimentos, visitas, cauçã
 
 ## Que prazos mapear no dia 1 do go?
 
-Propostas, esclarecimentos, visitas ao local, caução, validade da proposta. Escreva na linha da carteira. O corpus do Portal BASE e o DR dão a data; o processo é no PrepBid.
+Propostas, esclarecimentos, visitas ao local, caução, validade da proposta. Escreva na linha da carteira. A data vem no anúncio; o processo (carteira, lembretes, «agir esta semana») é no PrepBid.
 
 ## Qual é a checklist operacional?
 
@@ -1305,14 +1307,14 @@ Perfil a cortar o que não é para si → radar → Hoje → go na carteira → 
 
 ## Como não viver em urgência permanente?
 
-Estreite o perfil (CPV, distritos, valor). Use o radar de renovações para trabalhar *antes* do anúncio. O Portal BASE não faz esta calendário à sua medida.
+Estreite o perfil (CPV, distritos, valor). Use o radar de renovações para trabalhar *antes* do anúncio. Esse calendário à medida da empresa é o radar e a carteira do PrepBid.
 
 Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
     faq: [
       {
         question: 'O que é a lista «agir esta semana» no PrepBid?',
         answer:
-          'Oportunidades com prazo a menos de 30 dias, já cortadas pelo perfil. É o ecrã de manhã — não a pesquisa nacional do BASE.',
+          'Oportunidades com prazo a menos de 30 dias, já cortadas pelo perfil. É o ecrã de manhã no PrepBid.',
       },
       {
         question: 'Os lembretes de prazo são automáticos?',
@@ -1320,7 +1322,7 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
           'No Pro, a 7 e 2 dias, para itens na carteira em Interessa / Em preparação. Sem linha na carteira, não há lembrete.',
       },
       {
-        question: 'O prazo no BASE e na plataforma podem diferir?',
+        question: 'O prazo no anúncio e na plataforma podem diferir?',
         answer:
           'Trabalhe com a hora da plataforma indicada no anúncio. Em dúvida, a plataforma manda para a entrega.',
       },
@@ -1376,7 +1378,7 @@ O radar do PrepBid continua a servir para não orçamentar concursos irrelevante
     description:
       'Procedimentos ligados ao PRR continuam a ser CCP: peças, prazos e habilitação. No PrepBid trate-os no radar como os outros, com o perfil a cortar energia e infraestruturas relevantes.',
     lede:
-      'Concursos associados ao PRR continuam a ser procedimentos CCP: leia peças, prazos e habilitação. O financiamento não elimina formalidades. No PrepBid entram no radar pelo perfil, não por um canal à parte no Portal BASE.',
+      'Concursos associados ao PRR continuam a ser procedimentos CCP: leia peças, prazos e habilitação. O financiamento não elimina formalidades. No PrepBid entram no radar pelo perfil, como qualquer outro anúncio.',
     intent: 'comercial',
     tags: ['prr', 'prazos', 'energia'],
     markdown: `## O que muda — e o que não muda?
@@ -1389,7 +1391,7 @@ Fonte de financiamento, prazos de execução curtos, certificações, lotes, cau
 
 ## Como priorizar no radar?
 
-Não abra uma pesquisa «PRR» no Portal BASE todas as manhãs. Deixe o radar aplicar o perfil. Se a empresa é de eficiência energética, os CPV certos já apanham o volume. Marque prazos curtos em «agir esta semana».
+Deixe o radar aplicar o perfil. Se a empresa é de eficiência energética, os CPV certos já apanham o volume. Marque prazos curtos em «agir esta semana».
 
 ## Qual é o risco comercial?
 
@@ -1408,24 +1410,24 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico nem sobre fundos.`,
           'Não há um interruptor mágico «só PRR». Há perfil (CPV, distritos, valor) e o radar sobre o corpus de anúncios. O objeto manda.',
       },
       {
-        question: 'O BASE identifica automaticamente os procedimentos PRR?',
+        question: 'O PrepBid identifica automaticamente os procedimentos PRR?',
         answer:
-          'A menção pode estar no anúncio ou nas peças. Use o PrepBid para o filtro da empresa; confirme o texto oficial na ficha e nas peças.',
+          'Não há um interruptor «só PRR». Há perfil (CPV, distritos, valor) e o radar. Confirme o texto oficial na ficha e nas peças.',
       },
     ],
   },
   {
     slug: 'radar-de-oportunidades-vs-abrir-o-base-todos-os-dias',
-    title: 'Radar PrepBid vs abrir o Portal BASE todos os dias',
+    title: 'Radar PrepBid vs varrer a lista nacional todos os dias',
     description:
-      'Abrir o Portal BASE todas as manhãs sem perfil gasta horas. O radar do PrepBid aplica CPV, distritos e valor ao corpus público e devolve o que agir esta semana.',
+      'Tratar a lista nacional como inbox gasta horas. O radar do PrepBid aplica CPV, distritos e valor e devolve o que agir esta semana.',
     lede:
-      'Abrir o Portal BASE todos os dias sem filtros gasta horas. O radar do PrepBid aplica CPV, geografia e valor ao que interessa à empresa — o BASE continua a ser a fonte, não a ferramenta de trabalho.',
+      'Uma lista nacional sem perfil gasta horas. O radar do PrepBid aplica CPV, geografia e valor ao que interessa à empresa — o PrepBid é a ferramenta de trabalho.',
     intent: 'comercial',
     tags: ['radar', 'perfil', 'prepbid'],
-    markdown: `## Qual é o custo real do «passo pelo BASE»?
+    markdown: `## Qual é o custo real de uma lista nacional sem perfil?
 
-Sem perfil, a lista nacional mistura limpezas, papelaria, obras pesadas e dispositivos médicos. A equipa lê títulos, abre PDFs e descobre tarde que o alvará ou o distrito não batem certo. Isso não é diligência — é **ruído**. O Portal BASE faz o que deve: publicar. Não deve ser o inbox da sua empresa.
+Sem perfil, a lista nacional mistura limpezas, papelaria, obras pesadas e dispositivos médicos. A equipa lê títulos, abre PDFs e descobre tarde que o alvará ou o distrito não batem certo. Isso não é diligência — é **ruído**. O inbox da empresa é o radar do PrepBid.
 
 ## O que o radar do PrepBid faz?
 
@@ -1436,9 +1438,9 @@ Sem perfil, a lista nacional mistura limpezas, papelaria, obras pesadas e dispos
 
 Não substitui ler o caderno. Substitui a primeira hora perdida a caçar o que não é para si.
 
-## Quando ainda vale abrir o BASE ou o DR à mão?
+## Quando ainda vale ir às peças oficiais à mão?
 
-Uma peça em falta, uma fundamentação pontual, uma dúvida de contrato. Exceção, não rotina. O corpus já está no PrepBid.
+Uma peça em falta na plataforma, uma dúvida pontual no caderno. Exceção, não rotina. O radar e a ficha já estão no PrepBid.
 
 ## Qual é o modelo híbrido que funciona?
 
@@ -1447,9 +1449,9 @@ Perfil → radar → triagem 15–30 min no Hoje → go/no-go na **carteira** �
 Confirme CCP e peças. Não é aconselhamento jurídico.`,
     faq: [
       {
-        question: 'O radar do PrepBid substitui o Portal BASE?',
+        question: 'Onde filtro concursos todos os dias?',
         answer:
-          'Não substitui a fonte oficial. Organiza e filtra o corpus público com o perfil da empresa. O BASE não é o sítio do filtro diário.',
+          'No radar do PrepBid, com o perfil da empresa (CPV, distritos, valor). A lista «agir esta semana» é o inbox.',
       },
       {
         question: 'Preciso de IA para filtrar concursos?',
@@ -1480,7 +1482,7 @@ Quando o concurso sai no Diário da República, o incumbente já está a trabalh
 
 Data de celebração e prazo de execução no corpus do Portal BASE. O PrepBid estima o fim e uma **data sugerida de contacto** (cerca de quatro meses antes). Não adivinha o tipo de procedimento futuro (aberto, consulta, ajuste). Estima **quando**.
 
-Não monte esta conta à mão na pesquisa do BASE todas as semanas. Está no radar e na ficha da entidade.
+Não monte esta conta à mão todas as semanas. Está no radar e na ficha da entidade, no PrepBid.
 
 ## O que dizer no contacto (sem prometer o ilegal)?
 
@@ -1495,7 +1497,7 @@ Conta grátis, sem cartão. Não é aconselhamento jurídico.`,
       {
         question: 'Como sei quando contactar a entidade antes do próximo concurso?',
         answer:
-          'Pelo radar de renovações do PrepBid, que estima o fim do contrato em curso e sugere uma janela (~4 meses antes). O BASE é a fonte das datas.',
+          'Pelo radar de renovações do PrepBid, que estima o fim do contrato em curso e sugere uma janela (~4 meses antes).'
       },
       {
         question: 'O radar garante que vai haver concurso aberto?',
@@ -1530,7 +1532,7 @@ Contas, certidões, declarações — o que o programa listar, no formato pedido
 
 O **radar do PrepBid** já cortou CPV, distrito, valor e prazo. Na triagem de 20 minutos, o volume de negócios é um sim/não. No-go → carteira fechada. Não peça à contabilista a pasta para concursos que o perfil já deveria ter excluído pelo valor.
 
-O Portal BASE não calcula o seu volume. Mostra contratos públicos do seu NIF, que ajudam à narrativa, mas o requisito está nas peças deste concurso.
+O PrepBid não calcula o seu volume de negócios. O histórico do NIF ajuda à narrativa; o requisito está nas peças deste concurso.
 
 ## A que deve prestar atenção?
 

@@ -73,7 +73,7 @@ O Código dos Contratos Públicos fixa limiares de valor e regras de fundamenta�
 - **Consulta prévia:** só os convidados (em regra, pelo menos três). Se não foi convidado, não concorre a este procedimento.
 - **Ajuste direto:** o operador escolhido pela entidade. Não há fase pública de propostas; o contrato aparece depois no BASE, com valor e fundamentação.
 
-Há exceções (urgência, exclusividade técnica, contratos de muito baixo valor, acordos-quadro). A fundamentação do ajuste direto está no contrato publicado no corpus do Portal BASE — no PrepBid lê-se na ficha da entidade e do contrato, sem ir filtrar à mão a base.gov.pt.
+Há exceções (urgência, exclusividade técnica, contratos de muito baixo valor, acordos-quadro). A fundamentação do ajuste direto está no contrato publicado no corpus público — no PrepBid lê-se na ficha da entidade e do contrato.
 
 ## O que muda na proposta?
 
@@ -109,13 +109,13 @@ Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto ex
     title: 'Como saber quais concursos públicos são relevantes para a sua empresa',
     tags: ['radar', 'perfil', 'cpv'],
     description:
-      'No PrepBid, filtrar concursos relevantes com CPV, distritos, valor e o histórico que se repete — em vez de varrer o Portal BASE todas as manhãs.',
+      'No PrepBid, filtrar concursos relevantes com CPV, distritos, valor e o histórico que se repete — no perfil e no radar.',
     lede:
       'Um concurso é relevante quando coincide com o que faz, onde executa, o valor em que consegue habilitar-se — e quando ainda há prazo. No PrepBid isso fica no perfil e no radar.',
     intent: 'comercial',
     markdown: `## Porque as palavras no título não bastam?
 
-Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. No **PrepBid** esses cortes ficam no perfil da empresa e aplicam-se ao radar — o Portal BASE é o corpus público, não a ferramenta de filtro do dia a dia. Isto aplica-se a empreitadas, energia e saúde, não a um dump nacional de limpezas e papelaria.
+Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. No **PrepBid** esses cortes ficam no perfil da empresa e aplicam-se ao radar. Isto aplica-se a empreitadas, energia e saúde, não a um dump nacional de limpezas e papelaria.
 
 ## Como começar pelo CPV?
 
@@ -145,9 +145,9 @@ O ecrã útil é «o que agir esta semana» — prazo a menos de 30 dias, e as l
           'Comece pelo CPV da atividade, corte distritos e intervalo de valor alinhados com o alvará, e cruze com o histórico da entidade. Palavras no título não bastam.',
       },
       {
-        question: 'O Portal BASE já faz este filtro?',
+        question: 'Onde filtro concursos todas as manhãs?',
         answer:
-          'Não. O Portal BASE é a fonte pública: lista o que foi publicado. Não cruza o seu alvará, a geografia nem as renovações. Esse filtro faz-se no perfil e no radar do PrepBid.',
+          'No perfil e no radar do PrepBid (CPV, distritos, valor, prazo). A lista útil é «agir esta semana».',
       },
       {
         question: 'Quando um concurso deixa de ser relevante?',
@@ -171,7 +171,7 @@ O preço base é o teto do procedimento, não o preço de mercado. Em empreitada
 
 ## Qual é o método?
 
-A forma honesta de estimar o fecho é olhar para concursos comparáveis já publicados no corpus do Portal BASE — mesmo CPV, de preferência a mesma entidade — e ver o rácio entre o preço adjudicado e o preço base da altura. No PrepBid (plano Business) essa estimativa aparece na ficha; não precisa de ir à base.gov.pt montar a amostra à mão.
+A forma honesta de estimar o fecho é olhar para concursos comparáveis já publicados no corpus público — mesmo CPV, de preferência a mesma entidade — e ver o rácio entre o preço adjudicado e o preço base da altura. No PrepBid (plano Business) essa estimativa aparece na ficha.
 
 1. Recolhe contratos comparáveis dos últimos 24 meses no mesmo CPV, alargando 8→4→2 dígitos só se a amostra for curta.
 2. Prefere o rácio *adjudicado / preço base histórico* quando o anúncio original ainda está no corpus; senão, escala o adjudicado contra o preço base atual, deitando fora rácios absurdos (fora de cerca de 0,2–1,15).
@@ -220,8 +220,9 @@ export const GUIDE_AGENT_SPEC = {
     product:
       'O PrepBid é o sítio onde a empresa filtra, vê o radar, edita o perfil, gere a carteira e age esta semana. Escreva sempre nessa voz.',
     dataSources:
-      'Portal BASE (base.gov.pt) e Diário da República são fontes de dados públicas / corpus. Nunca instrua o leitor a ir a base.gov.pt filtrar manualmente o dia a dia.',
+      'Portal BASE e Diário da República são corpus públicos. Preferir zero menções de BASE como sítio de trabalho. Se a fonte for inevitável, seja mínimo e nunca como UI de filtro.',
     never: [
+      'Não diga ao leitor para filtrar, pesquisar, seguir ou acompanhar no BASE, Portal BASE, base.gov ou «BASE / radar».',
       'Não apresente o Portal BASE como o sítio onde se gere o radar, o perfil ou a lista «agir esta semana».',
       'Não use o slug reservado o-que-e-o-base-gov.',
       'Não invente nem envie published_at no PUT — a data fica na BD e só se mostra na UI quando existir.',

@@ -180,6 +180,9 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
     const parsed = parseGuidePayload(seed.slug, seed);
     assert.equal(parsed.ok, true, parsed.ok ? seed.slug : parsed.error);
     assert.doesNotMatch(seed.markdown, /o-que-e-o-base-gov/);
+    assertNoBaseAsWorkplace(
+      `${seed.title}\n${seed.description}\n${seed.lede}\n${seed.markdown}\n${JSON.stringify(seed.faq)}`,
+    );
     assert.ok(countH2ForTest(seed.markdown) >= 2);
     if (parsed.ok) {
       assert.ok(parsed.value.tags.length >= 1);
@@ -230,7 +233,9 @@ test('GUIDE_AGENT_SPEC exige framing PrepBid, tags e regras SEO+LLM', () => {
   assert.match(GUIDE_AGENT_SPEC.purpose, /PrepBid/);
   assert.match(GUIDE_AGENT_SPEC.framing.product, /radar/);
   assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /corpus/);
+  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /nunca como UI de filtro/i);
   assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => n.includes('o-que-e-o-base-gov')));
+  assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => /filtrar.*pesquisar/.test(n)));
   assert.match(GUIDE_AGENT_SPEC.payload.tags, /kebab/);
   assert.match(GUIDE_AGENT_SPEC.editorial.lede, /primeira resposta/);
   assert.equal(GUIDE_AGENT_SPEC.seo.answerFirst, true);
@@ -251,8 +256,7 @@ test('reescritas publicadas passam parse, tags e framing PrepBid', async () => {
     }
     assert.notEqual(g.slug, 'o-que-e-o-base-gov');
     assert.doesNotMatch(g.markdown, /o-que-e-o-base-gov/);
-    assert.doesNotMatch(g.markdown, /vá a base\.gov\.pt/i);
-    assert.doesNotMatch(g.markdown, /filtre no Portal BASE/i);
+    assertNoBaseAsWorkplace(`${g.title}\n${g.description}\n${g.lede}\n${g.markdown}\n${JSON.stringify(g.faq)}`);
     assert.match(`${g.lede}\n${g.markdown}`, /PrepBid/);
     const h2s = g.markdown.split('\n').filter((line) => line.startsWith('## '));
     assert.ok(h2s.length >= 2, g.slug);
@@ -271,4 +275,23 @@ test('robots.txt e sitemap.xml saem com Cache-Control curto para a CDN', () => {
 
 function countH2ForTest(markdown: string): number {
   return markdown.split('\n').filter((line) => /^## /.test(line)).length;
+}
+
+/** Readers act in PrepBid only — BASE is corpus, never a filter UI. */
+function assertNoBaseAsWorkplace(blob: string) {
+  const forbidden = [
+    /filtre no BASE/i,
+    /filtre no Portal BASE/i,
+    /BASE \/ radar/,
+    /filtr[aeo]\w*.{0,80}(base\.gov|Portal BASE|\bno BASE\b)/i,
+    /pesquis[aeo]\w*.{0,80}(base\.gov|Portal BASE|\bno BASE\b|nacional do BASE)/i,
+    /varrer.{0,60}(base\.gov|Portal BASE)/i,
+    /abrir o (Portal )?BASE/i,
+    /acompanh\w*.{0,60}(base\.gov|Portal BASE)/i,
+    /ir (a|à|ao) (base\.gov|Portal BASE)/i,
+    /filtrar à mão/i,
+  ];
+  for (const re of forbidden) {
+    assert.doesNotMatch(blob, re);
+  }
 }
