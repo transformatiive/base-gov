@@ -63,7 +63,7 @@ export const GUIDE_SEED: GuideSeed[] = [
     intent: 'informativa',
     markdown: `## O que distingue os dois?
 
-O tipo de procedimento no anúncio do Diário da República e no Portal BASE determina se a sua empresa sequer pode concorrer. No **concurso público** (e equivalentes abertos) qualquer operador que cumpra o programa apresenta proposta. No **ajuste direto** a entidade escolhe um operador, sem abertura geral. Entre os dois existe a **consulta prévia**: convite a vários operadores, ainda sem anúncio aberto a todos.
+O tipo de procedimento no anúncio do Diário da República determina se a sua empresa sequer pode concorrer. No **concurso público** (e equivalentes abertos) qualquer operador que cumpra o programa apresenta proposta. No **ajuste direto** a entidade escolhe um operador, sem abertura geral. Entre os dois existe a **consulta prévia**: convite a vários operadores, ainda sem anúncio aberto a todos.
 
 ## Porque a entidade escolhe um tipo e não outro?
 
@@ -71,7 +71,7 @@ O Código dos Contratos Públicos fixa limiares de valor e regras de fundamenta�
 
 - **Concurso público:** qualquer operador que cumpra os requisitos. O anúncio é o convite; há prazo, peças e critérios publicados.
 - **Consulta prévia:** só os convidados (em regra, pelo menos três). Se não foi convidado, não concorre a este procedimento.
-- **Ajuste direto:** o operador escolhido pela entidade. Não há fase pública de propostas; o contrato aparece depois no BASE, com valor e fundamentação.
+- **Ajuste direto:** o operador escolhido pela entidade. Não há fase pública de propostas; o contrato aparece depois na ficha do PrepBid, com valor e fundamentação.
 
 Há exceções (urgência, exclusividade técnica, contratos de muito baixo valor, acordos-quadro). A fundamentação do ajuste direto está no contrato publicado no corpus público — no PrepBid lê-se na ficha da entidade e do contrato.
 
@@ -84,13 +84,13 @@ Os **acordos-quadro** são um caso à parte: o concurso inicial é aberto (ou re
 
 ## Como usar o histórico para não chegar tarde?
 
-Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto — quando o valor ou a regra o obrigar — vai provavelmente ao mesmo objeto. No **PrepBid**, o radar de renovações não adivinha o tipo de procedimento futuro; estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair. O Portal BASE e o Diário da República são as fontes públicas; o sítio onde se age esta semana é o PrepBid.
+Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto — quando o valor ou a regra o obrigar — vai provavelmente ao mesmo objeto. No **PrepBid**, o radar de renovações não adivinha o tipo de procedimento futuro; estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair.
 
 Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não substitui o jurista da proposta.`,
     faq: [
       {
         question: 'Posso concorrer a um ajuste direto sem convite?',
-        answer: 'Não. Só o operador convidado apresenta proposta. O contrato aparece depois no Portal BASE, já adjudicado.',
+        answer: 'Não. Só o operador convidado apresenta proposta. O contrato aparece depois na ficha do PrepBid, já adjudicado.',
       },
       {
         question: 'Qual é a diferença entre consulta prévia e concurso público?',
@@ -100,7 +100,7 @@ Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto ex
       {
         question: 'Onde vejo o tipo de procedimento?',
         answer:
-          'No anúncio do Diário da República e na ficha do procedimento (dados do Portal BASE). No PrepBid esse campo aparece no radar e na ficha — é o que diz se ainda está a tempo de concorrer.',
+          'No PrepBid, na ficha do concurso e no radar. É esse campo que diz se ainda está a tempo de concorrer.',
       },
     ],
   },
@@ -121,7 +121,7 @@ Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**
 
 O Vocabulário Comum para Contratos Públicos (CPV) é o código de oito dígitos do objeto. Uma reabilitação de cobertura e um fornecimento de lâmpadas podem ter títulos parecidos e CPV diferentes.
 
-- Guarde os códigos em que já foi adjudicatário (estão nos contratos do BASE, no seu NIF).
+- Guarde os códigos em que já foi adjudicatário (estão nos contratos públicos, no seu NIF).
 - Acrescente a divisão (2 dígitos) e a classe (4 dígitos) da atividade principal — muita entidade classifica mal o código de 8 dígitos.
 - Não use só a palavra «construção»: empreitadas de especialidades, reabilitação municipal e espaços verdes misturam-se no texto e não na sua carteira.
 
@@ -131,7 +131,7 @@ Uma construtora de classe média no Centro não precisa da lista nacional comple
 
 ## Porque olhar para o que se repete, não só para o que abriu hoje?
 
-Grande parte do negócio público é o mesmo objeto, a mesma entidade, daqui a um, dois ou três anos. O contrato em curso tem data de assinatura e prazo de execução no BASE; a janela de contacto útil é cerca de quatro meses antes do fim estimado. Quando o anúncio sai no DR, o incumbente já está a trabalhar a proposta.
+Grande parte do negócio público é o mesmo objeto, a mesma entidade, daqui a um, dois ou três anos. O contrato em curso tem data de assinatura e prazo de execução na ficha do PrepBid; a janela de contacto útil é cerca de quatro meses antes do fim estimado. Quando o anúncio sai no DR, o incumbente já está a trabalhar a proposta.
 
 ## Quando a habilitação mata o concurso?
 
@@ -161,7 +161,7 @@ O ecrã útil é «o que agir esta semana» — prazo a menos de 30 dias, e as l
     title: 'Como prever o valor de adjudicação de um concurso público',
     tags: ['preco', 'historico', 'adjudicacao'],
     description:
-      'O preço base raramente é o valor adjudicado. No PrepBid o intervalo sai do histórico do mesmo CPV no corpus do Portal BASE, sem fingir uma percentagem de confiança de modelo.',
+      'O preço base raramente é o valor adjudicado. No PrepBid o intervalo sai do histórico do mesmo CPV, sem fingir uma percentagem de confiança de modelo.',
     lede:
       'O valor adjudicado costuma ficar abaixo do preço base; no PrepBid estima-se com rácios de concursos comparáveis do corpus público.',
     intent: 'comercial',
@@ -185,7 +185,7 @@ O PrepBid não apresenta uma «percentagem de confiança» de machine learning.
 
 - Não é o preço a escrever na proposta. Critérios de qualidade, erros de CPV e procedimentos sem histórico válido partem o padrão.
 - Não substitui a memória descritiva nem o mapa de quantidades.
-- Não usa dados privados de outras empresas: só o que o BASE já tornou público.
+- Não usa dados privados de outras empresas: só o que já é público.
 
 ## Como usar o intervalo na decisão go / no-go?
 
@@ -220,10 +220,10 @@ export const GUIDE_AGENT_SPEC = {
     product:
       'O PrepBid é o sítio onde a empresa filtra, vê o radar, edita o perfil, gere a carteira e age esta semana. Escreva sempre nessa voz.',
     dataSources:
-      'Portal BASE e Diário da República são corpus públicos. Preferir zero menções de BASE como sítio de trabalho. Se a fonte for inevitável, seja mínimo e nunca como UI de filtro.',
+      'Fontes públicas oficiais (ex.: Diário da República) são pano de fundo, não o produto. O leitor age só no PrepBid.',
     never: [
-      'Não diga ao leitor para filtrar, pesquisar, seguir ou acompanhar no BASE, Portal BASE, base.gov ou «BASE / radar».',
-      'Não apresente o Portal BASE como o sítio onde se gere o radar, o perfil ou a lista «agir esta semana».',
+      'Não escreva Portal BASE, base.gov.pt nem «BASE / radar» no copy do leitor (título, lede, description, markdown, FAQ, tags visíveis).',
+      'Não diga ao leitor para filtrar, pesquisar, seguir ou acompanhar fora do PrepBid.',
       'Não use o slug reservado o-que-e-o-base-gov.',
       'Não invente nem envie published_at no PUT — a data fica na BD e só se mostra na UI quando existir.',
     ],
@@ -235,7 +235,7 @@ export const GUIDE_AGENT_SPEC = {
     markdown:
       'Corpo com arco claro (problema → o que fazer → como o PrepBid ajuda). ≥2 headings ## em forma de pergunta. Ligações só https:// ou /caminho.',
     usefulness:
-      'Explique como o perfil, o radar ou a carteira do PrepBid ajudam nesta decisão. BASE e DR só como corpus.',
+      'Explique como o perfil, o radar ou a carteira do PrepBid ajudam nesta decisão. Fontes oficiais são contexto, não o produto.',
     tags: '0 a 5 tags kebab-case ASCII (ex.: cpv, radar, habilitacao). Temas, não slogans.',
   },
   auth: {

@@ -180,7 +180,7 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
     const parsed = parseGuidePayload(seed.slug, seed);
     assert.equal(parsed.ok, true, parsed.ok ? seed.slug : parsed.error);
     assert.doesNotMatch(seed.markdown, /o-que-e-o-base-gov/);
-    assertNoBaseAsWorkplace(
+    assertNoBaseProduct(
       `${seed.title}\n${seed.description}\n${seed.lede}\n${seed.markdown}\n${JSON.stringify(seed.faq)}`,
     );
     assert.ok(countH2ForTest(seed.markdown) >= 2);
@@ -232,8 +232,9 @@ test('formatPublishedAt usa pt-PT e omite data em falta', () => {
 test('GUIDE_AGENT_SPEC exige framing PrepBid, tags e regras SEO+LLM', () => {
   assert.match(GUIDE_AGENT_SPEC.purpose, /PrepBid/);
   assert.match(GUIDE_AGENT_SPEC.framing.product, /radar/);
-  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /corpus/);
-  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /nunca como UI de filtro/i);
+  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /pano de fundo/);
+  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /PrepBid/);
+  assert.match(GUIDE_AGENT_SPEC.editorial.usefulness, /contexto, não o produto/);
   assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => n.includes('o-que-e-o-base-gov')));
   assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => /filtrar.*pesquisar/.test(n)));
   assert.match(GUIDE_AGENT_SPEC.payload.tags, /kebab/);
@@ -256,7 +257,9 @@ test('reescritas publicadas passam parse, tags e framing PrepBid', async () => {
     }
     assert.notEqual(g.slug, 'o-que-e-o-base-gov');
     assert.doesNotMatch(g.markdown, /o-que-e-o-base-gov/);
-    assertNoBaseAsWorkplace(`${g.title}\n${g.description}\n${g.lede}\n${g.markdown}\n${JSON.stringify(g.faq)}`);
+    assertNoBaseProduct(
+      `${g.title}\n${g.description}\n${g.lede}\n${g.markdown}\n${JSON.stringify(g.faq)}\n${(g.tags || []).join(',')}`,
+    );
     assert.match(`${g.lede}\n${g.markdown}`, /PrepBid/);
     const h2s = g.markdown.split('\n').filter((line) => line.startsWith('## '));
     assert.ok(h2s.length >= 2, g.slug);
@@ -277,21 +280,10 @@ function countH2ForTest(markdown: string): number {
   return markdown.split('\n').filter((line) => /^## /.test(line)).length;
 }
 
-/** Readers act in PrepBid only — BASE is corpus, never a filter UI. */
-function assertNoBaseAsWorkplace(blob: string) {
-  const forbidden = [
-    /filtre no BASE/i,
-    /filtre no Portal BASE/i,
-    /BASE \/ radar/,
-    /filtr[aeo]\w*.{0,80}(base\.gov|Portal BASE|\bno BASE\b)/i,
-    /pesquis[aeo]\w*.{0,80}(base\.gov|Portal BASE|\bno BASE\b|nacional do BASE)/i,
-    /varrer.{0,60}(base\.gov|Portal BASE)/i,
-    /abrir o (Portal )?BASE/i,
-    /acompanh\w*.{0,60}(base\.gov|Portal BASE)/i,
-    /ir (a|à|ao) (base\.gov|Portal BASE)/i,
-    /filtrar à mão/i,
-  ];
-  for (const re of forbidden) {
-    assert.doesNotMatch(blob, re);
-  }
+/** Reader-facing copy: PrepBid only — no Portal BASE / base.gov / BASE as product. */
+function assertNoBaseProduct(blob: string) {
+  assert.doesNotMatch(blob, /Portal BASE/);
+  assert.doesNotMatch(blob, /base\.gov/i);
+  assert.doesNotMatch(blob, /\bBASE\b/);
+  assert.doesNotMatch(blob, /BASE \/ radar/);
 }
