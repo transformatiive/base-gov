@@ -19,6 +19,7 @@ export interface GuidePayload {
   intent: GuideIntent;
   markdown: string;
   faq: GuideFaq[];
+  tags: string[];
   status: GuideStatus;
 }
 
@@ -37,6 +38,33 @@ export type ParseGuideResult =
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const AGENTS: GuideAgent[] = ['claude', 'grok', 'grok-bot', 'human'];
 
+export const GUIDE_TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const MAX_GUIDE_TAGS = 5;
+
+const MONTHS_PT = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+] as const;
+
+const TAG_INFER_RULES: { tag: string; re: RegExp }[] = [
+  { tag: 'ccp', re: /ccp|contrato|concurso|ajuste|procedimento|adjudic|caderno|proposta/ },
+  { tag: 'empreitadas', re: /empreit|obras|alvara|construc|reabilit/ },
+  { tag: 'habilitacao', re: /habilit|alvara|certid|deucp/ },
+  { tag: 'pme', re: /(^|-)pme($|-)|pequenas-e-medias|\bpme\b/ },
+  { tag: 'energia', re: /energia|eletr|fotovolt|renovave/ },
+  { tag: 'saude', re: /saude|hospital|\bsns\b|medic/ },
+];
+
 export interface GuideSeed {
   slug: string;
   title: string;
@@ -45,6 +73,7 @@ export interface GuideSeed {
   intent: GuideIntent;
   markdown: string;
   faq: GuideFaq[];
+  tags?: string[];
 }
 
 export const GUIDE_SEED: GuideSeed[] = [
@@ -82,6 +111,7 @@ Os **acordos-quadro** são um caso à parte: o concurso inicial é aberto (ou re
 Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto — quando o valor ou a regra o obrigar — vai provavelmente ao mesmo objeto. Um radar de renovações não adivinha o tipo de procedimento futuro; estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair.
 
 Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não substitui o jurista da proposta.`,
+    tags: ['ccp'],
     faq: [
       {
         question: 'Posso concorrer a um ajuste direto sem convite?',
@@ -131,6 +161,7 @@ Grande parte do negócio público é o mesmo objeto, a mesma entidade, daqui a u
 Alvará (classe e categorias), ISO, certidões, volume de negócios mínimo: se o caderno pede classe 4 e a empresa tem classe 2, o concurso deixou de ser relevante, por muito que o CPV bata certo. Filtrar não substitui ler as peças. Um CPV certo com um critério de adjudicação que a empresa não consegue evidenciar continua a ser um não.
 
 O ecrã útil é «o que agir esta semana» — prazo a menos de 30 dias, e as linhas da carteira já em preparação. Conta grátis, sem cartão e sem reunião comercial. O teste Pro de 7 dias activa-se nos planos.`,
+    tags: ['empreitadas', 'energia', 'saude'],
     faq: [
       {
         question: 'Como filtrar concursos públicos relevantes em Portugal?',
@@ -184,6 +215,7 @@ O PrepBid não apresenta uma «percentagem de confiança» de machine learning.
 Se o intervalo histórico fecha 18–24 % abaixo do base e a sua estrutura de custos só aguenta 8 %, o concurso pode ser «relevante» em CPV e mesmo assim um não comercial. É o mesmo raciocínio da habilitação: filtrar cedo, antes de gastar a semana no caderno.
 
 Estimativa estatística com dados públicos. Confirme sempre as peças e a sua própria conta de custos. Não é aconselhamento financeiro nem jurídico.`,
+    tags: ['ccp'],
     faq: [
       {
         question: 'Isto substitui a proposta?',
@@ -230,8 +262,10 @@ export const GUIDE_AGENT_SPEC = {
     intent: 'informativa | comercial',
     markdown: 'corpo com ≥2 headings ## em forma de pergunta; ligações só https:// ou /caminho',
     faq: '[{ question, answer }, ...] — usado em JSON-LD FAQPage',
+    tags: 'string[], 0–5, kebab ASCII [a-z0-9-]+ (ex.: ccp, empreitadas, habilitacao, pme, energia, saude). Omissão = []',
     status: 'draft | published (omissão = draft)',
     agent: 'claude | grok | grok-bot (alternativa ao header X-Agent)',
+    published_at: 'Não enviar no PUT. A data pública é guide_articles.published_at (SQL / publish).',
   },
   seo: {
     answerFirst: true,
@@ -247,12 +281,16 @@ export const GUIDE_AGENT_SPEC = {
   constraints: {
     noLegalAdvice: true,
     noBaseGovExplainerArticle: true,
+    filterInPrepBid: true,
+    baseGovIsDataSourceOnly: true,
     icp: ['obras', 'energia', 'saúde'],
     cta: 'Começar grátis',
     trialDays: 7,
     noCard: true,
     noSalesMeeting: true,
     publicOriginFallback: PUBLIC_SITE_FALLBACK,
+    productFraming:
+      'Filtrar concursos, radar e perfil da empresa acontecem no PrepBid. O Portal BASE e o Diário da República são fonte de dados (anúncios e contratos), não o sítio onde o leitor deve filtrar. Não escrever «filtre no BASE» nem mandar o leitor a base.gov.pt para configurar CPV, distritos, alertas ou perfil.',
   },
 } as const;
 
@@ -384,6 +422,10 @@ export function parseGuidePayload(slug: string, body: unknown): ParseGuideResult
   if (faq === null) {
     return { ok: false, error: 'faq deve ser uma lista de { question, answer }.' };
   }
+  const tagsResult = parseGuideTags(b.tags);
+  if (!tagsResult.ok) {
+    return { ok: false, error: tagsResult.error };
+  }
   let status: GuideStatus = 'draft';
   if (b.status !== undefined && b.status !== null && b.status !== '') {
     const parsed = parseStatus(b.status);
@@ -392,8 +434,53 @@ export function parseGuidePayload(slug: string, body: unknown): ParseGuideResult
   }
   return {
     ok: true,
-    value: { slug, title, description, lede, intent, markdown, faq, status },
+    value: { slug, title, description, lede, intent, markdown, faq, tags: tagsResult.value, status },
   };
+}
+
+export function parseGuideTags(raw: unknown): { ok: true; value: string[] } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, value: [] };
+  if (!Array.isArray(raw)) {
+    return { ok: false, error: 'tags deve ser uma lista de strings (0–5, kebab-case).' };
+  }
+  if (raw.length > MAX_GUIDE_TAGS) {
+    return { ok: false, error: `tags: no máximo ${MAX_GUIDE_TAGS}.` };
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string') {
+      return { ok: false, error: 'Cada tag deve ser uma string kebab ASCII [a-z0-9-]+ (ex.: ccp, empreitadas).' };
+    }
+    const tag = item.trim().toLowerCase();
+    if (!GUIDE_TAG_RE.test(tag)) {
+      return { ok: false, error: 'Cada tag deve ser kebab ASCII [a-z0-9-]+ (ex.: ccp, empreitadas, habilitacao).' };
+    }
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return { ok: true, value: out };
+}
+
+export function formatGuidePublishedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const month = MONTHS_PT[d.getUTCMonth()];
+  if (!month) return null;
+  return `Publicado em ${d.getUTCDate()} de ${month} de ${d.getUTCFullYear()}`;
+}
+
+export function inferGuideTags(slug: string, title = ''): string[] {
+  const hay = foldPt(`${slug} ${title}`);
+  const tags: string[] = [];
+  for (const rule of TAG_INFER_RULES) {
+    if (!rule.re.test(hay)) continue;
+    tags.push(rule.tag);
+    if (tags.length >= MAX_GUIDE_TAGS) break;
+  }
+  return tags;
 }
 
 export function markdownToHtml(md: string): string {
@@ -524,18 +611,19 @@ export function renderGuideArticleHtml(origin: string, guide: GuideRecord): stri
   const base = origin.replace(/\/$/, '');
   const url = `${base}/guias/${guide.slug}`;
   const eyebrow = `Guias · ${intentLabel(guide.intent).toLowerCase()}`;
-  const articleLd = {
+  const articleLd: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Article',
     headline: guide.title,
     description: guide.description,
     inLanguage: 'pt-PT',
-    datePublished: guide.published_at,
     dateModified: guide.updated_at,
     author: { '@type': 'Organization', name: 'Transformatiive, Lda.' },
     publisher: { '@type': 'Organization', name: 'Transformatiive, Lda.' },
     mainEntityOfPage: url,
   };
+  if (guide.published_at) articleLd.datePublished = guide.published_at;
+  if (guide.tags.length) articleLd.keywords = guide.tags.join(', ');
   const faqLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -576,6 +664,7 @@ ${guide.faq
   <div class="legal-wrap">
     <div class="eyebrow">${escapeHtml(eyebrow)}</div>
     <h1>${escapeHtml(guide.title)}</h1>
+    ${guideMetaHtml(guide)}
     <p class="updated">Não é aconselhamento jurídico. Confirme o CCP em vigor e as peças do procedimento concreto.</p>
     <p><strong>${escapeHtml(guide.lede)}</strong></p>
     ${guide.body_html}
@@ -607,6 +696,7 @@ export function guideRecordFromRow(row: Record<string, unknown>): GuideRecord {
     markdown: String(row.markdown ?? ''),
     body_html: String(row.body_html ?? ''),
     faq: parseFaq(row.faq) ?? [],
+    tags: tagsFromRow(row.tags),
     status,
     published_at: toIso(row.published_at),
     updated_at: toIso(row.updated_at) ?? new Date().toISOString(),
@@ -632,6 +722,27 @@ function isAllowedHref(href: string): boolean {
   if (/^https?:\/\//i.test(href)) return true;
   if (href.startsWith('/') && !href.startsWith('//')) return true;
   return false;
+}
+
+function tagsFromRow(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const tag = String(item).trim().toLowerCase();
+    if (!GUIDE_TAG_RE.test(tag) || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= MAX_GUIDE_TAGS) break;
+  }
+  return out;
+}
+
+function foldPt(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
 }
 
 function asTrimmedString(v: unknown): string {
@@ -735,5 +846,28 @@ function guideCard(g: GuideRecord): string {
         <div class="k">${escapeHtml(intentLabel(g.intent))}</div>
         <h2>${escapeHtml(g.title)}</h2>
         <p>${escapeHtml(g.description)}</p>
+        ${guideMetaHtml(g)}
       </a>`;
+}
+
+function guideMetaHtml(g: Pick<GuideRecord, 'published_at' | 'tags'>): string {
+  const date = guidePublishedHtml(g.published_at);
+  const tags = guideTagsHtml(g.tags);
+  if (!date && !tags) return '';
+  return `<div class="guide-meta">${date}${tags}</div>`;
+}
+
+function guidePublishedHtml(publishedAt: string | null): string {
+  const label = formatGuidePublishedAt(publishedAt);
+  if (!label || !publishedAt) return '';
+  const day = publishedAt.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+  return `<time datetime="${escapeHtml(day)}">${escapeHtml(label)}</time>`;
+}
+
+function guideTagsHtml(tags: string[]): string {
+  if (!tags.length) return '';
+  return `<div class="guide-tags">${tags
+    .map((t) => `<span class="guide-tag">${escapeHtml(t)}</span>`)
+    .join('')}</div>`;
 }

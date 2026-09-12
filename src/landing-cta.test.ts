@@ -21,6 +21,7 @@ const sample: GuideRecord = {
   markdown: '## Porque o preço base engana?\n\nÉ o teto, não o mercado.\n\n## Qual é o método?\n\nHistórico de 24 meses no mesmo CPV.',
   body_html: '<h2>Porque o preço base engana?</h2><p>É o teto, não o mercado.</p>',
   faq: [{ question: 'Isto substitui a proposta?', answer: 'Não. É uma estimativa estatística com dados públicos.' }],
+  tags: ['ccp'],
   status: 'published',
   published_at: '2026-09-08T12:00:00.000Z',
   updated_at: '2026-09-08T12:00:00.000Z',

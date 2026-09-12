@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   GUIDE_SEED,
+  GUIDE_AGENT_SPEC,
   parseGuidePayload,
+  parseGuideTags,
   markdownToHtml,
   publicSiteOrigin,
   robotsTxt,
@@ -10,6 +12,9 @@ import {
   renderGuideIndexHtml,
   renderGuideArticleHtml,
   resolveGuideAgent,
+  formatGuidePublishedAt,
+  inferGuideTags,
+  guideRecordFromRow,
   PUBLIC_SITE_FALLBACK,
   type GuideRecord,
 } from './guides.js';
@@ -28,6 +33,7 @@ test('parseGuidePayload exige slug, título, descrição, lead e markdown com H2
     assert.equal(ok.value.slug, 'ajuste-direto-e-concurso-publico');
     assert.equal(ok.value.intent, 'informativa');
     assert.equal(ok.value.status, 'draft');
+    assert.deepEqual(ok.value.tags, []);
   }
 });
 
@@ -102,6 +108,7 @@ const sample: GuideRecord = {
   markdown: '## Porque o preço base engana?\n\nÉ o teto, não o mercado.\n\n## Qual é o método?\n\nHistórico de 24 meses no mesmo CPV.',
   body_html: '<h2>Porque o preço base engana?</h2><p>É o teto, não o mercado.</p>',
   faq: [{ question: 'Isto substitui a proposta?', answer: 'Não. É uma estimativa estatística com dados públicos.' }],
+  tags: ['ccp'],
   status: 'published',
   published_at: '2026-09-08T12:00:00.000Z',
   updated_at: '2026-09-08T12:00:00.000Z',
@@ -113,6 +120,9 @@ test('HTML público responde na primeira frase e inclui JSON-LD FAQ', () => {
   assert.match(page, /<link rel="canonical" href="https:\/\/baseradar\.example\/guias\/como-prever-o-valor-de-adjudicacao">/);
   assert.match(page, /application\/ld\+json/);
   assert.match(page, /FAQPage/);
+  assert.match(page, /datePublished":"2026-09-08T12:00:00.000Z"/);
+  assert.match(page, /<time datetime="2026-09-08">Publicado em 8 de setembro de 2026<\/time>/);
+  assert.match(page, /<span class="guide-tag">ccp<\/span>/);
   assert.match(page, /O valor adjudicado costuma ficar abaixo/);
   assert.match(page, /Começar grátis/);
   assert.match(page, /href="\/app\/#\/registo"/);
@@ -127,12 +137,18 @@ test('índice agrupa por intenção e omite rascunhos', () => {
   assert.match(html, /como-prever-o-valor-de-adjudicacao/);
   assert.doesNotMatch(html, /rascunho/);
   assert.match(html, /Ferramenta/);
+  assert.match(html, /<time datetime="2026-09-08">Publicado em 8 de setembro de 2026<\/time>/);
+  assert.match(html, /<span class="guide-tag">ccp<\/span>/);
 });
 
 test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov', () => {
   for (const seed of GUIDE_SEED) {
     const parsed = parseGuidePayload(seed.slug, seed);
     assert.equal(parsed.ok, true, parsed.ok ? seed.slug : parsed.error);
+    if (parsed.ok) {
+      assert.ok(parsed.value.tags.length >= 1, seed.slug);
+      assert.ok(parsed.value.tags.length <= 5);
+    }
     assert.doesNotMatch(seed.markdown, /o-que-e-o-base-gov/);
     assert.ok(countH2ForTest(seed.markdown) >= 2);
   }
@@ -141,3 +157,75 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
 function countH2ForTest(markdown: string): number {
   return markdown.split('\n').filter((line) => /^## /.test(line)).length;
 }
+
+test('parseGuideTags aceita 0–5 kebab-case e recusa inválidas', () => {
+  assert.deepEqual(parseGuideTags(undefined), { ok: true, value: [] });
+  assert.deepEqual(parseGuideTags(null), { ok: true, value: [] });
+  assert.deepEqual(parseGuideTags(['ccp', 'Empreitadas', 'ccp']), { ok: true, value: ['ccp', 'empreitadas'] });
+  const tooMany = parseGuideTags(['a', 'b', 'c', 'd', 'e', 'f']);
+  assert.equal(tooMany.ok, false);
+  const bad = parseGuideTags(['CCP_OBRAS']);
+  assert.equal(bad.ok, false);
+  const notList = parseGuideTags('ccp');
+  assert.equal(notList.ok, false);
+  const ok = parseGuidePayload('guia-com-tags-validas', {
+    title: 'Título suficientemente longo para passar',
+    description: 'Descrição com mais de oitenta caracteres para a meta description de motores de busca e de LLMs.',
+    lede: 'Resposta directa à pergunta do título com facto verificável.',
+    intent: 'informativa',
+    markdown: '## Uma pergunta?\n\nTexto.\n\n## Outra pergunta?\n\nTexto.',
+    tags: ['habilitacao', 'pme'],
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.deepEqual(ok.value.tags, ['habilitacao', 'pme']);
+});
+
+test('formatGuidePublishedAt usa pt-PT e não inventa data se published_at for null', () => {
+  assert.equal(formatGuidePublishedAt('2026-09-08T12:00:00.000Z'), 'Publicado em 8 de setembro de 2026');
+  assert.equal(formatGuidePublishedAt(null), null);
+  const draftPage = renderGuideArticleHtml('https://baseradar.example', {
+    ...sample,
+    published_at: null,
+    tags: [],
+  });
+  assert.doesNotMatch(draftPage, /Publicado em/);
+  assert.doesNotMatch(draftPage, /<time /);
+  assert.doesNotMatch(draftPage, /datePublished/);
+  assert.doesNotMatch(draftPage, /guide-tag/);
+});
+
+test('GUIDE_AGENT_SPEC enquadra filtragem no PrepBid e documenta tags', () => {
+  assert.equal(GUIDE_AGENT_SPEC.constraints.filterInPrepBid, true);
+  assert.equal(GUIDE_AGENT_SPEC.constraints.baseGovIsDataSourceOnly, true);
+  assert.match(GUIDE_AGENT_SPEC.constraints.productFraming, /PrepBid/);
+  assert.match(GUIDE_AGENT_SPEC.constraints.productFraming, /filtre no BASE/);
+  assert.match(GUIDE_AGENT_SPEC.payload.tags, /0–5/);
+  assert.match(GUIDE_AGENT_SPEC.payload.published_at, /Não enviar/);
+});
+
+test('inferGuideTags lê o tema a partir do slug e do título', () => {
+  assert.deepEqual(inferGuideTags('ajuste-direto-e-concurso-publico'), ['ccp']);
+  assert.ok(inferGuideTags('como-habilitar-pme-saude', 'Habilitação de PME na saúde').includes('habilitacao'));
+  assert.ok(inferGuideTags('obras-energia', 'Empreitadas de energia').includes('empreitadas'));
+  assert.ok(inferGuideTags('obras-energia', 'Empreitadas de energia').includes('energia'));
+});
+
+test('guideRecordFromRow devolve tags e published_at da linha', () => {
+  const rec = guideRecordFromRow({
+    slug: 'guia-tags',
+    title: 'Título da linha',
+    description: 'Descrição',
+    lede: 'Lede',
+    intent: 'comercial',
+    markdown: '## A?\n\n## B?',
+    body_html: '<p>x</p>',
+    faq: [],
+    tags: ['saude', 'SAUDE', 'nope_bad', 'energia'],
+    status: 'published',
+    published_at: new Date('2026-01-15T00:00:00.000Z'),
+    updated_at: new Date('2026-01-16T00:00:00.000Z'),
+    author_agent: 'grok',
+  });
+  assert.deepEqual(rec.tags, ['saude', 'energia']);
+  assert.equal(rec.published_at, '2026-01-15T00:00:00.000Z');
+});
