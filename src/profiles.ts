@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { PROFILE_RUN_STALE_HOURS, profileScheduleDue } from './harvest-policy.js';
 import { noveltyCounts } from './profile-run-policy.js';
 
 /** Cria um profile_run e as pesquisas filhas (contratos + anúncios por termo). */
@@ -79,17 +80,62 @@ export async function reconcileProfileRuns(): Promise<void> {
   }
 }
 
+/**
+ * Runs presos em pending/running (worker morto, FTS eterno, last_run_at marcado
+ * no enqueue) bloqueavam a agenda diária para sempre. Fecha-os para o próximo tick
+ * poder voltar a criar um run.
+ */
+export async function recoverStaleProfileRuns(): Promise<number> {
+  const { rows: stale } = await pool.query(
+    `UPDATE profile_runs pr
+        SET status = 'failed',
+            finished_at = now(),
+            error_message = COALESCE(pr.error_message, 'recolha órfã (sem progresso)')
+      WHERE pr.status IN ('pending', 'running')
+        AND COALESCE(pr.started_at, pr.created_at) < now() - ($1 || ' hours')::interval
+        AND NOT EXISTS (
+          SELECT 1 FROM searches s
+           WHERE s.profile_run_id = pr.id
+             AND s.status = 'running'
+             AND coalesce(s.heartbeat_at, s.started_at, s.created_at) > now() - interval '20 minutes'
+        )
+      RETURNING pr.id`,
+    [String(PROFILE_RUN_STALE_HOURS)],
+  );
+  for (const run of stale) {
+    await pool.query(
+      `UPDATE searches SET status = 'failed',
+          error_message = COALESCE(error_message, 'recolha órfã (sem progresso)'),
+          finished_at = now()
+        WHERE profile_run_id = $1 AND status IN ('pending', 'running')`,
+      [run.id],
+    );
+    console.log(`[scheduler] profile_run #${run.id} marcado como falhado (órfão)`);
+  }
+  return stale.length;
+}
+
 /** Agenda runs para perfis daily/weekly cujo intervalo passou. */
 export async function scheduleDueProfiles(): Promise<void> {
+  await recoverStaleProfileRuns();
   const { rows } = await pool.query(`
-    SELECT p.id FROM profiles p
-    WHERE ((p.schedule = 'daily'  AND (p.last_run_at IS NULL OR p.last_run_at < now() - interval '24 hours'))
-        OR (p.schedule = 'weekly' AND (p.last_run_at IS NULL OR p.last_run_at < now() - interval '7 days')))
-      AND NOT EXISTS (SELECT 1 FROM profile_runs pr WHERE pr.profile_id = p.id AND pr.status IN ('pending','running'))
+    SELECT p.id, p.schedule, p.last_run_at,
+           EXISTS (
+             SELECT 1 FROM profile_runs pr
+              WHERE pr.profile_id = p.id AND pr.status IN ('pending','running')
+           ) AS has_in_flight
+      FROM profiles p
+     WHERE p.schedule IN ('daily', 'weekly')
   `);
+  const now = new Date();
   for (const p of rows) {
-    // marca já o last_run_at para não re-agendar enquanto corre
-    await pool.query('UPDATE profiles SET last_run_at = now() WHERE id = $1', [p.id]);
+    const due = profileScheduleDue({
+      schedule: p.schedule,
+      hasInFlight: Boolean(p.has_in_flight),
+      lastFinishedAt: p.last_run_at ? new Date(p.last_run_at) : null,
+      now,
+    });
+    if (!due) continue;
     await createProfileRun(p.id, null);
     console.log(`[scheduler] run agendado para perfil #${p.id}`);
   }

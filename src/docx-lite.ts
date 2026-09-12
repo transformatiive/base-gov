@@ -1,5 +1,22 @@
 import { deflateRawSync } from 'node:zlib';
 import yauzl from 'yauzl';
+import {
+  CONTENT_TYPES,
+  DOC_RELS,
+  FONT_MONO,
+  FONT_SANS,
+  FONT_SANS_MEDIUM,
+  FONT_SANS_SEMIBOLD,
+  FONT_TABLE,
+  INK_06,
+  INK_12,
+  PAGE_FILL,
+  PB,
+  RELS,
+  SETTINGS,
+  STYLES,
+  buildVariantALockupXml,
+} from './docx-brand.js';
 
 /** Gera e lê documentos .docx (OOXML) sem dependências extra — ZIP + WordprocessingML. */
 
@@ -91,80 +108,69 @@ function buildZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
-</Types>`;
+const PLACEHOLDER_RE = /(\[(?:A COMPLETAR|PLACEHOLDER):[^\]]+\])/gi;
+const DATA_RE = /(\d{8}(?:-\d)?|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,3}(?:[ \u00A0]\d{3})+(?:[.,]\d+)?(?:\s*€)?|(?:\d+[.,]\d+|\d+)\s*€|\d+[.,]?\d*\s*%)/g;
 
-const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`;
+function rFonts(name: string): string {
+  return `<w:rFonts w:ascii="${name}" w:hAnsi="${name}" w:cs="${name}" w:eastAsia="${name}"/>`;
+}
 
-const DOC_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`;
+function textRun(text: string, rPr: string): string {
+  const pr = rPr ? `<w:rPr>${rPr}</w:rPr>` : '';
+  return `<w:r>${pr}<w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r>`;
+}
 
-const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:style w:type="paragraph" w:styleId="Normal" w:default="1">
-    <w:name w:val="Normal"/>
-    <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr>
-    <w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Title">
-    <w:name w:val="Title"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="173F35"/></w:rPr>
-    <w:pPr><w:spacing w:after="80"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Subtitle">
-    <w:name w:val="Subtitle"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:sz w:val="22"/><w:color w:val="4C5551"/><w:i/></w:rPr>
-    <w:pPr><w:spacing w:after="240"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading1">
-    <w:name w:val="heading 1"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="173F35"/></w:rPr>
-    <w:pPr><w:spacing w:before="280" w:after="120"/></w:pPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Note">
-    <w:name w:val="Note"/>
-    <w:basedOn w:val="Normal"/>
-    <w:rPr><w:sz w:val="18"/><w:color w:val="7D8681"/><w:i/></w:rPr>
-  </w:style>
-</w:styles>`;
+function placeholderRun(text: string): string {
+  return textRun(
+    text,
+    `${rFonts(FONT_SANS_SEMIBOLD)}<w:color w:val="${PB.amber}"/><w:shd w:val="clear" w:color="auto" w:fill="${PB.amberTint}"/>`,
+  );
+}
 
-const PLACEHOLDER_RE = /(\[A COMPLETAR:[^\]]+\])/g;
+function normalizePlaceholder(text: string): string {
+  return text.replace(/^\[PLACEHOLDER:/i, '[A COMPLETAR:');
+}
 
-function runsFromText(text: string): string {
+function numberedRuns(text: string): string {
+  const parts = text.split(DATA_RE);
+  return parts.map((part) => {
+    if (!part) return '';
+    DATA_RE.lastIndex = 0;
+    if (DATA_RE.test(part)) {
+      DATA_RE.lastIndex = 0;
+      return textRun(part, `${rFonts(FONT_MONO)}<w:color w:val="${PB.ink}"/>`);
+    }
+    DATA_RE.lastIndex = 0;
+    return textRun(part, `${rFonts(FONT_SANS)}<w:color w:val="${PB.ink}"/>`);
+  }).join('');
+}
+
+function runsFromText(text: string, numeric: boolean): string {
   const parts = text.split(PLACEHOLDER_RE);
   return parts.map((part) => {
     if (!part) return '';
-    const t = `<w:t xml:space="preserve">${xmlEsc(part)}</w:t>`;
-    if (PLACEHOLDER_RE.test(part) || /^\[A COMPLETAR:/.test(part)) {
+    if (PLACEHOLDER_RE.test(part) || /^\[(?:A COMPLETAR|PLACEHOLDER):/i.test(part)) {
       PLACEHOLDER_RE.lastIndex = 0;
-      return `<w:r><w:rPr><w:highlight w:val="yellow"/><w:color w:val="9C5700"/><w:b/></w:rPr>${t}</w:r>`;
+      return placeholderRun(normalizePlaceholder(part));
     }
     PLACEHOLDER_RE.lastIndex = 0;
-    return `<w:r>${t}</w:r>`;
+    return numeric ? numberedRuns(part) : textRun(part, '');
   }).join('');
 }
 
 function para(style: string, text: string): string {
   const pPr = style === 'Normal' ? '' : `<w:pPr><w:pStyle w:val="${xmlEsc(style)}"/></w:pPr>`;
-  return `<w:p>${pPr}${runsFromText(text)}</w:p>`;
+  return `<w:p>${pPr}${runsFromText(text, style === 'Normal' || style === 'ListBullet')}</w:p>`;
 }
+
+export type DocxBlock =
+  | { kind: 'p'; text: string; style?: 'Normal' | 'Heading2' | 'ListBullet' | 'Note' }
+  | { kind: 'table'; rows: string[][] };
 
 export interface DocxSection {
   title: string;
-  body: string;
+  body?: string;
+  blocks?: DocxBlock[];
 }
 
 export interface DocxProposalInput {
@@ -175,21 +181,93 @@ export interface DocxProposalInput {
   footer?: string;
 }
 
+const TBL_BORDERS = `<w:top w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>
+      <w:left w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>
+      <w:bottom w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>
+      <w:right w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>
+      <w:insideH w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>
+      <w:insideV w:val="single" w:sz="4" w:space="0" w:color="${INK_12}"/>`;
+
+function tableCellXml(text: string, header: boolean): string {
+  const fill = header ? INK_06 : PAGE_FILL;
+  const runs = header
+    ? textRun(
+      text,
+      `${rFonts(FONT_SANS_MEDIUM)}<w:sz w:val="20"/><w:szCs w:val="20"/><w:color w:val="${PB.ink}"/>`,
+    )
+    : runsFromText(text, true);
+  return `<w:tc>
+      <w:tcPr>
+        <w:tcBorders>${TBL_BORDERS}</w:tcBorders>
+        <w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>
+        <w:vAlign w:val="center"/>
+        <w:tcMar>
+          <w:top w:w="80" w:type="dxa"/><w:left w:w="100" w:type="dxa"/>
+          <w:bottom w:w="80" w:type="dxa"/><w:right w:w="100" w:type="dxa"/>
+        </w:tcMar>
+      </w:tcPr>
+      <w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="276" w:lineRule="auto"/></w:pPr>${runs}</w:p>
+    </w:tc>`;
+}
+
+function tableXml(rows: string[][]): string {
+  if (!rows.length) return '';
+  const cols = Math.max(...rows.map((r) => r.length), 1);
+  const colW = Math.max(800, Math.round(9360 / cols));
+  const grid = Array.from({ length: cols }, () => `<w:gridCol w:w="${colW}"/>`).join('');
+  const trs = rows.map((row, ri) => {
+    const cells = Array.from({ length: cols }, (_, ci) => tableCellXml(row[ci] ?? '', ri === 0));
+    return `<w:tr>${ri === 0 ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${cells.join('')}</w:tr>`;
+  }).join('');
+  return `<w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="5000" w:type="pct"/>
+        <w:tblBorders>${TBL_BORDERS}</w:tblBorders>
+        <w:tblLayout w:type="autofit"/>
+        <w:tblLook w:firstRow="1" w:noHBand="1" w:noVBand="1"/>
+      </w:tblPr>
+      <w:tblGrid>${grid}</w:tblGrid>
+      ${trs}
+    </w:tbl>
+    <w:p><w:pPr><w:spacing w:after="80"/></w:pPr></w:p>`;
+}
+
+function renderBlock(block: DocxBlock): string {
+  switch (block.kind) {
+    case 'table':
+      return tableXml(block.rows);
+    case 'p':
+      return para(block.style ?? 'Normal', block.text);
+    default: {
+      const _x: never = block;
+      return _x;
+    }
+  }
+}
+
+function blocksFromBody(body: string): DocxBlock[] {
+  return parseContentLines(String(body ?? '').split(/\r?\n/));
+}
+
+function sectionBlocks(section: DocxSection): DocxBlock[] {
+  if (section.blocks && section.blocks.length > 0) return section.blocks;
+  return blocksFromBody(section.body ?? '');
+}
+
 export function buildProposalDocumentXml(input: DocxProposalInput): string {
-  const parts: string[] = [para('Title', input.title)];
+  const parts: string[] = [buildVariantALockupXml(), para('Title', input.title)];
   if (input.subtitle) parts.push(para('Subtitle', input.subtitle));
   if (input.note) parts.push(para('Note', input.note));
   for (const section of input.sections) {
     parts.push(para('Heading1', section.title));
-    const paragraphs = section.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-    if (paragraphs.length === 0) parts.push(para('Normal', ''));
-    for (const p of paragraphs) {
-      for (const line of p.split('\n')) parts.push(para('Normal', line));
-    }
+    const blocks = sectionBlocks(section);
+    if (blocks.length === 0) parts.push(para('Normal', ''));
+    for (const b of blocks) parts.push(renderBlock(b));
   }
   if (input.footer) parts.push(para('Note', input.footer));
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:background w:color="${PAGE_FILL}"/>
   <w:body>
     ${parts.join('\n    ')}
     <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr>
@@ -204,8 +282,168 @@ export function buildDocx(input: DocxProposalInput): Buffer {
     { name: '_rels/.rels', data: Buffer.from(RELS, 'utf8') },
     { name: 'word/_rels/document.xml.rels', data: Buffer.from(DOC_RELS, 'utf8') },
     { name: 'word/styles.xml', data: Buffer.from(STYLES, 'utf8') },
+    { name: 'word/settings.xml', data: Buffer.from(SETTINGS, 'utf8') },
+    { name: 'word/fontTable.xml', data: Buffer.from(FONT_TABLE, 'utf8') },
     { name: 'word/document.xml', data: Buffer.from(document, 'utf8') },
   ]);
+}
+
+function stripInlineMd(s: string): string {
+  return s
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[\s(])\*(.+?)\*(?=[\s).]|$)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/\[PLACEHOLDER:/gi, '[A COMPLETAR:')
+    .trim();
+}
+
+function splitPipeRow(line: string): string[] {
+  let t = line.trim();
+  if (t.startsWith('|')) t = t.slice(1);
+  if (t.endsWith('|')) t = t.slice(0, -1);
+  return t.split('|').map((c) => stripInlineMd(c));
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = splitPipeRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c.replace(/\s/g, '')) || c === '');
+}
+
+function looksLikeTableRow(line: string): boolean {
+  const t = line.trim();
+  if (!t.includes('|')) return false;
+  const pipes = (t.match(/\|/g) ?? []).length;
+  if (isTableSeparator(t)) return true;
+  return pipes >= 1 && splitPipeRow(t).length >= 2;
+}
+
+function tableFromPipeLines(lines: string[]): DocxBlock | null {
+  const rows: string[][] = [];
+  for (const line of lines) {
+    if (isTableSeparator(line)) continue;
+    const cells = splitPipeRow(line);
+    if (cells.some((c) => c.length > 0)) rows.push(cells);
+  }
+  if (rows.length < 1) return null;
+  const cols = Math.max(...rows.map((r) => r.length));
+  return { kind: 'table', rows: rows.map((r) => Array.from({ length: cols }, (_, i) => r[i] ?? '')) };
+}
+
+function flattenBlocks(blocks: DocxBlock[]): string {
+  return blocks.map((b) => {
+    if (b.kind === 'table') return b.rows.map((r) => r.join(' · ')).join('\n');
+    return b.text;
+  }).join('\n');
+}
+
+export function parseContentLines(lines: string[]): DocxBlock[] {
+  const out: DocxBlock[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const raw = lines[i] ?? '';
+    const t = raw.trim();
+    if (!t || /^[-_*]{3,}$/.test(t) || /^```/.test(t)) {
+      i += 1;
+      continue;
+    }
+    if (looksLikeTableRow(raw)) {
+      const chunk: string[] = [];
+      while (i < lines.length && looksLikeTableRow(lines[i] ?? '')) {
+        chunk.push(lines[i] ?? '');
+        i += 1;
+      }
+      const table = tableFromPipeLines(chunk);
+      if (table) out.push(table);
+      continue;
+    }
+    const h3 = t.match(/^#{3,}\s+(.+)/);
+    if (h3) {
+      out.push({ kind: 'p', style: 'Heading2', text: stripInlineMd(h3[1]) });
+      i += 1;
+      continue;
+    }
+    if (/^\d+\.\d+(\.\d+)?\s+\S/.test(t) && !t.includes('|')) {
+      out.push({ kind: 'p', style: 'Heading2', text: stripInlineMd(t) });
+      i += 1;
+      continue;
+    }
+    if (/^[-*+]\s+/.test(t) || /^\d+[.)]\s+/.test(t)) {
+      while (i < lines.length) {
+        const li = (lines[i] ?? '').trim();
+        if (!/^[-*+]\s+/.test(li) && !/^\d+[.)]\s+/.test(li)) break;
+        const text = stripInlineMd(li.replace(/^[-*+]\s+/, '').replace(/^\d+[.)]\s+/, ''));
+        out.push({ kind: 'p', style: 'ListBullet', text: `· ${text}` });
+        i += 1;
+      }
+      continue;
+    }
+    out.push({ kind: 'p', style: 'Normal', text: stripInlineMd(t) });
+    i += 1;
+  }
+  return out;
+}
+
+/** Markdown do dossier de resposta → secções do .docx (variante A no título). */
+export function sectionsFromMarkdown(markdown: string, fallbackTitle = 'Dossier de resposta'): DocxProposalInput {
+  const raw = String(markdown ?? '')
+    .replace(/^```(?:markdown)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/\[PLACEHOLDER:/gi, '[A COMPLETAR:')
+    .trim();
+  const lines = raw.split(/\r?\n/);
+  let title = fallbackTitle;
+  const sections: DocxSection[] = [];
+  let current = '';
+  const buf: string[] = [];
+  const flush = () => {
+    if (!current && buf.every((l) => !String(l).trim())) return;
+    const blocks = parseContentLines(buf);
+    sections.push({
+      title: current || 'Conteúdo',
+      blocks,
+      body: flattenBlocks(blocks),
+    });
+    current = '';
+    buf.length = 0;
+  };
+  let sawH1 = false;
+  for (const line of lines) {
+    const h1 = line.match(/^#\s+(.+)/);
+    const h2 = line.match(/^##\s+(.+)/);
+    if (h1 && !sawH1 && sections.length === 0 && !current) {
+      title = stripInlineMd(h1[1]);
+      sawH1 = true;
+      continue;
+    }
+    if (h2) {
+      flush();
+      current = stripInlineMd(h2[1]);
+      continue;
+    }
+    buf.push(line);
+  }
+  flush();
+  if (sections.length === 0) {
+    const blocks = parseContentLines(lines);
+    sections.push({ title: 'Dossier', blocks, body: flattenBlocks(blocks) });
+  }
+  return {
+    title,
+    subtitle: 'Dossier de resposta · rascunho PrepBid',
+    note: 'Rascunho gerado pelo PrepBid. Requer revisão humana. Complete os campos [A COMPLETAR]. A submissão no portal é sempre manual.',
+    sections,
+    footer: 'Documento gerado pelo PrepBid. Não substitui a leitura das peças do procedimento.',
+  };
+}
+
+export function buildDossierDocx(markdown: string, designation?: string): Buffer {
+  const fallback = designation
+    ? `Dossier de resposta — ${designation.replace(/\s+/g, ' ').trim().slice(0, 160)}`
+    : 'Dossier de resposta';
+  return buildDocx(sectionsFromMarkdown(markdown, fallback));
 }
 
 export const DOCX_CONTENT_TYPE =
@@ -237,6 +475,10 @@ export function textFromDocumentXml(xml: string): string {
     if (line) lines.push(line);
   }
   return lines.join('\n');
+}
+
+export function readDocxPart(buf: Buffer, name: string): Promise<Buffer | null> {
+  return readZipEntry(buf, name);
 }
 
 function readZipEntry(buf: Buffer, name: string): Promise<Buffer | null> {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   GUIDE_SEED,
   GUIDE_AGENT_SPEC,
@@ -11,8 +12,12 @@ import {
   sitemapXml,
   renderGuideIndexHtml,
   renderGuideArticleHtml,
+  renderGuideMarkdown,
   resolveGuideAgent,
   formatPublishedAt,
+  parsePublicGuideParam,
+  llmsTxt,
+  llmsFullTxt,
   PUBLIC_SITE_FALLBACK,
   type GuideRecord,
 } from './guides.js';
@@ -72,6 +77,8 @@ test('robots.txt e sitemap.xml: só guias publicados, sem \/app', () => {
   const origin = publicSiteOrigin('https://baseradar.example/');
   assert.equal(origin, 'https://baseradar.example');
   assert.equal(publicSiteOrigin(''), PUBLIC_SITE_FALLBACK);
+  assert.equal(publicSiteOrigin('https://basegov-robot-production.up.railway.app'), PUBLIC_SITE_FALLBACK);
+  assert.equal(publicSiteOrigin('http://localhost:3000'), PUBLIC_SITE_FALLBACK);
   const robots = robotsTxt(origin);
   assert.match(robots, /Disallow: \/app/);
   assert.match(robots, /Sitemap: https:\/\/baseradar\.example\/sitemap\.xml/);
@@ -80,8 +87,10 @@ test('robots.txt e sitemap.xml: só guias publicados, sem \/app', () => {
   ]);
   assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias<\/loc>/);
   assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias\/ajuste-direto-e-concurso-publico<\/loc>/);
+  assert.match(xml, /<loc>https:\/\/baseradar\.example\/guias\/ajuste-direto-e-concurso-publico\.md<\/loc>/);
   assert.doesNotMatch(xml, /o-que-e-o-base-gov/);
   assert.doesNotMatch(xml, /\/app</);
+  assert.match(robots, /llms\.txt/);
 });
 
 test('o seed inicial não inclui o artigo do BASE.gov', () => {
@@ -115,9 +124,13 @@ const sample: GuideRecord = {
 
 test('HTML público responde na primeira frase e inclui JSON-LD FAQ', () => {
   const page = renderGuideArticleHtml('https://baseradar.example', sample);
+  assert.match(page, /<html lang="pt-PT">/);
   assert.match(page, /<link rel="canonical" href="https:\/\/baseradar\.example\/guias\/como-prever-o-valor-de-adjudicacao">/);
+  assert.match(page, /rel="alternate" type="text\/markdown"/);
+  assert.match(page, /og:locale" content="pt_PT"/);
   assert.match(page, /application\/ld\+json/);
   assert.match(page, /FAQPage/);
+  assert.match(page, /BreadcrumbList/);
   assert.match(page, /O valor adjudicado costuma ficar abaixo/);
   assert.match(page, /Começar grátis/);
   assert.match(page, /href="\/app\/#\/registo"/);
@@ -133,11 +146,33 @@ test('índice agrupa por intenção e omite rascunhos', () => {
     sample,
     { ...sample, slug: 'rascunho', status: 'draft', title: 'Rascunho invisível' },
   ]);
+  assert.match(html, /<html lang="pt-PT">/);
+  assert.match(html, /CollectionPage/);
   assert.match(html, /como-prever-o-valor-de-adjudicacao/);
   assert.doesNotMatch(html, /rascunho/);
   assert.match(html, /Ferramenta/);
   assert.match(html, /Publicado em 8 de setembro de 2026/);
   assert.match(html, /class="guide-tag">preco</);
+});
+
+test('versão markdown e llms.txt apontam para o mesmo guia', () => {
+  assert.deepEqual(parsePublicGuideParam('como-prever-o-valor-de-adjudicacao.md'), {
+    slug: 'como-prever-o-valor-de-adjudicacao',
+    format: 'markdown',
+  });
+  const md = renderGuideMarkdown('https://baseradar.example', sample);
+  assert.match(md, /^---\n/);
+  assert.match(md, /canonical: https:\/\/baseradar\.example\/guias\/como-prever-o-valor-de-adjudicacao/);
+  assert.match(md, /Porque o preço base engana\?/);
+  assert.match(md, /### Isto substitui a proposta\?/);
+  const catalog = llmsTxt('https://baseradar.example', [
+    { slug: sample.slug, title: sample.title, description: sample.description },
+  ]);
+  assert.match(catalog, /llms-full\.txt/);
+  assert.match(catalog, /\.md\): /);
+  const full = llmsFullTxt('https://baseradar.example', [sample]);
+  assert.match(full, /# Corpo dos guias/);
+  assert.match(full, /É o teto, não o mercado/);
 });
 
 test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov', () => {
@@ -226,6 +261,12 @@ test('reescritas publicadas passam parse, tags e framing PrepBid', async () => {
     }
   }
   assert.equal(slugs.size, 33);
+});
+
+test('robots.txt e sitemap.xml saem com Cache-Control curto para a CDN', () => {
+  const src = readFileSync(new URL('./routes-guides.ts', import.meta.url), 'utf8');
+  assert.match(src, /applyCrawlerNoStore\(reply\)/);
+  assert.match(src, /crawlerNoStore\(reply\)/);
 });
 
 function countH2ForTest(markdown: string): number {

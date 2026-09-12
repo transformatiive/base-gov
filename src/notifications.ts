@@ -218,7 +218,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
   app.get('/api/admin/notifications', { preHandler: requireAuth }, async (req, reply) => {
     if (!auth(req).isAdmin) return reply.code(403).send({ error: { code: 'forbidden', message: 'Reservado a administradores.' } });
     const { rows } = await pool.query(
-      `SELECT n.*, u.email, u.username
+      `SELECT n.*, u.email, u.username, u.first_name, u.last_name
          FROM notification_log n LEFT JOIN users u ON u.id = n.user_id
         ORDER BY n.created_at DESC LIMIT 200`
     );

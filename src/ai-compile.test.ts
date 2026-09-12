@@ -10,11 +10,14 @@ test('compileAnalysisParts junta ficha, requisitos e decisão', () => {
       prazos: { propostas: '12 dias', execucao: '90 dias' },
       preco_base: '287 000 €',
       caucao_garantias: '5%',
+      adjudicatario: 'PRN Informática',
+      janela_renovacao: 'Fim estimado da execução em 179 dias',
     },
     {
       requisitos_habilitacao: ['Alvará classe 4', 'ISO 9001'],
-      red_flags: ['Prazo apertado'],
-      checklist: ['Ler caderno', 'Confirmar alvará'],
+      red_flags: ['Prazo apertado', 'Confirmar no Portal BASE as datas'],
+      especificacoes_tecnicas: ['Portátil 16 GB RAM, garantia 3 anos'],
+      checklist: ['Ler o caderno', 'Confirmar alvará', 'Contactar a entidade'],
     },
     {
       go_no_go: { recomendacao: 'go', justificacao: 'Fit alto e habilitação coberta' },
@@ -22,8 +25,13 @@ test('compileAnalysisParts junta ficha, requisitos e decisão', () => {
     },
   );
   assert.equal(out.resumo, 'Reabilitação de cobertura escolar');
+  assert.equal(out.adjudicatario, 'PRN Informática');
+  assert.match(String(out.janela_renovacao), /179 dias/);
   assert.equal((out.prazos as { propostas: string }).propostas, '12 dias');
   assert.deepEqual(out.requisitos_habilitacao, ['Alvará classe 4', 'ISO 9001']);
+  assert.deepEqual(out.especificacoes_tecnicas, ['Portátil 16 GB RAM, garantia 3 anos']);
+  assert.deepEqual(out.red_flags, ['Prazo apertado']);
+  assert.deepEqual(out.checklist, ['Confirmar alvará', 'Contactar a entidade']);
   assert.equal((out.go_no_go as { recomendacao: string }).recomendacao, 'go');
   assert.equal((out.fit_atividade as { score: number }).score, 82);
 });

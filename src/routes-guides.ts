@@ -3,15 +3,19 @@ import { ingestPublicPage } from './routes-usage.js';
 import { auth, requireAuth } from './auth.js';
 import { config } from './config.js';
 import { pool } from './db.js';
+import { applyCrawlerNoStore } from './crawler-cache.js';
 import {
   GUIDE_AGENT_SPEC,
   guideRecordFromRow,
+  llmsFullTxt,
   llmsTxt,
   markdownToHtml,
   parseGuidePayload,
+  parsePublicGuideParam,
   publicSiteOrigin,
   renderGuideArticleHtml,
   renderGuideIndexHtml,
+  renderGuideMarkdown,
   resolveGuideAgent,
   robotsTxt,
   sitemapXml,
@@ -50,14 +54,20 @@ async function listPublished(): Promise<GuideRecord[]> {
   return rows.map((r) => guideRecordFromRow(r as Record<string, unknown>));
 }
 
+function crawlerNoStore(reply: FastifyReply): void {
+  applyCrawlerNoStore(reply);
+}
+
 export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<void> {
   app.get('/robots.txt', async (_req, reply) => {
+    crawlerNoStore(reply);
     reply.type('text/plain; charset=utf-8');
     return robotsTxt(origin());
   });
 
   app.get('/sitemap.xml', async (_req, reply) => {
     const published = await listPublished();
+    crawlerNoStore(reply);
     reply.type('application/xml; charset=utf-8');
     return sitemapXml(
       origin(),
@@ -67,6 +77,7 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
 
   app.get('/llms.txt', async (_req, reply) => {
     const published = await listPublished();
+    crawlerNoStore(reply);
     reply.type('text/plain; charset=utf-8');
     return llmsTxt(
       origin(),
@@ -74,8 +85,15 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
     );
   });
 
+  app.get('/llms-full.txt', async (_req, reply) => {
+    const published = await listPublished();
+    crawlerNoStore(reply);
+    reply.type('text/plain; charset=utf-8');
+    return llmsFullTxt(origin(), published);
+  });
+
   const sendIndex = async (req: FastifyRequest, reply: FastifyReply) => {
-    await ingestPublicPage(req, reply, '/guias');
+    ingestPublicPage(req, reply, '/guias');
     const published = await listPublished();
     reply.type('text/html; charset=utf-8');
     return renderGuideIndexHtml(origin(), published);
@@ -84,12 +102,16 @@ export async function registerPublicGuideRoutes(app: FastifyInstance): Promise<v
   app.get('/guias/', sendIndex);
 
   app.get<{ Params: { slug: string } }>('/guias/:slug', async (req, reply) => {
-    const slug = req.params.slug.replace(/\.html$/i, '');
+    const { slug, format } = parsePublicGuideParam(req.params.slug);
     const guide = await loadGuide(slug);
     if (!guide || guide.status !== 'published') {
       return reply.code(404).type('text/plain; charset=utf-8').send('Guia não encontrado.');
     }
-    await ingestPublicPage(req, reply, `/guias/${slug}`);
+    ingestPublicPage(req, reply, `/guias/${slug}${format === 'markdown' ? '.md' : ''}`);
+    if (format === 'markdown') {
+      reply.type('text/markdown; charset=utf-8');
+      return renderGuideMarkdown(origin(), guide);
+    }
     reply.type('text/html; charset=utf-8');
     return renderGuideArticleHtml(origin(), guide);
   });

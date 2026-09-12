@@ -1,6 +1,6 @@
 import { pool } from './db.js';
 import { config } from './config.js';
-import { chat, gatherAnnouncementDocs, parseJson, type AiUsage } from './ai.js';
+import { chat, gatherAnnouncementDocs, parseJson, userWithCachedPrefix, type AiUsage } from './ai.js';
 import {
   STANDARD_CHAPTERS,
   emptyRequirements,
@@ -130,11 +130,17 @@ Responde APENAS com JSON:
 formato.specified=true SÓ se o caderno/programa exigir uma estrutura de capítulos ou limite de páginas.
 documentos.legal=true para declarações que exigem assinatura (DEUCP, honra) — a aplicação NÃO as redige, só aponta que são necessárias.`;
 
-  const user = `${announcementBlock(a, pdfText, procText, docsCount)}
-${an.length ? `\nANÁLISE PRÉVIA (usa como pista, mas confirma no texto):\n${JSON.stringify(an[0].analysis).slice(0, 5000)}` : ''}`;
-
   const model = config.aiModelDeep;
-  const { content, usage } = await chat(model, system, user, 4000);
+  const { content, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      announcementBlock(a, pdfText, procText, docsCount),
+      an.length ? `ANÁLISE PRÉVIA (usa como pista, mas confirma no texto):\n${JSON.stringify(an[0].analysis).slice(0, 5000)}` : '',
+    ),
+    4000,
+    'proposta-extract',
+  );
   const extraction = normalizeExtraction(parseJson(content));
   await pool.query(
     `INSERT INTO announcement_requirements (announcement_id, extraction, model)
@@ -178,19 +184,21 @@ Responde APENAS com JSON:
 {"structure_note":"1 frase","sections":[{"title":"...","body":"parágrafos separados por linha em branco"}]}
 As secções DEVEM seguir esta ordem e estes títulos: ${JSON.stringify(chapters)}.`;
 
-  const user = `${profileBlock(opts.profile)}
-
-REQUISITOS EXTRAÍDOS:
-${JSON.stringify(opts.extraction).slice(0, 12_000)}
-
-ANÚNCIO:
+  const model = config.aiModelDeep;
+  const { content, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      `${profileBlock(opts.profile)}\n\nREQUISITOS EXTRAÍDOS:\n${JSON.stringify(opts.extraction).slice(0, 12_000)}`,
+      `ANÚNCIO:
 - ${opts.announcement.contract_designation} · ${opts.announcement.contracting_entity}
 - Preço base: ${opts.announcement.base_price ?? 'n/d'}
 - Preço a apresentar (se o utilizador o definiu): ${opts.bidPrice ?? 'não indicado — usa [A COMPLETAR: preço da proposta] na secção de Preço'}
-- CPV: ${opts.announcement.cpvs ?? 'n/d'}`;
-
-  const model = config.aiModelDeep;
-  const { content, usage } = await chat(model, system, user, 7000);
+- CPV: ${opts.announcement.cpvs ?? 'n/d'}`,
+    ),
+    7000,
+    'proposta-draft',
+  );
   const parsed = parseJson(content) as { structure_note?: string; sections?: { title?: string; body?: string }[] };
   const byTitle = new Map((parsed.sections ?? []).map((s) => [String(s.title ?? '').trim().toLowerCase(), s]));
   const sections: ProposalSection[] = chapters.map((title) => {
@@ -237,9 +245,17 @@ NÃO reescrevas a proposta. NÃO sejas generoso com declarações legais (DEUCP 
 Responde APENAS com JSON:
 {"items":[{"requirement_id":"...","status":"conforme|incompleto|em_falta","note":"frase curta"}]}`;
 
-  const user = `CHECKLIST:\n${JSON.stringify(checklist).slice(0, 10_000)}\n\nTEXTO DA PROPOSTA:\n${opts.proposalText.slice(0, 40_000)}`;
   const model = config.aiModelDeep;
-  const { content, usage } = await chat(model, system, user, 4000);
+  const { content, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      `CHECKLIST:\n${JSON.stringify(checklist).slice(0, 10_000)}`,
+      `TEXTO DA PROPOSTA:\n${opts.proposalText.slice(0, 40_000)}`,
+    ),
+    4000,
+    'proposta-gaps',
+  );
   const parsed = parseJson(content) as { items?: { requirement_id?: string; status?: string; note?: string }[] };
   const byId = new Map((parsed.items ?? []).map((i) => [String(i.requirement_id), i]));
   const items: GapItem[] = checklist.map((req) => {
@@ -280,10 +296,12 @@ NÃO inventes uma métrica de confiança percentual (ex.: "80% de confiança"). 
 Responde APENAS com JSON:
 {"low_pct":0.70,"high_pct":0.82,"justificacao":"2-4 frases","fatores":["..."]}`;
 
-  const user = `ANÚNCIO: ${opts.announcement.designation} · entidade ${opts.announcement.entity}
-Preço base: ${opts.announcement.base_price} · CPV ${opts.announcement.cpvs} · ${opts.announcement.procedure_type} · ${opts.announcement.contract_type}
-
-CAMADA ESTATÍSTICA:
+  const model = config.aiModelFast;
+  const { content, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      `CAMADA ESTATÍSTICA:
 ${JSON.stringify({
     sample_size: opts.statistical.sample_size,
     entity_sample_size: opts.statistical.entity_sample_size,
@@ -298,10 +316,13 @@ ${JSON.stringify({
 CONCURSOS HISTÓRICOS MAIS SEMELHANTES:
 ${opts.comparables.slice(0, 12).map((c) =>
     `- ${c.publication_date} · ${c.entity} · adjudicado ${c.awarded} · base hist. ${c.historical_base ?? 'n/d'} · rácio ${c.ratio.toFixed(2)} (${c.ratio_source}) · ${c.title?.slice(0, 80)}`
-  ).join('\n')}`;
-
-  const model = config.aiModelFast;
-  const { content, usage } = await chat(model, system, user, 1200);
+  ).join('\n')}`,
+      `ANÚNCIO: ${opts.announcement.designation} · entidade ${opts.announcement.entity}
+Preço base: ${opts.announcement.base_price} · CPV ${opts.announcement.cpvs} · ${opts.announcement.procedure_type} · ${opts.announcement.contract_type}`,
+    ),
+    1200,
+    'fecho-qualifica',
+  );
   const parsed = parseJson(content) as { low_pct?: number; high_pct?: number; justificacao?: string; fatores?: string[] };
   const low = clampForecastPct(Number(parsed.low_pct ?? opts.statistical.low_pct ?? 0.7));
   let high = clampForecastPct(Number(parsed.high_pct ?? opts.statistical.high_pct ?? 0.9));

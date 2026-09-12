@@ -75,12 +75,20 @@ async function insertEvent(
   );
 }
 
-/** Hit de página pública (landing, guias, legais). Nunca lança. */
-export async function ingestPublicPage(req: FastifyRequest, reply: FastifyReply, path: string): Promise<void> {
+/** Cookie de visitante já; o INSERT não bloqueia o HTML. Nunca lança. */
+export function ingestPublicPage(req: FastifyRequest, reply: FastifyReply, path: string): void {
   try {
-    const utm = queryUtm(req);
     const visitor = visitorFrom(req, null);
     setVisitorCookie(reply, visitor);
+    void recordPublicPage(req, visitor, path);
+  } catch (err) {
+    console.warn('[usage] falha a registar página pública:', String(err).slice(0, 160));
+  }
+}
+
+async function recordPublicPage(req: FastifyRequest, visitor: string, path: string): Promise<void> {
+  try {
+    const utm = queryUtm(req);
     const user = await tryAuth(req);
     const parsed = parseUsageEvent({
       kind: 'page_view',
@@ -180,7 +188,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       ),
       pool.query(
         `SELECT e.created_at, e.kind, e.module, e.path, e.action, e.origin, e.visitor_id,
-                u.username, u.email, c.name AS company, c.plan
+                u.username, u.email, u.first_name, u.last_name, c.name AS company, c.plan
            FROM usage_events e
            LEFT JOIN users u ON u.id = e.user_id
            LEFT JOIN companies c ON c.id = e.company_id
@@ -216,7 +224,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       ),
       pool.query(
         `SELECT s.id, s.term, s.kind, s.status, s.created_at, s.finished_at, s.total_reported, s.total_scraped,
-                c.name AS company, u.username
+                c.name AS company, u.username, u.email, u.first_name, u.last_name
            FROM searches s
            LEFT JOIN companies c ON c.id = s.company_id
            LEFT JOIN users u ON u.id = s.created_by

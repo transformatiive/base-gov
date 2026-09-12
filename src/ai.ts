@@ -8,6 +8,19 @@ import { applyFitRules, type CompanyProfileRules } from './fit-rules.js';
 import { negativeExamples, negativeExamplesBlock } from './ai-feedback.js';
 import { inferDistrict } from './districts.js';
 import { compileAnalysisParts, sumUsage } from './ai-compile.js';
+import {
+  applyStructuredContractFacts,
+  asYmd,
+  formatPeerAwards,
+  pickContractDocs,
+  renewalWindowText,
+  type ContractAnalysisFacts,
+  type PeerAwardLine,
+} from './ai-checklist.js';
+import { cpvDigits } from './closeForecast.js';
+import { buildChatBody, cached, userWithCachedPrefix, type Content } from './ai-cache.js';
+
+export { cached, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
@@ -24,16 +37,13 @@ export function aiEnabled(): boolean {
 export interface AiUsage { tokens_in: number; tokens_out: number }
 export interface ChatResult { content: string; usage: AiUsage }
 
-// Blocos de conteúdo para prompt caching (Anthropic via OpenRouter): um bloco
-// marcado com cache_control:ephemeral é reutilizado (mais barato) em chamadas
-// seguintes com o MESMO prefixo. Marcamos os blocos grandes e ESTÁVEIS entre
-// pedidos (instruções fixas, documentos de um anúncio) para poupar tokens.
-type Part = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
-export type Content = string | Part[];
-const cached = (text: string): Part => ({ type: 'text', text, cache_control: { type: 'ephemeral' } });
-const plain = (text: string): Part => ({ type: 'text', text });
-
-export async function chat(model: string, system: Content, user: Content, maxTokens = 3000): Promise<ChatResult> {
+export async function chat(
+  model: string,
+  system: Content,
+  user: Content,
+  maxTokens = 3000,
+  sessionId?: string,
+): Promise<ChatResult> {
   if (!aiEnabled()) throw new Error('IA não configurada (OPENROUTER_API_KEY em falta)');
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -43,15 +53,7 @@ export async function chat(model: string, system: Content, user: Content, maxTok
       'HTTP-Referer': 'https://prepbid.com',
       'X-Title': 'PrepBid',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      usage: { include: true },   // pede detalhe de tokens (prompt/completion/cache)
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
+    body: JSON.stringify(buildChatBody({ model, system, user, maxTokens, sessionId })),
     signal: AbortSignal.timeout(180_000),
   });
   if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -80,14 +82,26 @@ export function parseJson(text: string): unknown {
 }
 
 const PART_FICHA =
-  '{"resumo":"2-3 frases","criterios_adjudicacao":"...","prazos":{"propostas":"...","execucao":"..."},"preco_base":"...","caucao_garantias":"..."}';
+  '{"resumo":"2-3 frases com factos extraídos","criterios_adjudicacao":"critérios e, se o relatório existir, posição da proposta vencedora","prazos":{"propostas":"...","execucao":"..."},"preco_base":"...","caucao_garantias":"...","adjudicatario":"vencedor se conhecido, senão vazio","janela_renovacao":"quando esperar novo concurso; vazio se não for contrato"}';
 const PART_REQUISITOS =
-  '{"requisitos_habilitacao":["..."],"red_flags":["..."],"checklist":["passos concretos por ordem"]}';
+  '{"requisitos_habilitacao":["..."],"red_flags":["riscos de facto, não tarefas"],"especificacoes_tecnicas":["marcas, modelos, garantias, CPV — vazio se não houver fonte"],"checklist":["só acções humanas que a PrepBid não executa"]}';
 const PART_DECISAO =
   '{"go_no_go":{"recomendacao":"go|condicional|no-go","justificacao":"1-2 frases"},"fit_atividade":{"score":0,"razao":"1 frase"}}';
 
-async function chatJson(model: string, system: Content, user: Content, maxTokens: number): Promise<{ parsed: unknown; usage: AiUsage }> {
-  const { content, usage } = await chat(model, system, user, maxTokens);
+const ANALYSIS_OUTPUT_RULES = `Entrega ACHADOS nos campos JSON, não trabalhos de casa.
+A checklist tem no máximo 8 itens e só acções humanas que a PrepBid não executa: contactar a entidade adjudicante, decidir preço interno, reunir certidões que o perfil da empresa ainda não tem, juntar referências próprias da empresa.
+PROIBIDO na checklist e em red_flags do tipo «vá ao portal»: Portal BASE, Diário da República, activar download de documentos, obter/ler caderno de encargos, programa do concurso ou relatório de adjudicação, confirmar datas já indicadas nos dados, monitorizar publicações (o radar da PrepBid já o faz), levantar especificações ou analisar preços de mercado se as fontes ou comparáveis já estão neste pedido.
+Se um facto não estiver nas fontes, escreve «não consta das fontes» no campo respectivo; não peças ao utilizador que vá buscar o documento.
+Confronta o CPV/objecto com o perfil da empresa no resumo e no go/no-go; não peças na checklist para «validar CPV» se o perfil já o cobre.`;
+
+async function chatJson(
+  model: string,
+  system: Content,
+  user: Content,
+  maxTokens: number,
+  sessionId?: string,
+): Promise<{ parsed: unknown; usage: AiUsage }> {
+  const { content, usage } = await chat(model, system, user, maxTokens, sessionId);
   return { parsed: parseJson(content), usage };
 }
 
@@ -98,19 +112,21 @@ async function chatJson(model: string, system: Content, user: Content, maxTokens
  */
 async function runSplitAnalysis(lead: string, docBlock: string, activityBlock: string): Promise<{ analysis: Record<string, unknown>; usage: AiUsage; model: string }> {
   const model = config.aiModelDeep;
-  const user: Part[] = [cached(docBlock), plain(activityBlock)];
+  const system = [cached(`${lead}\n\n${ANALYSIS_OUTPUT_RULES}`)];
+  const prefix = [docBlock, activityBlock].filter((s) => s.trim()).join('\n\n');
   const specs: { schema: string; max: number }[] = [
-    { schema: PART_FICHA, max: 1400 },
-    { schema: PART_REQUISITOS, max: 1600 },
+    { schema: PART_FICHA, max: 1600 },
+    { schema: PART_REQUISITOS, max: 1800 },
     { schema: PART_DECISAO, max: 900 },
   ];
   const settled = await Promise.allSettled(
     specs.map((s) =>
       chatJson(
         model,
-        [cached(lead), plain(`Responde APENAS com um objeto JSON válido com esta estrutura:\n${s.schema}`)],
-        user,
+        system,
+        userWithCachedPrefix(prefix, `Responde APENAS com um objeto JSON válido com esta estrutura:\n${s.schema}`),
         s.max,
+        'analise-split',
       ),
     ),
   );
@@ -320,7 +336,19 @@ export async function analyzeAnnouncement(
       'SELECT analysis, model FROM ai_analyses WHERE announcement_id = $1 AND profile_id = $2',
       [announcementId, profileId]
     );
-    if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+    if (hit.length > 0) {
+      return {
+        analysis: applyStructuredContractFacts(hit[0].analysis, {
+          adjudicatario: '',
+          janela_renovacao: '',
+          precos_referencia: '',
+        }),
+        cached: true,
+        model: hit[0].model,
+        docs_used: -1,
+        usage: { tokens_in: 0, tokens_out: 0 },
+      };
+    }
   }
 
   const { rows } = await pool.query('SELECT * FROM announcements WHERE id = $1', [announcementId]);
@@ -334,7 +362,7 @@ export async function analyzeAnnouncement(
   ]);
 
   const lead = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), baseia os critérios de adjudicação, requisitos de habilitação, cauções, prazos e red flags NO TEXTO desses documentos (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação.`;
+Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / programa), extrai critérios, requisitos, cauções, prazos, especificações técnicas e red flags DESSE TEXTO (cita valores/percentagens concretos). Se só houver dados estruturados, assinala essa limitação nos campos — não na checklist.`;
 
   const docBlock = `DADOS ESTRUTURADOS DO ANÚNCIO:
 - Designação: ${a.contract_designation}
@@ -346,7 +374,7 @@ Quando forem fornecidas as PEÇAS DO PROCEDIMENTO (caderno de encargos / program
 - CPV: ${a.cpvs ?? 'n/d'}
 - Peças do procedimento: ${a.contracting_procedure_url ?? 'n/d'}
 
-${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${procText ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${docsCount} documento(s) da plataforma):\n${procText}` : ''}${!pdfText && !procText ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags.' : ''}`;
+${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${procText ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${docsCount} documento(s) da plataforma):\n${procText}` : ''}${!pdfText && !procText ? 'Sem documentos (anúncio DR nem peças do procedimento acessíveis) — analisa apenas com os dados estruturados e assinala essa limitação no resumo e nos red flags. Não peças na checklist para ir ao BASE ou ao DRE.' : ''}`;
 
   const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}${extra.ctx ? `\n${extra.ctx}` : ''}${extra.fewShot ? `\n${extra.fewShot}` : ''}`;
 
@@ -493,7 +521,7 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
   ).join('\n');
 
   const model = config.aiModelFast;
-  const { content: raw, usage: u } = await chat(model, system, user, 4000);
+  const { content: raw, usage: u } = await chat(model, system, user, 4000, 'fit-scores');
   usage = u;
   const parsed = parseJson(raw) as { scores?: { key: string; fit: number; razao: string; motivos?: string[] }[] };
 
@@ -524,37 +552,47 @@ export async function analyzeContract(
   profileId: number,
   opts?: { force?: boolean },
 ): Promise<{ analysis: unknown; cached: boolean; model: string; docs_used: number; usage: AiUsage }> {
+  const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [contractId]);
+  if (rows.length === 0) throw new Error('Contrato não encontrado');
+  const c = rows[0];
+
+  const { rows: ents } = await pool.query(
+    `SELECT ce.role, e.name FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id WHERE ce.contract_id = $1`,
+    [contractId],
+  );
+
   if (!opts?.force) {
     const { rows: hit } = await pool.query(
       'SELECT analysis, model FROM ai_contract_analyses WHERE contract_id = $1 AND profile_id = $2',
       [contractId, profileId]
     );
-    if (hit.length > 0) return { analysis: hit[0].analysis, cached: true, model: hit[0].model, docs_used: -1, usage: { tokens_in: 0, tokens_out: 0 } };
+    if (hit.length > 0) {
+      const facts = await loadContractAnalysisFacts(contractId, c, ents);
+      return {
+        analysis: applyStructuredContractFacts(hit[0].analysis, facts),
+        cached: true,
+        model: hit[0].model,
+        docs_used: -1,
+        usage: { tokens_in: 0, tokens_out: 0 },
+      };
+    }
   }
 
-  const { rows } = await pool.query('SELECT * FROM contracts WHERE id = $1', [contractId]);
-  if (rows.length === 0) throw new Error('Contrato não encontrado');
-  const c = rows[0];
-
-  const [{ rows: ents }, { rows: docs }, ctx, extra] = await Promise.all([
+  const [{ rows: docs }, ctx, extra] = await Promise.all([
     pool.query(
-      `SELECT ce.role, e.name FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id WHERE ce.contract_id = $1`,
-      [contractId]
-    ),
-    pool.query(
-      `SELECT id, file_name, content FROM documents WHERE contract_id = $1 AND download_ok
-       ORDER BY size_bytes DESC LIMIT 3`,
+      `SELECT id, file_name, size_bytes FROM documents WHERE contract_id = $1 AND download_ok`,
       [contractId]
     ),
     profileContext(profileId),
     companyExtras(profileId),
   ]);
 
-  const extracted = await Promise.all(docs.map(async (d) => {
+  const chosen = pickContractDocs(docs as { id: number; file_name: string; size_bytes: number | null }[], 5);
+  const extracted = await Promise.all(chosen.map(async (d) => {
     try {
-      const buf = (await getDocument(d.id)) ?? (d.content as Buffer | null);
+      const buf = await getDocument(d.id);
       if (!buf) return null;
-      const t = await pdfTextFromBuf(buf, 18_000);
+      const t = await pdfTextFromBuf(buf, 22_000);
       return t ? { file_name: String(d.file_name), text: t } : null;
     } catch {
       return null;
@@ -566,30 +604,146 @@ export async function analyzeContract(
     if (!d) continue;
     docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${d.text}`;
     docsUsed++;
-    if (docsText.length > 40_000) break;
+    if (docsText.length > 50_000) break;
   }
 
+  if (!docsText && c.contracting_procedure_url) {
+    const proc = await gatherAnnouncementDocs({ contracting_procedure_url: c.contracting_procedure_url });
+    if (proc.procText) {
+      docsText = `\n\n===== PEÇAS DO PROCEDIMENTO (plataforma) =====\n${proc.procText}`;
+      docsUsed = proc.docsCount;
+    }
+  }
+
+  const facts = await loadContractAnalysisFacts(contractId, c, ents);
+  const entsLine = (ents as { role: string; name: string }[])
+    .map((e) => `${e.role}: ${e.name}`)
+    .join('; ');
+
   const lead = `És um analista sénior de contratação pública portuguesa a apoiar a equipa comercial de uma empresa.
-Este é um CONTRATO já celebrado — o objetivo é preparar a empresa para a RENOVAÇÃO/próximo procedimento desta entidade.`;
+Este é um CONTRATO já celebrado — o objetivo é preparar a empresa para a RENOVAÇÃO/próximo procedimento desta entidade.
+Extrai do caderno/programa/relatório (se existirem) critérios, posição do vencedor, especificações técnicas (marcas, modelos, garantias) e habilitação. Os dados estruturados e os blocos «JÁ CALCULADOS» abaixo substituem ir ao Portal BASE.`;
 
   const docBlock = `DADOS DO CONTRATO:
 - Objeto: ${c.object_brief_description ?? c.description}
-- Entidades: ${ents.map((e) => `${e.role}: ${e.name}`).join('; ')}
+- Entidades: ${entsLine}
 - Procedimento: ${c.contracting_procedure_type} · Tipo: ${c.contract_types}
 - Preço contratual: ${c.initial_contractual_price ?? 'n/d'} · Publicação: ${c.publication_date} · Celebração: ${c.signing_date}
 - Prazo execução: ${c.execution_deadline} · Local: ${c.execution_place}
 - CPV: ${c.cpvs ?? 'n/d'} (${c.cpvs_designation ?? ''})
 - Fundamentação: ${c.contract_fundamentation ?? 'n/d'}
-${docsText ? `\nDOCUMENTOS DO CONTRATO (texto extraído):${docsText}` : '\nSem documentos PDF descarregados para este contrato — analisa com os dados estruturados e indica essa limitação; sugere ativar o download de documentos na pesquisa para uma análise completa.'}`;
+- URL das peças: ${c.contracting_procedure_url ?? 'n/d'}
+
+DADOS JÁ CALCULADOS NA PREPBID (usa-os; não os contradigas; não os peças na checklist):
+- Adjudicatário: ${facts.adjudicatario || 'n/d'}
+- Janela de renovação: ${facts.janela_renovacao || 'não estimável com os dados atuais'}
+${facts.precos_referencia ? `- ${facts.precos_referencia}` : '- Sem adjudicações semelhantes suficientes na PrepBid para âncora de preço.'}
+${docsText ? `\nDOCUMENTOS DO CONTRATO (texto extraído):${docsText}` : '\nSem documentos PDF descarregados nem peças acessíveis — analisa com os dados estruturados e os comparáveis. Assinala a limitação no resumo. Não peças na checklist para activar download nem para ir ao BASE.'}`;
   const activityBlock = `CONTEXTO DA ATIVIDADE DA EMPRESA (considera para o fit e o go/no-go):\n${ctx}${extra.ctx ? `\n${extra.ctx}` : ''}${extra.fewShot ? `\n${extra.fewShot}` : ''}`;
 
   const { analysis, usage, model } = await runSplitAnalysis(lead, docBlock, activityBlock);
+  const enriched = applyStructuredContractFacts(analysis, facts);
   await pool.query(
     `INSERT INTO ai_contract_analyses (contract_id, profile_id, model, analysis) VALUES ($1,$2,$3,$4)
      ON CONFLICT (contract_id, profile_id) DO UPDATE SET model = $3, analysis = $4, created_at = now()`,
-    [contractId, profileId, model, JSON.stringify(analysis)]
+    [contractId, profileId, model, JSON.stringify(enriched)]
   );
-  return { analysis, cached: false, model, docs_used: docsUsed, usage };
+  return { analysis: enriched, cached: false, model, docs_used: docsUsed, usage };
+}
+
+type ContractEnt = { role: string; name: string };
+
+async function loadContractAnalysisFacts(
+  contractId: number,
+  c: { signing_date: unknown; publication_date: unknown; execution_deadline: unknown; cpvs: unknown },
+  ents: ContractEnt[],
+): Promise<ContractAnalysisFacts> {
+  const contracting = ents.filter((e) => e.role === 'contracting').map((e) => e.name).filter(Boolean);
+  const contracted = ents.filter((e) => e.role === 'contracted').map((e) => e.name).filter(Boolean);
+  const peers = await loadPeerAwards(contractId, contracting[0] ?? null, String(c.cpvs ?? ''));
+  return {
+    adjudicatario: contracted.join('; '),
+    janela_renovacao: renewalWindowText({
+      signingDate: c.signing_date,
+      publicationDate: c.publication_date,
+      executionDeadline: c.execution_deadline,
+    }),
+    precos_referencia: formatPeerAwards(peers),
+  };
+}
+
+async function loadPeerAwards(
+  contractId: number,
+  contractingName: string | null,
+  cpvs: string,
+): Promise<PeerAwardLine[]> {
+  const digits = cpvDigits(cpvs);
+  const prefix = digits.length >= 4 ? digits.slice(0, 4) : digits.slice(0, 2);
+  const [entityRes, cpvRes] = await Promise.all([
+    contractingName
+      ? pool.query(
+        `SELECT c.id, c.publication_date, c.initial_contractual_price AS awarded,
+                c.object_brief_description AS title,
+                (SELECT string_agg(e.name, '; ' ORDER BY e.name)
+                   FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+                  WHERE ce.contract_id = c.id AND ce.role = 'contracted') AS contracted
+           FROM contracts c
+           JOIN contract_entities ce ON ce.contract_id = c.id AND ce.role = 'contracting'
+           JOIN entities e ON e.id = ce.entity_id
+          WHERE c.id <> $1
+            AND c.initial_contractual_price IS NOT NULL
+            AND c.initial_contractual_price > 0
+            AND lower(e.name) = lower($2)
+          ORDER BY c.publication_date DESC NULLS LAST
+          LIMIT 6`,
+        [contractId, contractingName],
+      )
+      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+    prefix
+      ? pool.query(
+        `SELECT c.id, c.publication_date, c.initial_contractual_price AS awarded,
+                c.object_brief_description AS title,
+                (SELECT string_agg(e.name, '; ' ORDER BY e.name)
+                   FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+                  WHERE ce.contract_id = c.id AND ce.role = 'contracted') AS contracted
+           FROM contracts c
+          WHERE c.id <> $1
+            AND c.initial_contractual_price IS NOT NULL
+            AND c.initial_contractual_price > 0
+            AND c.cpvs IS NOT NULL
+            AND c.cpvs ~ ('(?:^|[,;][[:space:]]*)' || $2)
+          ORDER BY c.publication_date DESC NULLS LAST
+          LIMIT 8`,
+        [contractId, prefix],
+      )
+      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+  ]);
+
+  const byId = new Map<number, PeerAwardLine>();
+  for (const r of entityRes.rows) {
+    const id = Number(r.id);
+    byId.set(id, {
+      id,
+      publication_date: asYmd(r.publication_date),
+      awarded: Number(r.awarded),
+      title: r.title != null ? String(r.title) : null,
+      contracted: r.contracted != null ? String(r.contracted) : null,
+      same_entity: true,
+    });
+  }
+  for (const r of cpvRes.rows) {
+    const id = Number(r.id);
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      publication_date: asYmd(r.publication_date),
+      awarded: Number(r.awarded),
+      title: r.title != null ? String(r.title) : null,
+      contracted: r.contracted != null ? String(r.contracted) : null,
+      same_entity: false,
+    });
+  }
+  return [...byId.values()];
 }
 
 /**
@@ -614,25 +768,41 @@ export async function responseTemplate(announcementId: number, profileId: number
   const system = `És um consultor sénior de contratação pública portuguesa (CCP — DL 111-B/2017).
 ${ctx}
 ${extra.ctx}
-Gera um DOSSIER DE RESPOSTA em markdown para este procedimento, com placeholders claros no formato [PLACEHOLDER: descrição], contendo:
-1. **Checklist de submissão** — documentos a carregar na plataforma eletrónica indicada, prazos, assinatura digital qualificada, quem assina;
-2. **Declaração Anexo I do CCP** (aceitação do conteúdo do caderno de encargos, art. 57.º n.º 1 a)) — texto completo com placeholders da empresa;
-3. **Estrutura da Memória Descritiva/Proposta Técnica** — secções alinhadas EXATAMENTE aos critérios e ponderações de adjudicação deste concurso, com orientação do que escrever em cada secção para maximizar pontuação;
-4. **Proposta de Preço** — estrutura e notas (preço base, forma de apresentação);
-5. **Documentos de habilitação** a preparar para o caso de adjudicação (art. 81.º), incluindo os específicos desta atividade.
+Gera um DOSSIER DE RESPOSTA em markdown (depois convertido para Word). Placeholders no formato [A COMPLETAR: descrição].
+Estrutura obrigatória:
+- um # título
+- ## para cada secção numerada (1., 2., …)
+- ### para subsecções (1.1, 1.2)
+- tabelas GitHub (cabeçalho, linha |---|---|, depois uma linha por registo). Nunca escrevas uma tabela só com pipes no texto corrido.
+- listas com hífen
+Não uses HTML, nem ** para títulos, nem blocos de código.
+Conteúdo:
+1. Checklist de submissão — documentos a carregar na plataforma electrónica indicada, prazos, assinatura digital qualificada, quem assina;
+2. Declaração Anexo I do CCP (aceitação do conteúdo do caderno de encargos, art. 57.º n.º 1 a)) — texto completo com placeholders da empresa;
+3. Estrutura da Memória Descritiva/Proposta Técnica — secções alinhadas EXACTAMENTE aos critérios e ponderações de adjudicação deste concurso, com orientação do que escrever em cada secção para maximizar pontuação;
+4. Proposta de Preço — estrutura e notas (preço base, forma de apresentação);
+5. Documentos de habilitação a preparar para o caso de adjudicação (art. 81.º), incluindo os específicos desta actividade.
 Sê concreto e específico a ESTE concurso. Não inventes factos que não estejam nos dados; usa placeholders quando faltarem.`;
 
-  const user = `ANÚNCIO:
+  const model = config.aiModelDeep;
+  const { content: markdown, usage } = await chat(
+    model,
+    system,
+    userWithCachedPrefix(
+      [
+        an.length > 0 ? `ANÁLISE JÁ EFETUADA (usa os critérios daqui):\n${JSON.stringify(an[0].analysis).slice(0, 6000)}` : '',
+        pdfText ? `TEXTO DO ANÚNCIO (DR):\n${pdfText}` : '',
+      ].filter(Boolean).join('\n\n'),
+      `ANÚNCIO:
 - Designação: ${a.contract_designation}
 - Entidade: ${a.contracting_entity}
 - Procedimento: ${a.model_type ?? a.contracting_procedure_type} · Contrato: ${a.contract_type}
 - Preço base: ${a.base_price ?? 'n/d'} · Prazo propostas: ${a.proposal_deadline_date ?? 'n/d'}
-- CPV: ${a.cpvs ?? 'n/d'} · Plataforma (peças): ${a.contracting_procedure_url ?? 'n/d'}
-${an.length > 0 ? `\nANÁLISE JÁ EFETUADA (usa os critérios daqui):\n${JSON.stringify(an[0].analysis).slice(0, 6000)}` : ''}
-${pdfText ? `\nTEXTO DO ANÚNCIO (DR):\n${pdfText}` : ''}`;
-
-  const model = config.aiModelDeep;
-  const { content: markdown, usage } = await chat(model, system, user, 6000);
+- CPV: ${a.cpvs ?? 'n/d'} · Plataforma (peças): ${a.contracting_procedure_url ?? 'n/d'}`,
+    ),
+    6000,
+    'dossier-resposta',
+  );
   return { markdown: markdown.replace(/^```(?:markdown)?\n?|```$/g, ''), model, usage };
 }
 
@@ -643,7 +813,8 @@ export async function digestIntro(profileName: string, stats: string): Promise<s
       config.aiModelFast,
       `És um analista comercial. Escreve um parágrafo único (3-4 frases, português de Portugal, tom profissional e direto) a resumir a semana de oportunidades de contratação pública para a atividade "${profileName}". Sem saudações, sem markdown.`,
       stats,
-      400
+      400,
+      'digest-intro',
     );
     return content.trim();
   } catch {

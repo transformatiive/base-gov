@@ -8,14 +8,23 @@
  * Uso:
  *   node scripts/setup-concursivo-cloudflare.mjs            # só verifica disponibilidade
  *   node scripts/setup-concursivo-cloudflare.mjs --register # compra + DNS + email
+ *   node scripts/setup-concursivo-cloudflare.mjs --route    # só Email Routing + Sending na zona existente
+ *   node scripts/setup-concursivo-cloudflare.mjs --www      # CNAME www.prepbid.com (proxied)
+ *   node scripts/setup-concursivo-cloudflare.mjs --purge    # limpa cache de robots.txt / sitemap.xml
+ *
+ * Destino de reencaminhamento: MAIL_FORWARD_TO (default info@transformatiive.com).
+ * A Cloudflare envia um email de confirmação a esse endereço — é preciso abrir a ligação.
  */
 
 const DOMAIN = process.env.PREPBID_DOMAIN || process.env.CONCURSIVO_DOMAIN || 'prepbid.com';
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
-const FORWARD_TO = process.env.MAIL_FORWARD_TO || 'nbarreto@transformatiive.com';
+const FORWARD_TO = process.env.MAIL_FORWARD_TO || 'info@transformatiive.com';
 const APP_ORIGIN = process.env.RAILWAY_APP_HOST || 'basegov-robot-production.up.railway.app';
 const REGISTER = process.argv.includes('--register');
+const ROUTE = process.argv.includes('--route');
+const WWW = process.argv.includes('--www');
+const PURGE = process.argv.includes('--purge');
 const API = 'https://api.cloudflare.com/client/v4';
 
 if (!ACCOUNT_ID || !TOKEN) {
@@ -173,6 +182,56 @@ async function onboardSending(zoneId) {
   console.warn('Onboard de Email Sending: faça Compute → Email Service → Email Sending → Onboard Domain no dashboard.');
 }
 
+async function configureEmail(zoneId) {
+  await enableRouting(zoneId);
+  await addDestination();
+  await addRule(zoneId, 'info');
+  await addRule(zoneId, 'suporte');
+  await addRule(zoneId, 'privacidade');
+  await addRule(zoneId, 'noreply');
+  await addCatchAll(zoneId);
+  await onboardSending(zoneId);
+}
+
+function printRailwayHints() {
+  console.log('Concluído. Confirme o destino', FORWARD_TO, '(abra o email de verificação da Cloudflare).');
+  console.log('Variáveis Railway do envio transaccional (Email Sending → API):');
+  console.log('  CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN  (permissão Email Sending: Edit)');
+  console.log('  MAIL_FROM="PrepBid <noreply@prepbid.com>"');
+  console.log('  SUPPORT_EMAIL=info@transformatiive.com');
+  console.log('  APP_URL=https://prepbid.com');
+}
+
+async function purgeCrawlerCache(zoneId) {
+  const files = [
+    `https://${DOMAIN}/robots.txt`,
+    `https://${DOMAIN}/sitemap.xml`,
+    `https://${DOMAIN}/llms.txt`,
+    `https://${DOMAIN}/llms-full.txt`,
+    `https://www.${DOMAIN}/robots.txt`,
+    `https://www.${DOMAIN}/sitemap.xml`,
+  ];
+  const res = await cf('POST', `/zones/${zoneId}/purge_cache`, { files });
+  if (!res.json?.success) fail('purge_cache', res);
+  console.log('Cache limpa:', files.join(', '));
+}
+
+if (WWW || PURGE) {
+  const zone = await findZone();
+  console.log('Zona:', zone.id, zone.status);
+  if (WWW) await ensureDnsCname(zone.id, `www.${DOMAIN}`, APP_ORIGIN);
+  if (PURGE) await purgeCrawlerCache(zone.id);
+  process.exit(0);
+}
+
+if (ROUTE) {
+  const zone = await findZone();
+  console.log('Zona:', zone.id, zone.status);
+  await configureEmail(zone.id);
+  printRailwayHints();
+  process.exit(0);
+}
+
 const check = await checkDomain();
 if (!REGISTER) {
   if (!check.registrable) {
@@ -202,15 +261,5 @@ const zone = await findZone();
 console.log('Zona:', zone.id, zone.status);
 await ensureDnsCname(zone.id, DOMAIN, APP_ORIGIN);
 await ensureDnsCname(zone.id, `www.${DOMAIN}`, APP_ORIGIN);
-await enableRouting(zone.id);
-await addDestination();
-await addRule(zone.id, 'suporte');
-await addRule(zone.id, 'privacidade');
-await addRule(zone.id, 'noreply');
-await addCatchAll(zone.id);
-await onboardSending(zone.id);
-console.log('Concluído. Confirme o destino', FORWARD_TO, 'e as variáveis Railway:');
-console.log('  CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN');
-console.log('  MAIL_FROM="PrepBid <noreply@prepbid.com>"');
-console.log('  SUPPORT_EMAIL=suporte@prepbid.com');
-console.log('  APP_URL=https://prepbid.com');
+await configureEmail(zone.id);
+printRailwayHints();

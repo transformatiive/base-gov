@@ -275,6 +275,9 @@ export const GUIDE_AGENT_SPEC = {
     sitemap: '/sitemap.xml',
     robots: '/robots.txt',
     llms: '/llms.txt',
+    llmsFull: '/llms-full.txt',
+    markdown: '/guias/:slug.md',
+    breadcrumbJsonLd: true,
   },
   constraints: {
     noLegalAdvice: true,
@@ -289,17 +292,40 @@ export const GUIDE_AGENT_SPEC = {
 } as const;
 
 export function publicSiteOrigin(appBaseUrl: string): string {
+  const override = (process.env.PUBLIC_SITE_URL || '').replace(/\/$/, '');
+  if (override) return override;
   const trimmed = appBaseUrl.replace(/\/$/, '');
-  return trimmed || PUBLIC_SITE_FALLBACK;
+  if (!trimmed) return PUBLIC_SITE_FALLBACK;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.endsWith('.up.railway.app') ||
+      host.endsWith('.railway.app') ||
+      host.endsWith('.railway.internal')
+    ) {
+      return PUBLIC_SITE_FALLBACK;
+    }
+  } catch {
+    return PUBLIC_SITE_FALLBACK;
+  }
+  return trimmed;
 }
 
 export function robotsTxt(origin: string): string {
-  const sitemap = `${origin.replace(/\/$/, '')}/sitemap.xml`;
+  const base = origin.replace(/\/$/, '');
+  const sitemap = `${base}/sitemap.xml`;
   return [
     'User-agent: *',
     'Allow: /',
     'Disallow: /app',
     'Disallow: /api',
+    '',
+    '# Catálogo para crawlers de LLMs (https://llmstxt.org)',
+    `# ${base}/llms.txt`,
+    `# ${base}/llms-full.txt`,
+    `# ${base}/guias/:slug.md`,
     '',
     `Sitemap: ${sitemap}`,
     '',
@@ -316,11 +342,18 @@ export function sitemapXml(
   const urls: { loc: string; lastmod: string; priority: string }[] = [
     { loc: `${base}/`, lastmod: fallbackDay, priority: '1.0' },
     { loc: `${base}/guias`, lastmod: fallbackDay, priority: '0.8' },
-    ...published.map((g) => ({
-      loc: `${base}/guias/${g.slug}`,
-      lastmod: g.updated_at.slice(0, 10),
-      priority: '0.7',
-    })),
+    ...published.flatMap((g) => [
+      {
+        loc: `${base}/guias/${g.slug}`,
+        lastmod: g.updated_at.slice(0, 10),
+        priority: '0.7',
+      },
+      {
+        loc: `${base}/guias/${g.slug}.md`,
+        lastmod: g.updated_at.slice(0, 10),
+        priority: '0.4',
+      },
+    ]),
     { loc: `${base}/termos`, lastmod: fallbackDay, priority: '0.3' },
     { loc: `${base}/privacidade`, lastmod: fallbackDay, priority: '0.3' },
   ];
@@ -349,24 +382,46 @@ export function llmsTxt(
   const lines = [
     '# PrepBid',
     '',
-    '> Assistente para ganhar concursos públicos em obras, energia e saúde em Portugal. Conta grátis, sem cartão e sem reunião comercial.',
+    '> Assistente para ganhar concursos públicos em obras, energia e saúde em Portugal. Cruza o histórico do Portal BASE (IMPIC / dados.gov.pt) com o perfil da empresa. Conta grátis, sem cartão e sem reunião comercial.',
     '',
     `Site: ${base}/`,
     `Guias: ${base}/guias`,
+    `Catálogo longo: ${base}/llms-full.txt`,
+    `Sitemap: ${base}/sitemap.xml`,
+    '',
+    '## Páginas',
+    '',
+    `- [Início](${base}/): produto, planos e FAQ.`,
+    `- [Guias](${base}/guias): respostas curtas sobre concursos públicos (não é um blog).`,
+    `- [Termos](${base}/termos)`,
+    `- [Privacidade](${base}/privacidade)`,
+    '',
+    'A aplicação autenticada vive em `/app` e não deve ser indexada.',
     '',
     '## Guias',
     '',
   ];
   for (const g of published) {
-    lines.push(`- [${g.title}](${base}/guias/${g.slug}): ${g.description}`);
+    lines.push(`- [${g.title}](${base}/guias/${g.slug}) · [markdown](${base}/guias/${g.slug}.md): ${g.description}`);
   }
   if (published.length === 0) {
     lines.push('_Ainda não há guias publicados._');
   }
-  lines.push('', '## Notas para modelos', '');
-  lines.push('- Idioma: português de Portugal (pt-PT).');
-  lines.push('- Os guias não são aconselhamento jurídico. Confirme o CCP e as peças do procedimento.');
-  lines.push('- Preços públicos: Grátis 0 € · Pro 29 €/mês · Business 99 €/mês (sem IVA). Teste Pro de 7 dias, sem cartão.');
+  lines.push('', '## Produto', '');
+  lines.push('- Idioma: português de Portugal (pt-PT). Ortografia anterior ao Acordo Ortográfico de 1990.');
+  lines.push('- Foco: empreitadas, energia e saúde — não um dump nacional de todos os CPV.');
+  lines.push('- Fonte: Portal BASE (IMPIC), dados.gov.pt e anúncios do Diário da República. Não substitui as peças na plataforma electrónica.');
+  lines.push('- Planos (sem IVA): Grátis 0 € · Pro 29 €/mês · Business 99 €/mês. Teste Pro de 7 dias, sem cartão.');
+  lines.push('- O Grátis vigia concursos abertos, mapa, sazonalidade, resumo semanal e a carteira (1 utilizador).');
+  lines.push('- O Pro acrescenta pontuação IA, radar de renovações, análise do caderno, dossier de resposta com placeholders, concorrentes e 2 utilizadores (40 análises / 30 dias por utilizador).');
+  lines.push('- O Business é o plano da equipa (até 10 lugares): rascunho .docx da proposta, previsão de valor de fecho, 250 análises / 30 dias por utilizador.');
+  lines.push('- A submissão no portal (Vortal, acinGov, etc.) é sempre manual.');
+  lines.push('');
+  lines.push('## Notas para modelos', '');
+  lines.push('- Os guias não são aconselhamento jurídico. Confirme o CCP em vigor e as peças do procedimento concreto.');
+  lines.push('- Não invente preços, prazos ou requisitos de habilitação. Se o guia não tiver o dado, diga que falta.');
+  lines.push('- Prefira as versões `.md` dos guias e `/llms-full.txt` ao HTML da landing.');
+  lines.push('- Produto da Transformatiive, Lda.');
   lines.push('');
   return lines.join('\n');
 }
@@ -409,6 +464,107 @@ export function parseGuideTags(raw: unknown): string[] | null {
     out.push(tag);
   }
   return out;
+}
+
+export function llmsFullTxt(
+  origin: string,
+  published: { slug: string; title: string; description: string; lede: string; markdown: string; faq: GuideFaq[]; updated_at: string }[],
+): string {
+  const base = origin.replace(/\/$/, '');
+  const parts = [
+    llmsTxt(
+      origin,
+      published.map((g) => ({ slug: g.slug, title: g.title, description: g.description })),
+    ).trimEnd(),
+    '',
+    '---',
+    '',
+    '# Corpo dos guias',
+    '',
+  ];
+  if (published.length === 0) {
+    parts.push('_Ainda não há guias publicados._', '');
+    return parts.join('\n');
+  }
+  for (const g of published) {
+    parts.push(renderGuideMarkdown(base, g).trimEnd(), '', '---', '');
+  }
+  return parts.join('\n');
+}
+
+export function parsePublicGuideParam(raw: string): { slug: string; format: 'html' | 'markdown' } {
+  const trimmed = raw.replace(/\.html$/i, '');
+  if (trimmed.toLowerCase().endsWith('.md')) {
+    return { slug: trimmed.slice(0, -3), format: 'markdown' };
+  }
+  return { slug: trimmed, format: 'html' };
+}
+
+export function renderGuideMarkdown(
+  origin: string,
+  guide: {
+    slug: string;
+    title: string;
+    description: string;
+    lede: string;
+    markdown: string;
+    faq: GuideFaq[];
+    updated_at?: string;
+  },
+): string {
+  const base = origin.replace(/\/$/, '');
+  const url = `${base}/guias/${guide.slug}`;
+  const faqBlock = guide.faq.length
+    ? `\n\n## Perguntas frequentes\n\n${guide.faq
+        .map((f) => `### ${f.question}\n\n${f.answer}`)
+        .join('\n\n')}`
+    : '';
+  const updated = guide.updated_at ? `\nupdated: ${yamlScalar(guide.updated_at)}` : '';
+  return `---
+title: ${yamlScalar(guide.title)}
+description: ${yamlScalar(guide.description)}
+canonical: ${yamlScalar(url)}
+language: pt-PT${updated}
+---
+
+# ${guide.title}
+
+${guide.lede}
+
+${guide.markdown.trim()}${faqBlock}
+`;
+}
+
+function yamlScalar(s: string): string {
+  if (
+    s === '' ||
+    /[\n#&*?|>%@`!]/.test(s) ||
+    /^- /.test(s) ||
+    s.includes(': ') ||
+    /^\d{4}-\d{2}-\d{2}T/.test(s)
+  ) {
+    return JSON.stringify(s);
+  }
+  return s;
+}
+
+export function socialMetaTags(opts: {
+  title: string;
+  description: string;
+  url: string;
+  type: 'website' | 'article';
+}): string {
+  return [
+    `<meta property="og:title" content="${escapeHtml(opts.title)}">`,
+    `<meta property="og:description" content="${escapeHtml(opts.description)}">`,
+    `<meta property="og:type" content="${opts.type}">`,
+    `<meta property="og:url" content="${escapeHtml(opts.url)}">`,
+    `<meta property="og:locale" content="pt_PT">`,
+    `<meta property="og:site_name" content="PrepBid">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escapeHtml(opts.title)}">`,
+    `<meta name="twitter:description" content="${escapeHtml(opts.description)}">`,
+  ].join('\n  ');
 }
 
 export function resolveGuideAgent(header: string | undefined, bodyAgent: string | undefined): GuideAgent | null {
@@ -565,18 +721,40 @@ ${s.items.map(guideCard).join('\n')}
   const empty = published.length === 0
     ? '    <p class="updated">Ainda não há guias publicados.</p>'
     : '';
+  const indexUrl = `${base}/guias`;
+  const indexTitle = 'Guias de concursos públicos — PrepBid';
+  const indexDesc =
+    'Respostas práticas sobre tipos de procedimento, filtrar concursos relevantes e estimar o valor de adjudicação. Sem reunião comercial.';
+  const collectionLd = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: indexTitle,
+    description: indexDesc,
+    inLanguage: 'pt-PT',
+    url: indexUrl,
+    isPartOf: { '@type': 'WebSite', name: 'PrepBid', url: `${base}/` },
+    mainEntity: {
+      '@type': 'ItemList',
+      itemListElement: published.map((g, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        url: `${base}/guias/${g.slug}`,
+        name: g.title,
+      })),
+    },
+  };
   return `<!doctype html>
-<html lang="pt">
+<html lang="pt-PT">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Guias de concursos públicos — PrepBid</title>
-  <meta name="description" content="Respostas práticas sobre tipos de procedimento, filtrar concursos relevantes e estimar o valor de adjudicação. Sem reunião comercial.">
-  <link rel="canonical" href="${escapeHtml(base)}/guias">
-  <meta property="og:title" content="Guias de concursos públicos — PrepBid">
-  <meta property="og:description" content="Respostas práticas sobre tipos de procedimento e como filtrar concursos relevantes para a sua empresa.">
-  <meta property="og:type" content="website">
+  <title>${escapeHtml(indexTitle)}</title>
+  <meta name="description" content="${escapeHtml(indexDesc)}">
+  <link rel="canonical" href="${escapeHtml(indexUrl)}">
+  <link rel="alternate" type="text/plain" href="${escapeHtml(base)}/llms.txt" title="Catálogo para LLMs">
+  ${socialMetaTags({ title: indexTitle, description: indexDesc, url: indexUrl, type: 'website' })}
   ${headChrome()}
+  <script type="application/ld+json">${safeJsonLd(collectionLd)}</script>
 </head>
 <body>
   ${navHtml('index')}
@@ -605,6 +783,7 @@ export function renderGuideArticleHtml(origin: string, guide: GuideRecord): stri
   const eyebrow = `Guias · ${intentLabel(guide.intent).toLowerCase()}`;
   const publishedLabel = formatPublishedAt(guide.published_at);
   const tagsHtml = guideTagsHtml(guide.tags);
+  const org = { '@type': 'Organization', name: 'Transformatiive, Lda.', url: `${base}/` };
   const articleLd = {
     '@context': 'https://schema.org',
     '@type': 'Article',
@@ -613,9 +792,10 @@ export function renderGuideArticleHtml(origin: string, guide: GuideRecord): stri
     inLanguage: 'pt-PT',
     datePublished: guide.published_at,
     dateModified: guide.updated_at,
-    author: { '@type': 'Organization', name: 'Transformatiive, Lda.' },
-    publisher: { '@type': 'Organization', name: 'Transformatiive, Lda.' },
+    author: org,
+    publisher: org,
     mainEntityOfPage: url,
+    url,
   };
   const faqLd = {
     '@context': 'https://schema.org',
@@ -625,6 +805,15 @@ export function renderGuideArticleHtml(origin: string, guide: GuideRecord): stri
       name: f.question,
       acceptedAnswer: { '@type': 'Answer', text: f.answer },
     })),
+  };
+  const breadcrumbLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Início', item: `${base}/` },
+      { '@type': 'ListItem', position: 2, name: 'Guias', item: `${base}/guias` },
+      { '@type': 'ListItem', position: 3, name: guide.title, item: url },
+    ],
   };
   const faqHtml = guide.faq.length
     ? `    <h2>Perguntas frequentes</h2>
@@ -638,19 +827,24 @@ ${guide.faq
     </dl>`
     : '';
   return `<!doctype html>
-<html lang="pt">
+<html lang="pt-PT">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${escapeHtml(guide.title)} — PrepBid</title>
   <meta name="description" content="${escapeHtml(guide.description)}">
   <link rel="canonical" href="${escapeHtml(url)}">
-  <meta property="og:title" content="${escapeHtml(guide.title)}">
-  <meta property="og:description" content="${escapeHtml(guide.description)}">
-  <meta property="og:type" content="article">
+  <link rel="alternate" type="text/markdown" href="${escapeHtml(url)}.md" title="Versão Markdown">
+  ${socialMetaTags({
+    title: `${guide.title} — PrepBid`,
+    description: guide.description,
+    url,
+    type: 'article',
+  })}
   ${headChrome()}
   <script type="application/ld+json">${safeJsonLd(articleLd)}</script>
   <script type="application/ld+json">${safeJsonLd(faqLd)}</script>
+  <script type="application/ld+json">${safeJsonLd(breadcrumbLd)}</script>
 </head>
 <body>
   ${navHtml('article')}
@@ -781,7 +975,7 @@ function safeJsonLd(obj: unknown): string {
 function inlineMarkdown(raw: string): string {
   const escaped = escapeHtml(raw);
   const withBold = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  const withEm = withBold.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  const withEm = withBold.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<span>$2</span>');
   return withEm.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_full, text: string, hrefRaw: string) => {
     const href = hrefRaw.replace(/&amp;/g, '&').trim();
     if (!isAllowedHref(href)) return text;
@@ -790,11 +984,14 @@ function inlineMarkdown(raw: string): string {
 }
 
 function headChrome(): string {
-  return `<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%20fill=%22none%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%228%22%20fill=%22%23173f35%22/%3E%3Cpath%20fill=%22%23e9f2ee%22%20d=%22M7.4%2011.15c0-1.05.85-1.9%201.9-1.9h3.55c.4%200%20.77.18%201.02.48l.85%201.04h8.04c1.05%200%201.9.85%201.9%201.9v10.55c0%201.05-.85%201.9-1.9%201.9H9.3c-1.05%200-1.9-.85-1.9-1.9V11.15z%22/%3E%3Cpath%20fill=%22%23b7d4c4%22%20d=%22M9.3%209.25h3.55l.78%201.02H9.3V9.25z%22/%3E%3Cpath%20stroke=%22%23173f35%22%20stroke-opacity=%22.22%22%20stroke-width=%221.35%22%20stroke-linecap=%22round%22%20d=%22M10.6%2015.15h6.1M10.6%2018h4.9%22/%3E%3Ccircle%20cx=%2221.15%22%20cy=%2219.25%22%20r=%224.55%22%20fill=%22%23173f35%22/%3E%3Cpath%20d=%22M19.15%2019.3l1.32%201.42%202.78-2.98%22%20stroke=%22%23e9f2ee%22%20stroke-width=%221.7%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+  const fonts = 'https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
+  return `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23141613'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/legal.css">`;
+  <link rel="preload" as="style" href="${fonts}">
+  <link rel="stylesheet" href="${fonts}" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="${fonts}"></noscript>
+  <link rel="stylesheet" href="/legal.css?v=3">`;
 }
 
 function navHtml(kind: 'index' | 'article'): string {
@@ -802,7 +999,7 @@ function navHtml(kind: 'index' | 'article'): string {
     ? '<a class="enter" href="/app/#/login">Entrar</a>'
     : '<a class="enter" href="/guias">Guias</a>';
   return `<div class="legal-nav"><div class="in">
-    <a class="brand" href="/"><span class="logo"><svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#173f35"/><path fill="#e9f2ee" d="M7.4 11.15c0-1.05.85-1.9 1.9-1.9h3.55c.4 0 .77.18 1.02.48l.85 1.04h8.04c1.05 0 1.9.85 1.9 1.9v10.55c0 1.05-.85 1.9-1.9 1.9H9.3c-1.05 0-1.9-.85-1.9-1.9V11.15z"/><path fill="#b7d4c4" d="M9.3 9.25h3.55l.78 1.02H9.3V9.25z"/><path stroke="#173f35" stroke-opacity=".22" stroke-width="1.35" stroke-linecap="round" d="M10.6 15.15h6.1M10.6 18h4.9"/><circle cx="21.15" cy="19.25" r="4.55" fill="#173f35"/><path d="M19.15 19.3l1.32 1.42 2.78-2.98" stroke="#e9f2ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="wm-type">Prep<em>Bid</em></span></a>
+    <a class="brand pb-lockup" href="/"><span class="pb-wordmark">PrepBid</span><span class="brand-rule" aria-hidden="true"></span><span class="pb-lockup-tag">Contratos<br>públicos</span></a>
     <div class="nav-cta">${enter}<a class="start" href="/app/#/registo">Começar grátis</a></div>
   </div></div>`;
 }

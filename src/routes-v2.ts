@@ -16,6 +16,8 @@ import { overlayHabilitacao } from './habilitacao.js';
 import { mergeCpvHints, refineActivityTerms } from './cpv-hints.js';
 import { announcementDistrictSql } from './districts.js';
 import { Plan } from './plans.js';
+import { buildDossierDocx, DOCX_CONTENT_TYPE } from './docx-lite.js';
+import { dossierFileName, recallDossier, rememberDossier } from './dossier-cache.js';
 
 /**
  * Rotas v2: perfis de pesquisa, anúncios e insights comerciais
@@ -233,7 +235,31 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query('SELECT * FROM opendata_imports ORDER BY year DESC, created_at DESC');
     const { rows: [tot] } = await pool.query(
       `SELECT count(*) AS n FROM contracts WHERE opendata_imported`);
-    return { total_opendata_contracts: Number(tot.n), items: rows };
+    const { rows: [sync] } = await pool.query('SELECT last_check_at, last_error FROM opendata_sync WHERE id = 1');
+    const { rows: [harvest] } = await pool.query(
+      `SELECT last_check_at, last_ok_at, last_error, pages_fetched, upserted, details_fetched
+         FROM announcement_sync WHERE id = 1`,
+    );
+    const nowYear = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon', year: 'numeric' }).format(new Date()));
+    return {
+      total_opendata_contracts: Number(tot.n),
+      items: rows,
+      sync: {
+        last_check_at: sync?.last_check_at ?? null,
+        last_error: sync?.last_error ?? null,
+        auto_years: [nowYear - 1, nowYear],
+      },
+      announcements: harvest
+        ? {
+            last_check_at: harvest.last_check_at ?? null,
+            last_ok_at: harvest.last_ok_at ?? null,
+            last_error: harvest.last_error ?? null,
+            pages_fetched: harvest.pages_fetched ?? 0,
+            upserted: harvest.upserted ?? 0,
+            details_fetched: harvest.details_fetched ?? 0,
+          }
+        : null,
+    };
   });
 
   app.post('/api/opendata/import', { preHandler: requireAuth }, async (req, reply) => {
@@ -250,7 +276,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         `SELECT 1 FROM opendata_imports WHERE year = $1 AND status IN ('pending','running')`, [year]);
       if (dup.length > 0) continue;
       const { rows } = await pool.query(
-        'INSERT INTO opendata_imports (year) VALUES ($1) RETURNING id', [year]);
+        `INSERT INTO opendata_imports (year, origin) VALUES ($1, 'manual') RETURNING id`, [year]);
       created.push(rows[0].id);
     }
     return reply.code(201).send({ created });
@@ -322,10 +348,35 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       const r = await responseTemplate(id, profileId);
       const { companyId, userId } = auth(req);
       await recordUsage({ companyId, userId, kind: 'dossier', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
-      return { markdown: r.markdown, model: r.model };
+      const { rows: anns } = await pool.query('SELECT contract_designation FROM announcements WHERE id = $1', [id]);
+      const fileName = dossierFileName(id);
+      const buf = buildDossierDocx(r.markdown, anns[0]?.contract_designation);
+      rememberDossier(userId ?? 0, id, buf, fileName);
+      return {
+        file_name: fileName,
+        download_url: `/api/announcements/${id}/response-template.docx`,
+        model: r.model,
+      };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
+  });
+
+  app.get('/api/announcements/:id/response-template.docx', { preHandler: [requireAuth, requirePlan('analise_ia')] }, async (req, reply) => {
+    const { userId } = auth(req);
+    const id = Number((req.params as { id: string }).id);
+    const hit = recallDossier(userId ?? 0, id);
+    if (!hit) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: 'O ficheiro já não está disponível. Clique outra vez em Gerar dossier de resposta.' },
+      });
+    }
+    return reply
+      .header('Content-Type', DOCX_CONTENT_TYPE)
+      .header('Content-Disposition', `attachment; filename="${hit.fileName}"`)
+      .header('Cache-Control', 'no-store')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(hit.buf);
   });
 
   app.post('/api/profiles/:id/fit-scores', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {

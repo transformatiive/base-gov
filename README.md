@@ -62,9 +62,13 @@ O schema é criado automaticamente no arranque e o utilizador `admin`/`admin123`
 | `CLOUDFLARE_API_TOKEN` | vazio | Token com Email Sending: Edit (digest, lembretes, convites) |
 | `RESEND_API_KEY` | vazio | Fallback legado se Cloudflare ainda não estiver configurado |
 | `MAIL_FROM` | vazio | Remetente, ex. `PrepBid <noreply@prepbid.com>` |
-| `SUPPORT_EMAIL` | vazio | Destino dos pedidos de ajuda e destino de reencaminhamento |
+| `SUPPORT_EMAIL` | vazio | Reply-To dos emails transaccionais e destino dos pedidos de ajuda. Usar `info@transformatiive.com` |
 
-O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`. Para comprar `prepbid.com` e activar Email Routing: `node scripts/setup-concursivo-cloudflare.mjs --register`.
+O digest de segunda-feira (08:00 Lisboa) e os restantes emails transacionais saem por `POST /accounts/{id}/email/sending/send`.
+
+**Email Sending (saída).** No dashboard Cloudflare: Compute → Email Service → Email Sending → Onboard `prepbid.com`. Token com permissão **Email Sending: Edit**. Na Railway: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `MAIL_FROM="PrepBid <noreply@prepbid.com>"`.
+
+**Email Routing (entrada).** Catch-all de `@prepbid.com` (`info@`, `suporte@`, `privacidade@`, …) para `info@transformatiive.com`. Para reaplicar regras: `MAIL_FORWARD_TO=info@transformatiive.com node scripts/setup-concursivo-cloudflare.mjs --route`.
 
 ### Pagamentos (Stripe) e faturação (Moloni)
 

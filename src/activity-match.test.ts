@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  aiProgressMessage,
   aiProgressPct,
   aiProgressStepIndex,
   isGenericHealthQuery,
@@ -42,5 +43,14 @@ test('progresso IA: último passo só depois de ~24 s', () => {
   assert.equal(aiProgressStepIndex(17, 5), 3);
   assert.equal(aiProgressStepIndex(25, 5), 4);
   assert.ok(aiProgressPct(0) < 20);
-  assert.ok(aiProgressPct(60) <= 88);
+  assert.ok(aiProgressPct(40) < aiProgressPct(70));
+  assert.ok(aiProgressPct(60) <= 94);
+});
+
+test('progresso IA: depois do último passo, a cada 4 s avisa que continua', () => {
+  const steps = ['um', 'dois', 'três', 'quatro', 'cinco'];
+  assert.equal(aiProgressMessage(steps, 2), 'um');
+  assert.equal(aiProgressMessage(steps, 25), 'cinco');
+  assert.match(aiProgressMessage(steps, 30), /não ficou preso|cerca de um minuto|aguarde mais/);
+  assert.notEqual(aiProgressMessage(steps, 30), aiProgressMessage(steps, 34));
 });

@@ -19,7 +19,7 @@ export const config = {
   // URL público da app (Checkout success/cancel e webhook). APP_URL é o contrato;
   // APP_BASE_URL mantém-se como fallback para instalações Railway já configuradas.
   appBaseUrl: (process.env.APP_URL || process.env.APP_BASE_URL || '').replace(/\/$/, ''),
-  supportEmail: process.env.SUPPORT_EMAIL || '',  // destino dos pedidos de ajuda (envio a implementar)
+  supportEmail: process.env.SUPPORT_EMAIL || '',  // inbox real; @prepbid.com chega aqui via Email Routing
 
   // Planos de subscrição (free | pro | business). Fonte de verdade do gating.
   // capability → plano mínimo; seats/tetos/preços por plano; teto de IA.
@@ -87,7 +87,7 @@ export const config = {
     cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
     from: process.env.MAIL_FROM || '',            // ex.: "PrepBid <noreply@prepbid.com>"
-    supportEmail: process.env.SUPPORT_EMAIL || '',
+    supportEmail: process.env.SUPPORT_EMAIL || '', // Reply-To; inbox real (ex. info@transformatiive.com)
   },
 
   // Digest segunda-feira a esta hora (Europa/Lisboa). Lembretes 7/2 dias no mesmo tick.

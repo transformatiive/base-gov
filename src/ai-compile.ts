@@ -1,3 +1,5 @@
+import { sanitizeChecklist } from './ai-checklist.js';
+
 export type TokenUsage = { tokens_in: number; tokens_out: number };
 
 function asObj(v: unknown): Record<string, unknown> {
@@ -67,8 +69,12 @@ export function compileAnalysisParts(fichaRaw: unknown, requisitosRaw: unknown, 
     preco_base: asStr(ficha.preco_base, 'n/d'),
     caucao_garantias: asStr(ficha.caucao_garantias, 'n/d'),
     requisitos_habilitacao: asStrList(requisitos.requisitos_habilitacao),
-    red_flags: asStrList(requisitos.red_flags),
-    checklist: asStrList(requisitos.checklist),
+    red_flags: sanitizeChecklist(requisitos.red_flags, 12),
+    especificacoes_tecnicas: asStrList(requisitos.especificacoes_tecnicas),
+    checklist: sanitizeChecklist(requisitos.checklist),
+    adjudicatario: asStr(ficha.adjudicatario),
+    janela_renovacao: asStr(ficha.janela_renovacao),
+    precos_referencia: asStr(ficha.precos_referencia),
     go_no_go: {
       recomendacao: asGo(go.recomendacao),
       justificacao: asStr(go.justificacao),

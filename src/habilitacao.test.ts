@@ -60,3 +60,18 @@ test('overlay normaliza fit 0,65 para 65 e não o deixa em 1', () => {
   ) as { fit_atividade: { score: number } };
   assert.equal(over.fit_atividade.score, 65);
 });
+
+test('overlay junta certidões em falta na checklist e tira homework', () => {
+  const over = overlayHabilitacao(
+    {
+      requisitos_habilitacao: ['Alvará classe 4'],
+      checklist: ['Ler o caderno de encargos', 'Contactar a entidade'],
+      go_no_go: { recomendacao: 'go' },
+      red_flags: [],
+    },
+    ['ISO 9001'],
+  ) as { checklist: string[] };
+  assert.ok(over.checklist.includes('Contactar a entidade'));
+  assert.ok(over.checklist.includes('Juntar evidência de: Alvará classe 4'));
+  assert.ok(!over.checklist.some((s) => /caderno/i.test(s)));
+});
