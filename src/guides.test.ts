@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   GUIDE_SEED,
+  GUIDE_AGENT_SPEC,
   parseGuidePayload,
+  parseGuideTags,
   markdownToHtml,
   publicSiteOrigin,
   robotsTxt,
@@ -10,6 +12,7 @@ import {
   renderGuideIndexHtml,
   renderGuideArticleHtml,
   resolveGuideAgent,
+  formatPublishedAt,
   PUBLIC_SITE_FALLBACK,
   type GuideRecord,
 } from './guides.js';
@@ -28,6 +31,7 @@ test('parseGuidePayload exige slug, título, descrição, lead e markdown com H2
     assert.equal(ok.value.slug, 'ajuste-direto-e-concurso-publico');
     assert.equal(ok.value.intent, 'informativa');
     assert.equal(ok.value.status, 'draft');
+    assert.deepEqual(ok.value.tags, []);
   }
 });
 
@@ -102,6 +106,7 @@ const sample: GuideRecord = {
   markdown: '## Porque o preço base engana?\n\nÉ o teto, não o mercado.\n\n## Qual é o método?\n\nHistórico de 24 meses no mesmo CPV.',
   body_html: '<h2>Porque o preço base engana?</h2><p>É o teto, não o mercado.</p>',
   faq: [{ question: 'Isto substitui a proposta?', answer: 'Não. É uma estimativa estatística com dados públicos.' }],
+  tags: ['preco', 'historico', 'adjudicacao'],
   status: 'published',
   published_at: '2026-09-08T12:00:00.000Z',
   updated_at: '2026-09-08T12:00:00.000Z',
@@ -116,6 +121,10 @@ test('HTML público responde na primeira frase e inclui JSON-LD FAQ', () => {
   assert.match(page, /O valor adjudicado costuma ficar abaixo/);
   assert.match(page, /Começar grátis/);
   assert.match(page, /href="\/app\/#\/registo"/);
+  assert.match(page, /Publicado em 8 de setembro de 2026/);
+  assert.match(page, /class="guide-tag">preco</);
+  assert.match(page, /class="guide-tag">historico</);
+  assert.match(page, /"datePublished":"2026-09-08T12:00:00.000Z"/);
   assert.doesNotMatch(page, /<script src=/);
 });
 
@@ -127,6 +136,8 @@ test('índice agrupa por intenção e omite rascunhos', () => {
   assert.match(html, /como-prever-o-valor-de-adjudicacao/);
   assert.doesNotMatch(html, /rascunho/);
   assert.match(html, /Ferramenta/);
+  assert.match(html, /Publicado em 8 de setembro de 2026/);
+  assert.match(html, /class="guide-tag">preco</);
 });
 
 test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov', () => {
@@ -135,7 +146,86 @@ test('cada artigo do seed passa a validação SEO e não aponta para o BASE.gov'
     assert.equal(parsed.ok, true, parsed.ok ? seed.slug : parsed.error);
     assert.doesNotMatch(seed.markdown, /o-que-e-o-base-gov/);
     assert.ok(countH2ForTest(seed.markdown) >= 2);
+    if (parsed.ok) {
+      assert.ok(parsed.value.tags.length >= 1);
+      assert.ok(parsed.value.tags.length <= 5);
+    }
   }
+});
+
+test('parseGuideTags aceita 0–5 kebab ASCII e recusa o resto', () => {
+  assert.deepEqual(parseGuideTags(undefined), []);
+  assert.deepEqual(parseGuideTags(null), []);
+  assert.deepEqual(parseGuideTags(['cpv', 'radar']), ['cpv', 'radar']);
+  assert.equal(parseGuideTags(['CPV']), null);
+  assert.equal(parseGuideTags(['com espaço']), null);
+  assert.equal(parseGuideTags(['ok', 'ok']), null);
+  assert.equal(parseGuideTags(['a', 'b', 'c', 'd', 'e', 'f']), null);
+  const parsed = parseGuidePayload('um-guia-com-tags', {
+    title: 'Título suficientemente longo para passar',
+    description: 'Descrição com mais de oitenta caracteres para a meta description de motores de busca e de LLMs.',
+    lede: 'Resposta directa à pergunta do título com facto verificável.',
+    intent: 'informativa',
+    markdown: '## Uma pergunta?\n\nTexto.\n\n## Outra pergunta?\n\nTexto.',
+    tags: ['habilitacao', 'alvara', 'empreitadas'],
+  });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) assert.deepEqual(parsed.value.tags, ['habilitacao', 'alvara', 'empreitadas']);
+  const bad = parseGuidePayload('um-guia-com-tags', {
+    title: 'Título suficientemente longo para passar',
+    description: 'Descrição com mais de oitenta caracteres para a meta description de motores de busca e de LLMs.',
+    lede: 'Resposta directa à pergunta do título com facto verificável.',
+    intent: 'informativa',
+    markdown: '## Uma pergunta?\n\nTexto.\n\n## Outra pergunta?\n\nTexto.',
+    tags: ['Não-ASCII'],
+  });
+  assert.equal(bad.ok, false);
+});
+
+test('formatPublishedAt usa pt-PT e omite data em falta', () => {
+  assert.equal(formatPublishedAt('2026-09-08T12:00:00.000Z'), 'Publicado em 8 de setembro de 2026');
+  assert.equal(formatPublishedAt(null), null);
+  const undated = renderGuideArticleHtml('https://baseradar.example', { ...sample, published_at: null, tags: [] });
+  assert.doesNotMatch(undated, /Publicado em/);
+  assert.doesNotMatch(undated, /class="guide-tag"/);
+  assert.match(undated, /"datePublished":null/);
+});
+
+test('GUIDE_AGENT_SPEC exige framing PrepBid, tags e regras SEO+LLM', () => {
+  assert.match(GUIDE_AGENT_SPEC.purpose, /PrepBid/);
+  assert.match(GUIDE_AGENT_SPEC.framing.product, /radar/);
+  assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /corpus/);
+  assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => n.includes('o-que-e-o-base-gov')));
+  assert.match(GUIDE_AGENT_SPEC.payload.tags, /kebab/);
+  assert.match(GUIDE_AGENT_SPEC.editorial.lede, /primeira resposta/);
+  assert.equal(GUIDE_AGENT_SPEC.seo.answerFirst, true);
+  assert.equal(GUIDE_AGENT_SPEC.seo.dateFromPublishedAt, true);
+  assert.match(GUIDE_AGENT_SPEC.payload.published_at, /não enviar/);
+});
+
+test('reescritas publicadas passam parse, tags e framing PrepBid', async () => {
+  const { GUIDES } = await import('../scripts/rewrite-guides.mjs');
+  assert.equal(GUIDES.length, 33);
+  const slugs = new Set();
+  for (const g of GUIDES) {
+    slugs.add(g.slug);
+    const parsed = parseGuidePayload(g.slug, { ...g, status: 'published' });
+    assert.equal(parsed.ok, true, parsed.ok ? g.slug : `${g.slug}: ${parsed.error}`);
+    if (parsed.ok) {
+      assert.ok(parsed.value.tags.length >= 1 && parsed.value.tags.length <= 5, g.slug);
+    }
+    assert.notEqual(g.slug, 'o-que-e-o-base-gov');
+    assert.doesNotMatch(g.markdown, /o-que-e-o-base-gov/);
+    assert.doesNotMatch(g.markdown, /vá a base\.gov\.pt/i);
+    assert.doesNotMatch(g.markdown, /filtre no Portal BASE/i);
+    assert.match(`${g.lede}\n${g.markdown}`, /PrepBid/);
+    const h2s = g.markdown.split('\n').filter((line) => line.startsWith('## '));
+    assert.ok(h2s.length >= 2, g.slug);
+    for (const h of h2s) {
+      assert.match(h, /\?$/, `${g.slug}: ${h}`);
+    }
+  }
+  assert.equal(slugs.size, 33);
 });
 
 function countH2ForTest(markdown: string): number {

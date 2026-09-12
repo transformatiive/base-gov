@@ -116,3 +116,10 @@ Exemplo de integração externa:
 curl -H "X-API-Key: $APP_API_KEY" https://<host>/api/searches/1/full
 curl -H "X-API-Key: $APP_API_KEY" -OJ https://<host>/api/documents/12/content
 ```
+
+Guias públicos (PUT autenticado; **não** envia `published_at` — a data fica na BD):
+
+```bash
+APP_API_KEY=… ORIGIN=https://prepbid.com AGENT=claude node scripts/rewrite-guides.mjs
+node scripts/rewrite-guides.mjs --dry-run   # valida os 33 payloads sem publicar
+```

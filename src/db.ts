@@ -550,6 +550,7 @@ CREATE TABLE IF NOT EXISTS guide_articles (
   markdown      TEXT NOT NULL,
   body_html     TEXT NOT NULL,
   faq           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags          TEXT[] NOT NULL DEFAULT '{}',
   status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
   published_at  TIMESTAMPTZ,
   author_agent  TEXT NOT NULL DEFAULT 'human' CHECK (author_agent IN ('claude','grok','grok-bot','human')),
@@ -557,6 +558,7 @@ CREATE TABLE IF NOT EXISTS guide_articles (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_guide_articles_status ON guide_articles (status, published_at DESC);
+ALTER TABLE guide_articles ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 
 -- Utilização do produto (páginas, módulos, acções, origem). Sem IP.
 CREATE TABLE IF NOT EXISTS usage_events (
@@ -654,8 +656,8 @@ export async function seedGuides(): Promise<void> {
     const html = markdownToHtml(parsed.value.markdown);
     const ins = await pool.query(
       `INSERT INTO guide_articles
-         (slug, title, description, lede, intent, markdown, body_html, faq, status, published_at, author_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'published', now(), 'human')
+         (slug, title, description, lede, intent, markdown, body_html, faq, tags, status, published_at, author_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'published', now(), 'human')
        ON CONFLICT (slug) DO NOTHING
        RETURNING slug`,
       [
@@ -667,6 +669,7 @@ export async function seedGuides(): Promise<void> {
         parsed.value.markdown,
         html,
         JSON.stringify(parsed.value.faq),
+        parsed.value.tags,
       ],
     );
     if (ins.rowCount) console.log(`[seed] guia publicado: ${parsed.value.slug}`);
