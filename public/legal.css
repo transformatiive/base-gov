@@ -50,6 +50,11 @@ em, i{font-style:normal}
 .guide-card .k{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--tint-text);margin:0 0 6px}
 .guide-card h2{margin:0 0 6px;font-size:17px;border:0;padding:0;letter-spacing:-0.015em}
 .guide-card p{margin:0;font-size:14px;color:var(--ink2)}
+.guide-card .guide-published{margin:8px 0 0;font-size:12px;color:var(--muted)}
+.guide-published{color:var(--muted);font-size:13.5px;margin:4px 0 10px}
+.guide-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.guide-tag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.02em;padding:3px 9px;border-radius:99px;background:var(--tint);color:var(--tint-text);border:1px solid var(--tint-border)}
+.guide-card .guide-tags{margin:10px 0 0}
 .guide-cta{background:var(--brand);color:var(--pb-green-light);border-radius:var(--pb-radius);padding:18px 20px;margin:36px 0 8px}
 .guide-cta h2{color:var(--pb-paper);border:0;padding:0;margin:0 0 8px;font-size:18px}
 .guide-cta p{color:var(--pb-green-light);margin:0 0 14px;font-size:14.5px}

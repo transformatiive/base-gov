@@ -19,6 +19,7 @@ export interface GuidePayload {
   intent: GuideIntent;
   markdown: string;
   faq: GuideFaq[];
+  tags: string[];
   status: GuideStatus;
 }
 
@@ -35,6 +36,8 @@ export type ParseGuideResult =
   | { ok: false; error: string };
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_GUIDE_TAGS = 5;
 const AGENTS: GuideAgent[] = ['claude', 'grok', 'grok-bot', 'human'];
 
 export interface GuideSeed {
@@ -45,12 +48,14 @@ export interface GuideSeed {
   intent: GuideIntent;
   markdown: string;
   faq: GuideFaq[];
+  tags?: string[];
 }
 
 export const GUIDE_SEED: GuideSeed[] = [
   {
     slug: 'ajuste-direto-e-concurso-publico',
     title: 'Ajuste direto e concurso público: a diferença na prática',
+    tags: ['ajuste-direto', 'concurso-publico', 'ccp'],
     description:
       'Quando a entidade pode adjudicar sem concurso aberto e o que muda para quem quer apresentar proposta em Portugal: concurso público, consulta prévia e ajuste direto.',
     lede:
@@ -58,7 +63,7 @@ export const GUIDE_SEED: GuideSeed[] = [
     intent: 'informativa',
     markdown: `## O que distingue os dois?
 
-O tipo de procedimento no anúncio do Diário da República e no Portal BASE determina se a sua empresa sequer pode concorrer. No **concurso público** (e equivalentes abertos) qualquer operador que cumpra o programa apresenta proposta. No **ajuste direto** a entidade escolhe um operador, sem abertura geral. Entre os dois existe a **consulta prévia**: convite a vários operadores, ainda sem anúncio aberto a todos.
+O tipo de procedimento no anúncio do Diário da República determina se a sua empresa sequer pode concorrer. No **concurso público** (e equivalentes abertos) qualquer operador que cumpra o programa apresenta proposta. No **ajuste direto** a entidade escolhe um operador, sem abertura geral. Entre os dois existe a **consulta prévia**: convite a vários operadores, ainda sem anúncio aberto a todos.
 
 ## Porque a entidade escolhe um tipo e não outro?
 
@@ -66,9 +71,9 @@ O Código dos Contratos Públicos fixa limiares de valor e regras de fundamenta�
 
 - **Concurso público:** qualquer operador que cumpra os requisitos. O anúncio é o convite; há prazo, peças e critérios publicados.
 - **Consulta prévia:** só os convidados (em regra, pelo menos três). Se não foi convidado, não concorre a este procedimento.
-- **Ajuste direto:** o operador escolhido pela entidade. Não há fase pública de propostas; o contrato aparece depois no BASE, com valor e fundamentação.
+- **Ajuste direto:** o operador escolhido pela entidade. Não há fase pública de propostas; o contrato aparece depois na ficha do PrepBid, com valor e fundamentação.
 
-Há exceções (urgência, exclusividade técnica, contratos de muito baixo valor, acordos-quadro). O campo «fundamentação» no contrato do BASE é o sítio onde a entidade justifica o ajuste direto — vale a pena lê-lo quando está a estudar um comprador.
+Há exceções (urgência, exclusividade técnica, contratos de muito baixo valor, acordos-quadro). A fundamentação do ajuste direto está no contrato publicado no corpus público — no PrepBid lê-se na ficha da entidade e do contrato.
 
 ## O que muda na proposta?
 
@@ -79,13 +84,13 @@ Os **acordos-quadro** são um caso à parte: o concurso inicial é aberto (ou re
 
 ## Como usar o histórico para não chegar tarde?
 
-Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto — quando o valor ou a regra o obrigar — vai provavelmente ao mesmo objeto. Um radar de renovações não adivinha o tipo de procedimento futuro; estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair.
+Se uma câmara faz ajuste direto repetido no mesmo CPV, o próximo procedimento aberto — quando o valor ou a regra o obrigar — vai provavelmente ao mesmo objeto. No **PrepBid**, o radar de renovações não adivinha o tipo de procedimento futuro; estima **quando** o contrato em curso acaba, para contactar a entidade **antes** de o anúncio sair.
 
 Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto explica a lógica; não substitui o jurista da proposta.`,
     faq: [
       {
         question: 'Posso concorrer a um ajuste direto sem convite?',
-        answer: 'Não. Só o operador convidado apresenta proposta. O contrato aparece depois no Portal BASE, já adjudicado.',
+        answer: 'Não. Só o operador convidado apresenta proposta. O contrato aparece depois na ficha do PrepBid, já adjudicado.',
       },
       {
         question: 'Qual é a diferença entre consulta prévia e concurso público?',
@@ -94,27 +99,29 @@ Os limiares legais mudam. Confirme o CCP em vigor e o anúncio concreto. Isto ex
       },
       {
         question: 'Onde vejo o tipo de procedimento?',
-        answer: 'No anúncio do Diário da República e na ficha do procedimento no Portal BASE. É esse campo que diz se ainda está a tempo de concorrer.',
+        answer:
+          'No PrepBid, na ficha do concurso e no radar. É esse campo que diz se ainda está a tempo de concorrer.',
       },
     ],
   },
   {
     slug: 'como-saber-quais-concursos-sao-relevantes',
     title: 'Como saber quais concursos públicos são relevantes para a sua empresa',
+    tags: ['radar', 'perfil', 'cpv'],
     description:
-      'Filtrar o ruído do Portal BASE com CPV, distritos, valor e o histórico de contratos que se repetem — em vez de abrir o portal todas as manhãs.',
+      'No PrepBid, filtrar concursos relevantes com CPV, distritos, valor e o histórico que se repete — no perfil e no radar.',
     lede:
-      'Um concurso é relevante quando coincide com o que faz, onde executa, o valor em que consegue habilitar-se — e quando ainda há prazo.',
+      'Um concurso é relevante quando coincide com o que faz, onde executa, o valor em que consegue habilitar-se — e quando ainda há prazo. No PrepBid isso fica no perfil e no radar.',
     intent: 'comercial',
     markdown: `## Porque as palavras no título não bastam?
 
-Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. Isto aplica-se a empreitadas, energia e saúde — os objectos em que o PrepBid se foca — não a um dump nacional de limpezas e papelaria.
+Palavras como «obras» ou «serviços» misturam objectos diferentes. O **CPV**, o **distrito**, o **preço base** e o **histórico da entidade** filtram melhor do que texto livre. No **PrepBid** esses cortes ficam no perfil da empresa e aplicam-se ao radar. Isto aplica-se a empreitadas, energia e saúde, não a um dump nacional de limpezas e papelaria.
 
 ## Como começar pelo CPV?
 
 O Vocabulário Comum para Contratos Públicos (CPV) é o código de oito dígitos do objeto. Uma reabilitação de cobertura e um fornecimento de lâmpadas podem ter títulos parecidos e CPV diferentes.
 
-- Guarde os códigos em que já foi adjudicatário (estão nos contratos do BASE, no seu NIF).
+- Guarde os códigos em que já foi adjudicatário (estão nos contratos públicos, no seu NIF).
 - Acrescente a divisão (2 dígitos) e a classe (4 dígitos) da atividade principal — muita entidade classifica mal o código de 8 dígitos.
 - Não use só a palavra «construção»: empreitadas de especialidades, reabilitação municipal e espaços verdes misturam-se no texto e não na sua carteira.
 
@@ -124,7 +131,7 @@ Uma construtora de classe média no Centro não precisa da lista nacional comple
 
 ## Porque olhar para o que se repete, não só para o que abriu hoje?
 
-Grande parte do negócio público é o mesmo objeto, a mesma entidade, daqui a um, dois ou três anos. O contrato em curso tem data de assinatura e prazo de execução no BASE; a janela de contacto útil é cerca de quatro meses antes do fim estimado. Quando o anúncio sai no DR, o incumbente já está a trabalhar a proposta.
+Grande parte do negócio público é o mesmo objeto, a mesma entidade, daqui a um, dois ou três anos. O contrato em curso tem data de assinatura e prazo de execução na ficha do PrepBid; a janela de contacto útil é cerca de quatro meses antes do fim estimado. Quando o anúncio sai no DR, o incumbente já está a trabalhar a proposta.
 
 ## Quando a habilitação mata o concurso?
 
@@ -138,9 +145,9 @@ O ecrã útil é «o que agir esta semana» — prazo a menos de 30 dias, e as l
           'Comece pelo CPV da atividade, corte distritos e intervalo de valor alinhados com o alvará, e cruze com o histórico da entidade. Palavras no título não bastam.',
       },
       {
-        question: 'O Portal BASE já faz este filtro?',
+        question: 'Onde filtro concursos todas as manhãs?',
         answer:
-          'Não. O portal lista o que foi publicado. Não cruza o seu alvará, a geografia da empresa nem os contratos que se repetem daqui a um ou dois anos.',
+          'No perfil e no radar do PrepBid (CPV, distritos, valor, prazo). A lista útil é «agir esta semana».',
       },
       {
         question: 'Quando um concurso deixa de ser relevante?',
@@ -152,10 +159,11 @@ O ecrã útil é «o que agir esta semana» — prazo a menos de 30 dias, e as l
   {
     slug: 'como-prever-o-valor-de-adjudicacao',
     title: 'Como prever o valor de adjudicação de um concurso público',
+    tags: ['preco', 'historico', 'adjudicacao'],
     description:
-      'O preço base raramente é o valor adjudicado. Intervalo a partir do histórico do mesmo CPV no Portal BASE, sem fingir uma percentagem de confiança de modelo.',
+      'O preço base raramente é o valor adjudicado. No PrepBid o intervalo sai do histórico do mesmo CPV, sem fingir uma percentagem de confiança de modelo.',
     lede:
-      'O valor adjudicado costuma ficar abaixo do preço base; estima-se com rácios de concursos comparáveis.',
+      'O valor adjudicado costuma ficar abaixo do preço base; no PrepBid estima-se com rácios de concursos comparáveis do corpus público.',
     intent: 'comercial',
     markdown: `## Porque o preço base engana?
 
@@ -163,7 +171,7 @@ O preço base é o teto do procedimento, não o preço de mercado. Em empreitada
 
 ## Qual é o método?
 
-A forma honesta de estimar o fecho é olhar para concursos comparáveis já publicados no Portal BASE — mesmo CPV, de preferência a mesma entidade — e ver o rácio entre o preço adjudicado e o preço base da altura.
+A forma honesta de estimar o fecho é olhar para concursos comparáveis já publicados no corpus público — mesmo CPV, de preferência a mesma entidade — e ver o rácio entre o preço adjudicado e o preço base da altura. No PrepBid (plano Business) essa estimativa aparece na ficha.
 
 1. Recolhe contratos comparáveis dos últimos 24 meses no mesmo CPV, alargando 8→4→2 dígitos só se a amostra for curta.
 2. Prefere o rácio *adjudicado / preço base histórico* quando o anúncio original ainda está no corpus; senão, escala o adjudicado contra o preço base atual, deitando fora rácios absurdos (fora de cerca de 0,2–1,15).
@@ -177,7 +185,7 @@ O PrepBid não apresenta uma «percentagem de confiança» de machine learning.
 
 - Não é o preço a escrever na proposta. Critérios de qualidade, erros de CPV e procedimentos sem histórico válido partem o padrão.
 - Não substitui a memória descritiva nem o mapa de quantidades.
-- Não usa dados privados de outras empresas: só o que o BASE já tornou público.
+- Não usa dados privados de outras empresas: só o que já é público.
 
 ## Como usar o intervalo na decisão go / no-go?
 
@@ -206,8 +214,30 @@ Estimativa estatística com dados públicos. Confirme sempre as peças e a sua p
 export const GUIDE_AGENT_SPEC = {
   name: 'PrepBid guias',
   purpose:
-    'Publicar e actualizar guias públicos em português (pt-PT) sobre contratação pública. Não é um blog. Copy para motores de busca e para LLMs: resposta na primeira frase, H2 em forma de pergunta, FAQ factual.',
+    'Publicar e actualizar guias públicos em português (pt-PT) sobre contratação pública, úteis para quem precisa do PrepBid (perfil, radar, carteira, «agir esta semana»). Não é um blog. Copy para motores de busca e para LLMs: resposta na primeira frase, H2 em forma de pergunta, FAQ factual.',
   language: 'pt-PT',
+  framing: {
+    product:
+      'O PrepBid é o sítio onde a empresa filtra, vê o radar, edita o perfil, gere a carteira e age esta semana. Escreva sempre nessa voz.',
+    dataSources:
+      'Fontes públicas oficiais (ex.: Diário da República) são pano de fundo, não o produto. O leitor age só no PrepBid.',
+    never: [
+      'Não escreva Portal BASE, base.gov.pt nem «BASE / radar» no copy do leitor (título, lede, description, markdown, FAQ, tags visíveis).',
+      'Não diga ao leitor para filtrar, pesquisar, seguir ou acompanhar fora do PrepBid.',
+      'Não use o slug reservado o-que-e-o-base-gov.',
+      'Não invente nem envie published_at no PUT — a data fica na BD e só se mostra na UI quando existir.',
+    ],
+  },
+  editorial: {
+    title: 'Título forte para SEO e para LLMs: pergunta ou afirmação concreta (≥12 caracteres).',
+    lede: 'Tagline / primeira resposta: um parágrafo factual que responde já à intenção de pesquisa.',
+    description: 'Meta description ≥80 caracteres, citável por LLMs, sem clickbait.',
+    markdown:
+      'Corpo com arco claro (problema → o que fazer → como o PrepBid ajuda). ≥2 headings ## em forma de pergunta. Ligações só https:// ou /caminho.',
+    usefulness:
+      'Explique como o perfil, o radar ou a carteira do PrepBid ajudam nesta decisão. Fontes oficiais são contexto, não o produto.',
+    tags: '0 a 5 tags kebab-case ASCII (ex.: cpv, radar, habilitacao). Temas, não slogans.',
+  },
   auth: {
     header: 'X-API-Key',
     agentHeader: 'X-Agent',
@@ -224,14 +254,16 @@ export const GUIDE_AGENT_SPEC = {
     remove: { method: 'DELETE', path: '/api/agent/guides/:slug' },
   },
   payload: {
-    title: 'string, ≥12 caracteres',
-    description: 'meta description, ≥80 caracteres',
-    lede: 'primeira resposta, um parágrafo factual',
+    title: 'string, ≥12 caracteres; forte para SEO e LLMs',
+    description: 'meta description, ≥80 caracteres, citável',
+    lede: 'tagline / primeira resposta, um parágrafo factual',
     intent: 'informativa | comercial',
     markdown: 'corpo com ≥2 headings ## em forma de pergunta; ligações só https:// ou /caminho',
     faq: '[{ question, answer }, ...] — usado em JSON-LD FAQPage',
+    tags: '0 a 5 tags kebab-case ASCII (ex.: cpv, radar, habilitacao). Omissão = [].',
     status: 'draft | published (omissão = draft)',
     agent: 'claude | grok | grok-bot (alternativa ao header X-Agent)',
+    published_at: 'não enviar no PUT — controlado pela BD',
   },
   seo: {
     answerFirst: true,
@@ -239,6 +271,7 @@ export const GUIDE_AGENT_SPEC = {
     minH2: 2,
     descriptionMinChars: 80,
     faqJsonLd: true,
+    dateFromPublishedAt: true,
     canonical: '/guias/:slug',
     sitemap: '/sitemap.xml',
     robots: '/robots.txt',
@@ -394,6 +427,46 @@ export function llmsTxt(
   return lines.join('\n');
 }
 
+export function formatPublishedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const formatted = new Intl.DateTimeFormat('pt-PT', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Lisbon',
+  }).format(d);
+  return `Publicado em ${formatted}`;
+}
+
+export function parseGuideTags(raw: unknown): string[] | null {
+  if (raw == null) return [];
+  let value: unknown = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === '{}') return [];
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_GUIDE_TAGS) return null;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') return null;
+    const tag = item.trim();
+    if (!TAG_RE.test(tag) || tag.length > 48) return null;
+    if (seen.has(tag)) return null;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
 export function llmsFullTxt(
   origin: string,
   published: { slug: string; title: string; description: string; lede: string; markdown: string; faq: GuideFaq[]; updated_at: string }[],
@@ -540,6 +613,13 @@ export function parseGuidePayload(slug: string, body: unknown): ParseGuideResult
   if (faq === null) {
     return { ok: false, error: 'faq deve ser uma lista de { question, answer }.' };
   }
+  const tags = parseGuideTags(b.tags);
+  if (tags === null) {
+    return {
+      ok: false,
+      error: `tags: 0 a ${MAX_GUIDE_TAGS} valores kebab-case ASCII (ex.: cpv, radar, habilitacao).`,
+    };
+  }
   let status: GuideStatus = 'draft';
   if (b.status !== undefined && b.status !== null && b.status !== '') {
     const parsed = parseStatus(b.status);
@@ -548,7 +628,7 @@ export function parseGuidePayload(slug: string, body: unknown): ParseGuideResult
   }
   return {
     ok: true,
-    value: { slug, title, description, lede, intent, markdown, faq, status },
+    value: { slug, title, description, lede, intent, markdown, faq, tags, status },
   };
 }
 
@@ -702,6 +782,8 @@ export function renderGuideArticleHtml(origin: string, guide: GuideRecord): stri
   const base = origin.replace(/\/$/, '');
   const url = `${base}/guias/${guide.slug}`;
   const eyebrow = `Guias · ${intentLabel(guide.intent).toLowerCase()}`;
+  const publishedLabel = formatPublishedAt(guide.published_at);
+  const tagsHtml = guideTagsHtml(guide.tags);
   const org = { '@type': 'Organization', name: 'Transformatiive, Lda.', url: `${base}/` };
   const articleLd = {
     '@context': 'https://schema.org',
@@ -770,6 +852,8 @@ ${guide.faq
   <div class="legal-wrap">
     <div class="eyebrow">${escapeHtml(eyebrow)}</div>
     <h1>${escapeHtml(guide.title)}</h1>
+    ${publishedLabel ? `<p class="guide-published">${escapeHtml(publishedLabel)}</p>` : ''}
+    ${tagsHtml}
     <p class="updated">Não é aconselhamento jurídico. Confirme o CCP em vigor e as peças do procedimento concreto.</p>
     <p><strong>${escapeHtml(guide.lede)}</strong></p>
     ${guide.body_html}
@@ -801,6 +885,7 @@ export function guideRecordFromRow(row: Record<string, unknown>): GuideRecord {
     markdown: String(row.markdown ?? ''),
     body_html: String(row.body_html ?? ''),
     faq: parseFaq(row.faq) ?? [],
+    tags: parseGuideTags(row.tags) ?? [],
     status,
     published_at: toIso(row.published_at),
     updated_at: toIso(row.updated_at) ?? new Date().toISOString(),
@@ -927,10 +1012,22 @@ function footHtml(): string {
   </div></div>`;
 }
 
+function guideTagsHtml(tags: string[]): string {
+  if (!tags.length) return '';
+  return `<div class="guide-tags">${tags
+    .map((t) => `<span class="guide-tag">${escapeHtml(t)}</span>`)
+    .join('')}</div>`;
+}
+
 function guideCard(g: GuideRecord): string {
+  const publishedLabel = formatPublishedAt(g.published_at);
+  const dateHtml = publishedLabel
+    ? `\n        <p class="guide-published">${escapeHtml(publishedLabel)}</p>`
+    : '';
   return `      <a class="guide-card" href="/guias/${encodeURIComponent(g.slug)}">
         <div class="k">${escapeHtml(intentLabel(g.intent))}</div>
         <h2>${escapeHtml(g.title)}</h2>
-        <p>${escapeHtml(g.description)}</p>
+        <p>${escapeHtml(g.description)}</p>${dateHtml}
+        ${guideTagsHtml(g.tags)}
       </a>`;
 }

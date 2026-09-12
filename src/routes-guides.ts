@@ -146,10 +146,10 @@ export async function registerGuideAgentRoutes(app: FastifyInstance): Promise<vo
     const html = markdownToHtml(parsed.value.markdown);
     const { rows } = await pool.query(
       `INSERT INTO guide_articles
-         (slug, title, description, lede, intent, markdown, body_html, faq, status, published_at, author_agent, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,
-               CASE WHEN $9 = 'published' THEN now() ELSE NULL END,
-               $10, now())
+         (slug, title, description, lede, intent, markdown, body_html, faq, tags, status, published_at, author_agent, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,
+               CASE WHEN $10 = 'published' THEN now() ELSE NULL END,
+               $11, now())
        ON CONFLICT (slug) DO UPDATE SET
          title = EXCLUDED.title,
          description = EXCLUDED.description,
@@ -158,6 +158,7 @@ export async function registerGuideAgentRoutes(app: FastifyInstance): Promise<vo
          markdown = EXCLUDED.markdown,
          body_html = EXCLUDED.body_html,
          faq = EXCLUDED.faq,
+         tags = EXCLUDED.tags,
          status = EXCLUDED.status,
          published_at = CASE
            WHEN EXCLUDED.status = 'published' THEN COALESCE(guide_articles.published_at, now())
@@ -175,6 +176,7 @@ export async function registerGuideAgentRoutes(app: FastifyInstance): Promise<vo
         parsed.value.markdown,
         html,
         JSON.stringify(parsed.value.faq),
+        parsed.value.tags,
         parsed.value.status,
         agent,
       ],
