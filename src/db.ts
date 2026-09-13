@@ -142,7 +142,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   last_run_at           TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT true;
+UPDATE profiles SET fetch_documents = true WHERE fetch_documents IS DISTINCT FROM true;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cpv_codes TEXT[] NOT NULL DEFAULT '{}';
 -- Multi-tenant: perfis pertencem a uma empresa; nome único por empresa (não global).
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
@@ -169,7 +170,8 @@ ALTER TABLE searches ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'contra
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS profile_run_id INT REFERENCES profile_runs(id) ON DELETE SET NULL;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS retries INT NOT NULL DEFAULT 0;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
-ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS fetch_documents BOOLEAN NOT NULL DEFAULT true;
+UPDATE searches SET fetch_documents = true WHERE fetch_documents IS DISTINCT FROM true;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 ALTER TABLE searches ADD COLUMN IF NOT EXISTS company_id INT REFERENCES companies(id);
 ALTER TABLE searches DROP CONSTRAINT IF EXISTS searches_company_id_fkey;
@@ -429,10 +431,18 @@ CREATE TABLE IF NOT EXISTS announcement_requirements (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS contract_requirements (
+  contract_id INT PRIMARY KEY REFERENCES contracts(id) ON DELETE CASCADE,
+  extraction  JSONB NOT NULL,
+  model       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS proposal_versions (
   id              SERIAL PRIMARY KEY,
   company_id      INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  announcement_id INT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  announcement_id INT REFERENCES announcements(id) ON DELETE CASCADE,
   version         INT NOT NULL,
   kind            TEXT NOT NULL CHECK (kind IN ('generated','uploaded')),
   file_name       TEXT NOT NULL,
@@ -445,6 +455,21 @@ CREATE TABLE IF NOT EXISTS proposal_versions (
   UNIQUE (company_id, announcement_id, version)
 );
 CREATE INDEX IF NOT EXISTS idx_proposal_versions_ann ON proposal_versions (company_id, announcement_id, version DESC);
+
+ALTER TABLE proposal_versions ALTER COLUMN announcement_id DROP NOT NULL;
+ALTER TABLE proposal_versions ADD COLUMN IF NOT EXISTS contract_id INT REFERENCES contracts(id) ON DELETE CASCADE;
+ALTER TABLE proposal_versions DROP CONSTRAINT IF EXISTS proposal_versions_company_id_announcement_id_version_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_proposal_versions_ann_ver
+  ON proposal_versions (company_id, announcement_id, version)
+  WHERE announcement_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_proposal_versions_con_ver
+  ON proposal_versions (company_id, contract_id, version)
+  WHERE contract_id IS NOT NULL;
+DO $$ BEGIN
+  ALTER TABLE proposal_versions ADD CONSTRAINT proposal_versions_subject_chk
+    CHECK ((announcement_id IS NOT NULL) <> (contract_id IS NOT NULL));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS close_forecasts (
   announcement_id INT PRIMARY KEY REFERENCES announcements(id) ON DELETE CASCADE,

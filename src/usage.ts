@@ -188,6 +188,7 @@ export function actionFromApi(method: string, apiPath: string): string | null {
   if (m === 'POST' && /\/api\/announcements\/\d+\/analyze$/.test(p)) return 'analise_anuncio';
   if (m === 'POST' && /\/api\/contracts\/\d+\/analyze$/.test(p)) return 'analise_contrato';
   if (m === 'POST' && /\/api\/announcements\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
+  if (m === 'POST' && /\/api\/contracts\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
   if (m === 'POST' && /\/api\/announcements\/\d+\/close-forecast/.test(p)) return 'previsao_fecho';
   if (m === 'PUT' && p.startsWith('/api/pipeline/')) return 'carteira';
   if (m === 'POST' && p === '/api/billing/checkout') return 'checkout';

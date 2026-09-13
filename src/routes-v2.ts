@@ -94,6 +94,11 @@ async function overlayAnalysis(analysis: unknown, companyId: number | null): Pro
   return overlayHabilitacao(analysis, p?.certifications ?? []);
 }
 
+function withoutModel<T extends { model?: unknown }>(r: T): Omit<T, 'model'> {
+  const { model: _model, ...rest } = r;
+  return rest;
+}
+
 async function withPipelineStatus<T>(
   companyId: number | null,
   items: T[],
@@ -140,7 +145,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   app.post('/api/profiles', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as {
       name?: string; terms?: string[]; cpv_codes?: string[]; schedule?: string;
-      include_announcements?: boolean; fetch_documents?: boolean; run_now?: boolean;
+      include_announcements?: boolean; run_now?: boolean;
     };
     const rawCpvs = (body.cpv_codes ?? []).map((c) => String(c).trim()).filter((c) => /^\d{4,8}(-\d)?$/.test(c));
     const name = body.name?.trim();
@@ -155,8 +160,8 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
     try {
       const { rows } = await pool.query(
         `INSERT INTO profiles (name, terms, cpv_codes, schedule, include_announcements, fetch_documents, company_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [name, terms, cpvCodes, schedule, body.include_announcements !== false, body.fetch_documents === true, companyId]
+         VALUES ($1,$2,$3,$4,$5,true,$6) RETURNING *`,
+        [name, terms, cpvCodes, schedule, body.include_announcements !== false, companyId]
       );
       const profile = rows[0];
       let runId: number | null = null;
@@ -305,7 +310,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         await recordUsage({ companyId, userId, kind: 'analise_anuncio', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
       }
       const { companyId } = auth(req);
-      return { ...r, analysis: await overlayAnalysis(r.analysis, companyId) };
+      return withoutModel({ ...r, analysis: await overlayAnalysis(r.analysis, companyId) });
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
@@ -331,7 +336,7 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
         await recordUsage({ companyId, userId, kind: 'analise_contrato', tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model });
       }
       const { companyId } = auth(req);
-      return { ...r, analysis: await overlayAnalysis(r.analysis, companyId) };
+      return withoutModel({ ...r, analysis: await overlayAnalysis(r.analysis, companyId) });
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
     }
@@ -355,7 +360,6 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
       return {
         file_name: fileName,
         download_url: `/api/announcements/${id}/response-template.docx`,
-        model: r.model,
       };
     } catch (err) {
       return reply.code(502).send({ error: { code: 'ai_failed', message: String(err).slice(0, 300) } });
@@ -382,11 +386,13 @@ export async function registerRoutesV2(app: FastifyInstance): Promise<void> {
   app.post('/api/profiles/:id/fit-scores', { preHandler: [requireAuth, requirePlan('score_fit')] }, async (req, reply) => {
     const profileId = Number((req.params as { id: string }).id);
     if (!(await ensureProfile(req, reply, profileId))) return;
-    const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, 100);
     try {
       const a = auth(req);
       const capped = !a.isAdmin && await isAiCapped(a.userId, a.plan);
-      const { scores, usage } = await fitScores(profileId, items, { capped });
+      const cacheOnly = (req.body as { cache_only?: boolean })?.cache_only === true;
+      const limit = cacheOnly ? 100 : 12;
+      const items = ((req.body as { items?: FitItem[] })?.items ?? []).slice(0, limit);
+      const { scores, usage } = await fitScores(profileId, items, { capped, cacheOnly });
       // Só conta quando houve chamada real (fit calculado, não vindo todo da cache).
       if (usage.tokens_in > 0 || usage.tokens_out > 0) {
         const { companyId, userId } = auth(req);

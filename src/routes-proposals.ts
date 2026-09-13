@@ -23,6 +23,7 @@ import {
 } from './proposals.js';
 import {
   extractAnnouncementRequirements,
+  extractContractRequirements,
   generateProposalSections,
   qualifyCloseForecast,
   reevaluateProposalGaps,
@@ -243,7 +244,6 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
         high_value: announcement.base_price != null ? Math.round(announcement.base_price * q.high_pct * 100) / 100 : null,
         justificacao: q.justificacao,
         fatores: q.fatores,
-        model: q.model,
       };
       await pool.query(
         `INSERT INTO close_forecasts (announcement_id, fingerprint, llm, model)
@@ -269,13 +269,12 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
       [id]
     );
     if (rows.length === 0) return { extraction: null, checklist: [] };
-    const extraction = rows[0].extraction as RequirementsExtraction;
-    return {
-      extraction,
-      checklist: flattenRequirements(extraction),
-      model: rows[0].model,
-      updated_at: rows[0].updated_at,
-    };
+      const extraction = rows[0].extraction as RequirementsExtraction;
+      return {
+        extraction,
+        checklist: flattenRequirements(extraction),
+        updated_at: rows[0].updated_at,
+      };
   });
 
   app.post('/api/announcements/:id/requirements', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
@@ -303,7 +302,6 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
         extraction: r.extraction,
         checklist: flattenRequirements(r.extraction),
         cached: r.cached,
-        model: r.model,
         docs_used: r.docs_used,
       };
     } catch (err) {
@@ -362,7 +360,10 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
       }
       const bidPrice = body.bid_price != null && body.bid_price !== '' ? Number(body.bid_price) : null;
       const gen = await generateProposalSections({
-        announcement: anns[0],
+        title: String(anns[0].contract_designation ?? `Anúncio ${id}`),
+        entity: anns[0].contracting_entity != null ? String(anns[0].contracting_entity) : null,
+        price: anns[0].base_price,
+        cpvs: anns[0].cpvs,
         extraction: reqs.extraction,
         profile,
         bidPrice: Number.isFinite(bidPrice as number) ? bidPrice : null,
@@ -472,6 +473,231 @@ export async function registerProposalRoutes(app: FastifyInstance): Promise<void
         kind: 'uploaded',
         file_name: fileName,
         download_url: `/api/announcements/${id}/proposals/${version}/docx`,
+        gap_report: report,
+        created_at: ins[0].created_at,
+      };
+    } catch (err) {
+      return sendFail(reply, err);
+    }
+  });
+
+  app.get('/api/contracts/:id/requirements', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const { rows } = await pool.query(
+      'SELECT extraction, updated_at FROM contract_requirements WHERE contract_id = $1',
+      [id]
+    );
+    if (rows.length === 0) return { extraction: null, checklist: [] };
+    const extraction = rows[0].extraction as RequirementsExtraction;
+    return {
+      extraction,
+      checklist: flattenRequirements(extraction),
+      updated_at: rows[0].updated_at,
+    };
+  });
+
+  app.post('/api/contracts/:id/requirements', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const id = Number((req.params as { id: string }).id);
+    const refresh = (req.body as { refresh?: boolean } | undefined)?.refresh === true;
+    try {
+      if (refresh) await pool.query('DELETE FROM contract_requirements WHERE contract_id = $1', [id]);
+      if (!refresh) {
+        const { rows: hit } = await pool.query(
+          'SELECT 1 FROM contract_requirements WHERE contract_id = $1',
+          [id],
+        );
+        if (hit.length === 0 && await rejectIfAiCapped(req, reply)) return;
+      } else if (await rejectIfAiCapped(req, reply)) return;
+      const r = await extractContractRequirements(id);
+      if (!r.cached) {
+        const { companyId, userId } = auth(req);
+        await recordUsage({
+          companyId, userId, kind: 'requisitos',
+          tokensIn: r.usage.tokens_in, tokensOut: r.usage.tokens_out, model: r.model,
+        });
+      }
+      return {
+        extraction: r.extraction,
+        checklist: flattenRequirements(r.extraction),
+        cached: r.cached,
+        docs_used: r.docs_used,
+      };
+    } catch (err) {
+      return sendFail(reply, err);
+    }
+  });
+
+  app.get('/api/contracts/:id/proposals', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    const { rows } = await pool.query(
+      `SELECT id, version, kind, file_name, content_type, gap_report, created_at, created_by,
+              octet_length(content) AS size_bytes
+         FROM proposal_versions
+        WHERE company_id = $1 AND contract_id = $2
+        ORDER BY version DESC`,
+      [companyId, id]
+    );
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        version: r.version,
+        kind: r.kind,
+        file_name: r.file_name,
+        content_type: r.content_type,
+        size_bytes: Number(r.size_bytes),
+        gap_report: r.gap_report,
+        created_at: r.created_at,
+        download_url: `/api/contracts/${id}/proposals/${r.version}/docx`,
+      })),
+    };
+  });
+
+  app.post('/api/contracts/:id/proposals/generate', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const { companyId, userId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      if (await rejectIfAiCapped(req, reply)) return;
+      const { rows: cons } = await pool.query(
+        `SELECT c.*,
+           (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+             WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
+         FROM contracts c WHERE c.id = $1`,
+        [id]
+      );
+      if (cons.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Contrato não encontrado' } });
+      let profile = await loadProfile(companyId);
+      if (body.profile && typeof body.profile === 'object') {
+        profile = parseProfileBody(body.profile as Record<string, unknown>, profile);
+        await saveProfile(companyId, userId, profile);
+      }
+      const reqs = await extractContractRequirements(id);
+      if (!reqs.cached) {
+        await recordUsage({
+          companyId, userId, kind: 'requisitos',
+          tokensIn: reqs.usage.tokens_in, tokensOut: reqs.usage.tokens_out, model: reqs.model,
+        });
+      }
+      const bidPrice = body.bid_price != null && body.bid_price !== '' ? Number(body.bid_price) : null;
+      const gen = await generateProposalSections({
+        title: String(cons[0].object_brief_description ?? `Contrato ${id}`),
+        entity: cons[0].contracting != null ? String(cons[0].contracting) : null,
+        price: cons[0].initial_contractual_price,
+        cpvs: cons[0].cpvs,
+        extraction: reqs.extraction,
+        profile,
+        bidPrice: Number.isFinite(bidPrice as number) ? bidPrice : null,
+      });
+      await recordUsage({
+        companyId, userId, kind: 'proposta',
+        tokensIn: gen.usage.tokens_in, tokensOut: gen.usage.tokens_out, model: gen.model,
+      });
+      const { rows: vers } = await pool.query(
+        'SELECT version FROM proposal_versions WHERE company_id = $1 AND contract_id = $2',
+        [companyId, id]
+      );
+      const version = nextVersion(vers.map((v) => Number(v.version)));
+      const fileName = `proposta-renovacao-${id}-v${version}.docx`;
+      const buf = buildDocx({
+        title: `Proposta — ${cons[0].object_brief_description ?? `Contrato ${id}`}`,
+        subtitle: [cons[0].contracting, profile.legal_name].filter(Boolean).join(' · '),
+        note: 'Rascunho gerado pelo PrepBid a partir do contrato em renovação. Requer revisão humana. A submissão no portal de contratação é sempre manual.',
+        sections: gen.sections,
+        footer: gen.structure_note,
+      });
+      const extracted = await extractDocxText(buf);
+      const { rows: ins } = await pool.query(
+        `INSERT INTO proposal_versions
+           (company_id, contract_id, version, kind, file_name, content_type, content, extracted_text, created_by)
+         VALUES ($1,$2,$3,'generated',$4,$5,$6,$7,$8)
+         RETURNING id, version, created_at`,
+        [companyId, id, version, fileName, DOCX_CONTENT_TYPE, buf, extracted, userId]
+      );
+      return {
+        id: ins[0].id,
+        version: ins[0].version,
+        kind: 'generated',
+        file_name: fileName,
+        download_url: `/api/contracts/${id}/proposals/${version}/docx`,
+        structure: gen.structure,
+        structure_note: gen.structure_note,
+        profile_missing: profileMissingFields(profile),
+        created_at: ins[0].created_at,
+      };
+    } catch (err) {
+      return sendFail(reply, err);
+    }
+  });
+
+  app.get('/api/contracts/:id/proposals/:version/docx', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    const { companyId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    const version = Number((req.params as { version: string }).version);
+    const { rows } = await pool.query(
+      `SELECT file_name, content_type, content FROM proposal_versions
+        WHERE company_id = $1 AND contract_id = $2 AND version = $3`,
+      [companyId, id, version]
+    );
+    if (rows.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: 'Versão não encontrada' } });
+    const row = rows[0];
+    const buf = row.content as Buffer;
+    return reply
+      .header('Content-Type', row.content_type || DOCX_CONTENT_TYPE)
+      .header('Content-Disposition', `attachment; filename="${String(row.file_name).replace(/"/g, '')}"`)
+      .send(buf);
+  });
+
+  app.post('/api/contracts/:id/proposals/upload', { preHandler: [requireAuth, requirePlan('geracao_propostas')] }, async (req, reply) => {
+    if (!aiEnabled()) return reply.code(503).send({ error: { code: 'ai_disabled', message: 'IA não configurada' } });
+    const { companyId, userId } = auth(req);
+    if (companyId == null) return reply.code(400).send({ error: { code: 'no_company', message: 'Conta sem empresa associada.' } });
+    const id = Number((req.params as { id: string }).id);
+    const body = (req.body ?? {}) as { filename?: string; content_base64?: string };
+    try {
+      if (await rejectIfAiCapped(req, reply)) return;
+      if (!body.content_base64) {
+        return reply.code(400).send({ error: { code: 'invalid', message: 'content_base64 é obrigatório.' } });
+      }
+      const buf = decodeBase64Docx(body.content_base64);
+      const text = await extractDocxText(buf);
+      const reqs = await extractContractRequirements(id);
+      if (!reqs.cached) {
+        await recordUsage({
+          companyId, userId, kind: 'requisitos',
+          tokensIn: reqs.usage.tokens_in, tokensOut: reqs.usage.tokens_out, model: reqs.model,
+        });
+      }
+      const evald = await reevaluateProposalGaps({ extraction: reqs.extraction, proposalText: text });
+      await recordUsage({
+        companyId, userId, kind: 'reeavaliacao',
+        tokensIn: evald.usage.tokens_in, tokensOut: evald.usage.tokens_out, model: evald.model,
+      });
+      const report = buildGapReport(evald.items);
+      const { rows: vers } = await pool.query(
+        'SELECT version FROM proposal_versions WHERE company_id = $1 AND contract_id = $2',
+        [companyId, id]
+      );
+      const version = nextVersion(vers.map((v) => Number(v.version)));
+      const fileName = (body.filename || `proposta-renovacao-${id}-v${version}.docx`).replace(/[^\w.\-à-úÀ-Ú ]+/g, '_');
+      const { rows: ins } = await pool.query(
+        `INSERT INTO proposal_versions
+           (company_id, contract_id, version, kind, file_name, content_type, content, extracted_text, gap_report, created_by)
+         VALUES ($1,$2,$3,'uploaded',$4,$5,$6,$7,$8,$9)
+         RETURNING id, version, created_at`,
+        [companyId, id, version, fileName, DOCX_CONTENT_TYPE, buf, text, JSON.stringify(report), userId]
+      );
+      return {
+        id: ins[0].id,
+        version: ins[0].version,
+        kind: 'uploaded',
+        file_name: fileName,
+        download_url: `/api/contracts/${id}/proposals/${version}/docx`,
         gap_report: report,
         created_at: ins[0].created_at,
       };

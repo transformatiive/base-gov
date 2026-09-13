@@ -305,16 +305,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/searches', { preHandler: requireAuth }, async (req, reply) => {
-    const { term, fetch_documents } = (req.body ?? {}) as { term?: string; fetch_documents?: boolean };
+    const { term } = (req.body ?? {}) as { term?: string };
     const cleaned = term?.trim();
     if (!cleaned) {
       return reply.code(400).send({ error: { code: 'invalid_term', message: 'Campo "term" é obrigatório' } });
     }
     const { userId, companyId } = auth(req);
     const { rows } = await pool.query(
-      `INSERT INTO searches (term, created_by, company_id, fetch_documents) VALUES ($1, $2, $3, $4)
+      `INSERT INTO searches (term, created_by, company_id, fetch_documents) VALUES ($1, $2, $3, true)
        RETURNING id, term, status, fetch_documents, created_at`,
-      [cleaned, userId, companyId, fetch_documents === true]
+      [cleaned, userId, companyId]
     );
     return reply.code(201).send(rows[0]);
   });
