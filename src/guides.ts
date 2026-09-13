@@ -214,7 +214,7 @@ Estimativa estatística com dados públicos. Confirme sempre as peças e a sua p
 export const GUIDE_AGENT_SPEC = {
   name: 'PrepBid guias',
   purpose:
-    'Publicar e actualizar guias públicos em português (pt-PT) sobre contratação pública, úteis para quem precisa do PrepBid (perfil, radar, carteira, «agir esta semana»). Não é um blog. Copy para motores de busca e para LLMs: resposta na primeira frase, H2 em forma de pergunta, FAQ factual.',
+    'Publicar e actualizar guias públicos em português (pt-PT) sobre contratação pública, úteis para quem precisa do PrepBid (perfil, radar, carteira, alertas, «agir esta semana»). Tom editorial, não telegráfico: artigos que endereçam dúvidas de quem está a tentar concorrer. Copy para motores de busca e para LLMs: resposta na primeira frase, H2 em forma de pergunta, FAQ factual.',
   language: 'pt-PT',
   framing: {
     product:
@@ -223,6 +223,7 @@ export const GUIDE_AGENT_SPEC = {
       'Fontes públicas oficiais (ex.: Diário da República) são pano de fundo, não o produto. O leitor age só no PrepBid.',
     never: [
       'Não escreva Portal BASE, base.gov.pt nem «BASE / radar» no copy do leitor (título, lede, description, markdown, FAQ, tags visíveis).',
+      'Não escreva «Que dados usar no Portal BASE» nem listas de campos para preencher noutro portal.',
       'Não diga ao leitor para filtrar, pesquisar, seguir ou acompanhar fora do PrepBid.',
       'Não use o slug reservado o-que-e-o-base-gov.',
       'Não invente nem envie published_at no PUT — a data fica na BD e só se mostra na UI quando existir.',
@@ -233,9 +234,9 @@ export const GUIDE_AGENT_SPEC = {
     lede: 'Tagline / primeira resposta: um parágrafo factual que responde já à intenção de pesquisa.',
     description: 'Meta description ≥80 caracteres, citável por LLMs, sem clickbait.',
     markdown:
-      'Corpo com arco claro (problema → o que fazer → como o PrepBid ajuda). ≥2 headings ## em forma de pergunta. Ligações só https:// ou /caminho.',
+      'Artigo editorial (não ficha telegráfica). ≥4 headings ## em forma de pergunta. Enderece dúvidas reais de quem concorre. Algures: como o PrepBid ajuda (perfil, radar, carteira, alertas, «agir esta semana»). Não uma lista de campos de um portal público. Ligações só https:// ou /caminho.',
     usefulness:
-      'Explique como o perfil, o radar ou a carteira do PrepBid ajudam nesta decisão. Fontes oficiais são contexto, não o produto.',
+      'Explique como o perfil, o radar, a carteira ou as alertas do PrepBid ajudam nesta decisão. Fontes oficiais são contexto, não o produto.',
     tags: '0 a 5 tags kebab-case ASCII (ex.: cpv, radar, habilitacao). Temas, não slogans.',
   },
   auth: {
@@ -258,7 +259,7 @@ export const GUIDE_AGENT_SPEC = {
     description: 'meta description, ≥80 caracteres, citável',
     lede: 'tagline / primeira resposta, um parágrafo factual',
     intent: 'informativa | comercial',
-    markdown: 'corpo com ≥2 headings ## em forma de pergunta; ligações só https:// ou /caminho',
+    markdown: 'corpo editorial com ≥4 headings ## em forma de pergunta; ligações só https:// ou /caminho',
     faq: '[{ question, answer }, ...] — usado em JSON-LD FAQPage',
     tags: '0 a 5 tags kebab-case ASCII (ex.: cpv, radar, habilitacao). Omissão = [].',
     status: 'draft | published (omissão = draft)',
