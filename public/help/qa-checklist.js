@@ -49,7 +49,7 @@
         items: [
           { id: 'o-splash', href: '#/hoje', label: 'Splash após o wizard: onboarding vs entrar na app', expect: 'Só no primeiro registo. «Avançar com o onboarding» percorre os menus; «Entrar na aplicação» salta o tour.' },
           { id: 'o-tour', href: '#/hoje', label: 'Tour dos menus: Seguinte / Anterior / Sair', expect: 'Pop-up em cada item da nav; cadeado nos ecrãs Pro; Escape sai.' },
-          { id: 'o-screen', href: '#/hoje', label: 'Primeira visita a cada ecrã explica as zonas', expect: 'Hoje, Concursos, Carteira, etc. Sair marca o ecrã como visto. Recarregar não repete.' },
+          { id: 'o-screen', href: '#/hoje', label: 'Coach por ecrã só no primeiro login', expect: 'No primeiro registo, a primeira visita a Hoje/Carteira/etc. explica as zonas. Logins seguintes do mesmo utilizador não abrem o tour sozinhos. Ajuda → «Explicar este ecrã» volta a mostrar.' },
           { id: 'o-ajuda', href: '#/ajuda', label: 'Ajuda: manual + repetir demonstração', expect: 'FAB tem tab Manual; #/ajuda lista capítulos; botões para repetir o tour ou este ecrã.' },
         ],
       },

@@ -1165,6 +1165,11 @@ function renderLogin() {
     try {
       await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }) });
       clearClientSession();
+      try {
+        sessionStorage.removeItem('br_onboard');
+        sessionStorage.removeItem('br_guide_auto');
+        sessionStorage.setItem('br_guide_returning', '1');
+      } catch { /* ignore */ }
       await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
@@ -1282,7 +1287,11 @@ async function renderRegister() {
         company_name: fd.get('company_name'), nif: fd.get('nif'), terms, cpv_codes: cpvAfterHint,
       }) });
       clearClientSession();
-      try { sessionStorage.setItem('br_onboard', '1'); } catch { /* ignore */ }
+      try {
+        sessionStorage.setItem('br_onboard', '1');
+        sessionStorage.setItem('br_guide_auto', '1');
+        sessionStorage.removeItem('br_guide_returning');
+      } catch { /* ignore */ }
       await loadCaps(true);
       location.hash = '#/';
     } catch (err) {
@@ -5140,7 +5149,7 @@ async function renderAjuda(slug) {
   });
   document.getElementById('help-reset')?.addEventListener('click', () => {
     window.BRGuide?.resetGuides?.();
-    alert('Os guias voltam a aparecer na próxima visita a cada ecrã.');
+    alert('Os guias automáticos ficam só para o primeiro login. Use «Explicar este ecrã» ou a demonstração para os repetir agora.');
   });
 }
 
@@ -5163,7 +5172,7 @@ async function renderQaChecklist() {
     try {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = '/help/qa-checklist.js?v=1';
+        s.src = '/help/qa-checklist.js?v=2';
         s.onload = resolve;
         s.onerror = () => reject(new Error('checklist'));
         document.head.appendChild(s);
@@ -5251,6 +5260,11 @@ async function route() {
   applyNavGating();
   topbar.hidden = false;
   window.BRGuide?.bind?.({ can, getUserId: () => window._me?.user_id });
+  try {
+    if (sessionStorage.getItem('br_guide_returning') === '1') {
+      window.BRGuide?.saveProgress?.({ autoDone: true });
+    }
+  } catch { /* ignore */ }
   const planPill = window._me.plan && window._me.plan !== 'free'
     ? `<span class="plan-pill ${esc(window._me.plan)}">${PLAN_LABEL[window._me.plan] || window._me.plan}</span>` : '';
   whoami.innerHTML = `<a href="#/conta"><span class="nm">${esc(window._me.username)}</span><span class="co"><span class="co-nm">${esc(window._me.company?.name ?? '')}</span>${planPill}</span></a>`;
