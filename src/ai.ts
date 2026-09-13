@@ -18,11 +18,11 @@ import {
   type PeerAwardLine,
 } from './ai-checklist.js';
 import { cpvDigits } from './closeForecast.js';
-import { buildChatBody, cached, userWithCachedPrefix, type Content } from './ai-cache.js';
+import { buildChatBody, cached, cachedBlocks, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
 import { ensureContractDocuments } from './scraper/documents.js';
 import { FIT_AI_BATCH_SIZE } from './fit-batch.js';
 
-export { cached, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
+export { cached, cachedBlocks, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
 
 const require = createRequire(import.meta.url);
 // pdf-parse v1 é CJS
@@ -512,18 +512,21 @@ export async function fitScores(
   const ctx = await profileContext(profileId);
   const extra = await companyExtras(profileId);
   const batch = needAi.slice(0, FIT_AI_BATCH_SIZE);
-  const system = `És um analista comercial de contratação pública. ${ctx}
-${extra.ctx}
-${extra.fewShot}
+  // Rubrica global num breakpoint (partilhada entre empresas); perfil + few-shot
+  // noutro (reutilizado nos lotes de 8 da mesma empresa). O lote em si fica fora.
+  const system = cachedBlocks(
+    `És um analista comercial de contratação pública.
 Para cada oportunidade, avalia o FIT (0-100) com a atividade da empresa: 90+ = núcleo da atividade; 50-89 = adjacente/possível; <50 = fora da atividade.
 As regras da empresa já foram aplicadas noutro sítio — não as contradigas; explica o alinhamento de actividade.
-Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "máx 12 palavras", "motivos": ["2-3 bullets curtos: porquê este fit — alinhamento com CPV/termos, tipo de trabalho, entidade"]}]}`;
+Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "máx 12 palavras", "motivos": ["2-3 bullets curtos: porquê este fit — alinhamento com CPV/termos, tipo de trabalho, entidade"]}]}`,
+    [ctx, extra.ctx, extra.fewShot].filter((s) => s?.trim()).join('\n'),
+  );
   const user = batch.map((it) =>
     `key=${it.type}:${it.id} | ${it.type === 'anuncio_aberto' ? 'CONCURSO' : 'RENOVAÇÃO'} | ${it.title?.slice(0, 160)} | entidade: ${it.entity?.slice(0, 60)} | valor: ${it.value ?? 'n/d'} | distrito: ${it.district || inferDistrict(it.entity) || 'n/d'}`
   ).join('\n');
 
   const model = config.aiModelFast;
-  const { content: raw, usage: u } = await chat(model, system, user, 1800, 'fit-scores');
+  const { content: raw, usage: u } = await chat(model, system, user, 1800, `fit:${profileId}`);
   usage = u;
   const parsed = parseJson(raw) as { scores?: { key: string; fit: number; razao: string; motivos?: string[] }[] };
 
@@ -822,10 +825,9 @@ export async function digestIntro(profileName: string, stats: string): Promise<s
   try {
     const { content } = await chat(
       config.aiModelFast,
-      `És um analista comercial. Escreve um parágrafo único (3-4 frases, português de Portugal, tom profissional e direto) a resumir a semana de oportunidades de contratação pública para a atividade "${profileName}". Sem saudações, sem markdown.`,
+      [plain(`És um analista comercial. Escreve um parágrafo único (3-4 frases, português de Portugal, tom profissional e direto) a resumir a semana de oportunidades de contratação pública para a atividade "${profileName}". Sem saudações, sem markdown.`)],
       stats,
       400,
-      'digest-intro',
     );
     return content.trim();
   } catch {

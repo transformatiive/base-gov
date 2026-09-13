@@ -13,6 +13,11 @@ export function asParts(content: Content, cache: boolean): Part[] {
   return [cache ? cached(t) : plain(t)];
 }
 
+/** Vários prefixos estáveis, cada um um breakpoint (Anthropic aceita até 4). */
+export function cachedBlocks(...texts: string[]): Part[] {
+  return texts.map((t) => String(t ?? '').trim()).filter(Boolean).map(cached);
+}
+
 /** Documento / checklist estável em cache; a cauda (schema, texto único) fora. */
 export function userWithCachedPrefix(stable: string, varying: string): Part[] {
   const out: Part[] = [];
@@ -31,6 +36,7 @@ export function buildChatBody(opts: {
   const body: Record<string, unknown> = {
     model: opts.model,
     max_tokens: opts.maxTokens,
+    usage: { include: true },
     messages: [
       { role: 'system', content: asParts(opts.system, true) },
       { role: 'user', content: asParts(opts.user, false) },
