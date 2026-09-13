@@ -1,6 +1,6 @@
 import { pool } from './db.js';
 import { config } from './config.js';
-import { chat, gatherAnnouncementDocs, loadContractPdfText, parseJson, userWithCachedPrefix, type AiUsage } from './ai.js';
+import { cached, chat, gatherAnnouncementDocs, loadContractPdfText, parseJson, plain, userWithCachedPrefix, type AiUsage } from './ai.js';
 import {
   STANDARD_CHAPTERS,
   emptyRequirements,
@@ -207,7 +207,7 @@ export async function extractContractRequirements(contractId: number): Promise<{
       an.length ? `ANÁLISE PRÉVIA (usa como pista, mas confirma no texto):\n${JSON.stringify(an[0].analysis).slice(0, 5000)}` : '',
     ),
     4000,
-    'proposta-extract-contrato',
+    'proposta-extract',
   );
   const extraction = normalizeExtraction(parseJson(content));
   await pool.query(
@@ -244,7 +244,8 @@ export async function generateProposalSections(opts: {
     ? opts.extraction.formato.chapters
     : [...STANDARD_CHAPTERS];
   const structure = opts.extraction.formato.specified ? 'caderno' : 'standard';
-  const system = `És um redator sénior de propostas de contratação pública portuguesa.
+  const system = [
+    cached(`És um redator sénior de propostas de contratação pública portuguesa.
 Geras um RASCUNHO de proposta em JSON, secção a secção, cruzando o perfil da empresa com os requisitos extraídos.
 REGRAS:
 - NÃO inventes factos (obras, certificados, pessoas, números) que não estejam no perfil.
@@ -252,8 +253,9 @@ REGRAS:
 - NÃO redijas DEUCP nem declarações sob compromisso de honra; numa secção "Documentos legais a anexar" limita-te a listá-los.
 - A aplicação NUNCA submete a proposta; o tom é de rascunho de trabalho.
 Responde APENAS com JSON:
-{"structure_note":"1 frase","sections":[{"title":"...","body":"parágrafos separados por linha em branco"}]}
-As secções DEVEM seguir esta ordem e estes títulos: ${JSON.stringify(chapters)}.`;
+{"structure_note":"1 frase","sections":[{"title":"...","body":"parágrafos separados por linha em branco"}]}`),
+    plain(`As secções DEVEM seguir esta ordem e estes títulos: ${JSON.stringify(chapters)}.`),
+  ];
 
   const model = config.aiModelDeep;
   const { content, usage } = await chat(
@@ -371,8 +373,10 @@ Responde APENAS com JSON:
   const { content, usage } = await chat(
     model,
     system,
-    userWithCachedPrefix(
-      `CAMADA ESTATÍSTICA:
+    `ANÚNCIO: ${opts.announcement.designation} · entidade ${opts.announcement.entity}
+Preço base: ${opts.announcement.base_price} · CPV ${opts.announcement.cpvs} · ${opts.announcement.procedure_type} · ${opts.announcement.contract_type}
+
+CAMADA ESTATÍSTICA:
 ${JSON.stringify({
     sample_size: opts.statistical.sample_size,
     entity_sample_size: opts.statistical.entity_sample_size,
@@ -388,9 +392,6 @@ CONCURSOS HISTÓRICOS MAIS SEMELHANTES:
 ${opts.comparables.slice(0, 12).map((c) =>
     `- ${c.publication_date} · ${c.entity} · adjudicado ${c.awarded} · base hist. ${c.historical_base ?? 'n/d'} · rácio ${c.ratio.toFixed(2)} (${c.ratio_source}) · ${c.title?.slice(0, 80)}`
   ).join('\n')}`,
-      `ANÚNCIO: ${opts.announcement.designation} · entidade ${opts.announcement.entity}
-Preço base: ${opts.announcement.base_price} · CPV ${opts.announcement.cpvs} · ${opts.announcement.procedure_type} · ${opts.announcement.contract_type}`,
-    ),
     1200,
     'fecho-qualifica',
   );
