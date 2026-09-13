@@ -235,8 +235,11 @@ test('GUIDE_AGENT_SPEC exige framing PrepBid, tags e regras SEO+LLM', () => {
   assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /pano de fundo/);
   assert.match(GUIDE_AGENT_SPEC.framing.dataSources, /PrepBid/);
   assert.match(GUIDE_AGENT_SPEC.editorial.usefulness, /contexto, não o produto/);
+  assert.match(GUIDE_AGENT_SPEC.purpose, /editorial/);
+  assert.match(GUIDE_AGENT_SPEC.editorial.markdown, /≥4 headings/);
   assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => n.includes('o-que-e-o-base-gov')));
   assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => /filtrar.*pesquisar/.test(n)));
+  assert.ok(GUIDE_AGENT_SPEC.framing.never.some((n) => /Que dados usar/.test(n)));
   assert.match(GUIDE_AGENT_SPEC.payload.tags, /kebab/);
   assert.match(GUIDE_AGENT_SPEC.editorial.lede, /primeira resposta/);
   assert.equal(GUIDE_AGENT_SPEC.seo.answerFirst, true);
@@ -261,8 +264,13 @@ test('reescritas publicadas passam parse, tags e framing PrepBid', async () => {
       `${g.title}\n${g.description}\n${g.lede}\n${g.markdown}\n${JSON.stringify(g.faq)}\n${(g.tags || []).join(',')}`,
     );
     assert.match(`${g.lede}\n${g.markdown}`, /PrepBid/);
+    assert.match(
+      `${g.markdown}\n${JSON.stringify(g.faq)}`,
+      /radar|carteira|perfil|agir esta semana|alertas/,
+    );
+    assert.ok(g.markdown.length >= 1600, `${g.slug} markdown curto (${g.markdown.length})`);
     const h2s = g.markdown.split('\n').filter((line) => line.startsWith('## '));
-    assert.ok(h2s.length >= 2, g.slug);
+    assert.ok(h2s.length >= 4, `${g.slug} H2=${h2s.length}`);
     for (const h of h2s) {
       assert.match(h, /\?$/, `${g.slug}: ${h}`);
     }
@@ -286,4 +294,6 @@ function assertNoBaseProduct(blob: string) {
   assert.doesNotMatch(blob, /base\.gov/i);
   assert.doesNotMatch(blob, /\bBASE\b/);
   assert.doesNotMatch(blob, /BASE \/ radar/);
+  assert.doesNotMatch(blob, /filtre no BASE/i);
+  assert.doesNotMatch(blob, /Que dados usar no Portal BASE/i);
 }
