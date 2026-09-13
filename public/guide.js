@@ -7,11 +7,18 @@
     splashChoice: null,
     menuTourDone: false,
     optOut: false,
+    autoDone: false,
     screens: {},
   };
 
   function key(uid) {
     return 'br_guide:' + String(uid == null ? 'anon' : uid);
+  }
+
+  function normalizeScreens(raw) {
+    var screens = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+    if (screens.pipeline && !screens.carteira) screens.carteira = !!screens.pipeline;
+    return screens;
   }
 
   function parse(raw) {
@@ -21,6 +28,7 @@
       splashChoice: null,
       menuTourDone: false,
       optOut: false,
+      autoDone: false,
       screens: {},
     };
     if (!raw) return base;
@@ -33,7 +41,8 @@
         splashChoice: o.splashChoice === 'tour' || o.splashChoice === 'skip' ? o.splashChoice : null,
         menuTourDone: !!o.menuTourDone,
         optOut: !!o.optOut,
-        screens: o.screens && typeof o.screens === 'object' ? Object.assign({}, o.screens) : {},
+        autoDone: !!o.autoDone,
+        screens: normalizeScreens(o.screens),
       };
     } catch (e) {
       return base;
@@ -46,6 +55,7 @@
   var navigating = false;
   var viewReadyWait = null;
   var bound = { can: function () { return true; }, getUserId: function () { return null; } };
+  var activeScreenId = null;
   var activeRoot = null;
   var resizeHandler = null;
   var escHandler = null;
@@ -95,10 +105,20 @@
       splashChoice: patch.splashChoice !== undefined ? patch.splashChoice : cur.splashChoice,
       menuTourDone: patch.menuTourDone != null ? patch.menuTourDone : cur.menuTourDone,
       optOut: patch.optOut != null ? patch.optOut : cur.optOut,
-      screens: patch.replaceScreens ? (patch.screens || {}) : Object.assign({}, cur.screens, patch.screens || {}),
+      autoDone: patch.autoDone != null ? !!patch.autoDone : cur.autoDone,
+      screens: normalizeScreens(patch.replaceScreens ? (patch.screens || {}) : Object.assign({}, cur.screens, patch.screens || {})),
     };
     try { localStorage.setItem(key(userId()), JSON.stringify(next)); } catch (e) { /* ignore */ }
     return next;
+  }
+
+  function sessionAllowsAuto() {
+    try {
+      if (sessionStorage.getItem('br_guide_returning') === '1') return false;
+      if (sessionStorage.getItem('br_onboard') === '1') return true;
+      if (sessionStorage.getItem('br_guide_auto') === '1') return true;
+    } catch (e) { /* ignore */ }
+    return false;
   }
 
   function hashBase() {
@@ -233,6 +253,7 @@
     function finish(kind) {
       running = false;
       navigating = false;
+      activeScreenId = null;
       removeRoot();
       closeNav();
       if (kind === 'complete' && shown > 0 && cbs.onComplete) cbs.onComplete();
@@ -415,11 +436,20 @@
     });
   }
 
-  function maybeScreenCoach(id) {
+  function maybeScreenCoach(id, opts) {
     return new Promise(function (resolve) {
+      opts = opts || {};
       if (isMobileLayout()) { resolve(); return; }
       var p = load();
-      if (p.optOut || p.screens[id] || running) { resolve(); return; }
+      if (running) { resolve(); return; }
+      if (!opts.force) {
+        if (p.optOut || p.screens[id]) { resolve(); return; }
+        if (p.autoDone || !sessionAllowsAuto()) {
+          if (!p.autoDone) save({ autoDone: true });
+          resolve();
+          return;
+        }
+      }
       var spec = w.BRHelpCatalog && w.BRHelpCatalog.screens && w.BRHelpCatalog.screens[id];
       if (!spec) { resolve(); return; }
       var lockedEl = document.querySelector('.upgrade-card');
@@ -442,6 +472,7 @@
         }).filter(function (st) { return !!document.querySelector(st.sel); });
       }
       if (!steps.length) { resolve(); return; }
+      activeScreenId = id;
       startSteps(steps, {
         onComplete: function () { var s = {}; s[id] = true; save({ screens: s }); resolve(); },
         onSkip: function () { var s = {}; s[id] = true; save({ screens: s }); resolve(); },
@@ -467,7 +498,7 @@
     var s = {};
     s[id] = false;
     save({ screens: s });
-    return maybeScreenCoach(id);
+    return maybeScreenCoach(id, { force: true });
   }
 
   w.BRGuide = {
@@ -481,14 +512,35 @@
     stop: function (opts) {
       if (navigating) return;
       var was = running;
+      var coachId = activeScreenId;
       stop(opts);
-      if (was && opts && opts.navigated) save({ menuTourDone: true });
+      if (was && opts && opts.navigated) {
+        var patch = { menuTourDone: true };
+        if (coachId) {
+          patch.screens = {};
+          patch.screens[coachId] = true;
+        }
+        save(patch);
+      }
+      activeScreenId = null;
     },
     replayMenuTour: replayMenuTour,
     replayScreen: replayScreen,
     setOptOut: function (value) { save({ optOut: !!value }); if (value) stop(); },
     resetGuides: function () {
-      save({ menuTourDone: false, optOut: false, screens: {}, replaceScreens: true });
+      save({
+        autoDone: false,
+        splashDone: false,
+        splashChoice: null,
+        menuTourDone: false,
+        optOut: false,
+        screens: {},
+        replaceScreens: true,
+      });
+      try {
+        sessionStorage.setItem('br_guide_auto', '1');
+        sessionStorage.removeItem('br_guide_returning');
+      } catch (e) { /* ignore */ }
     },
     isRunning: isRunning,
     isNavigating: function () { return navigating; },

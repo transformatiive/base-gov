@@ -27,6 +27,7 @@ function loadBrowserJs(...rel: string[]) {
         splashChoice: string | null;
         menuTourDone: boolean;
         optOut: boolean;
+        autoDone: boolean;
         screens: Record<string, boolean>;
       };
     };
@@ -63,7 +64,7 @@ test('sidebar: grupos, ordem e ícone em cada opção', () => {
   }
   assert.match(nav, /id="nav-admin"[^>]*hidden/);
   assert.match(html, /style\.css\?v=52/);
-  assert.match(html, /guide\.js\?v=3/);
+  assert.match(html, /guide\.js\?v=4/);
   assert.match(appJs, /A pesquisar concursos abertos/);
   assert.match(html, /class="pb-wordmark">PrepBid</);
 });
@@ -129,6 +130,181 @@ test('progress key inclui o utilizador', () => {
   const w = loadBrowserJs('public/guide.js');
   assert.equal(w.BRGuideProgress.key(12), 'br_guide:12');
   assert.equal(w.BRGuideProgress.key(null), 'br_guide:anon');
+});
+
+type GuideRuntime = {
+  bind: (opts: { getUserId?: () => unknown }) => void;
+  afterView: (id: string) => void;
+  maybeScreenCoach: (id: string) => Promise<void>;
+  replayScreen: (id: string) => Promise<void>;
+  replayMenuTour: () => Promise<void>;
+  stop: (opts?: { navigated?: boolean }) => void;
+  isRunning: () => boolean;
+  loadProgress: () => { autoDone: boolean; screens: Record<string, boolean> };
+};
+
+function loadGuideRuntime(opts: {
+  session?: Record<string, string>;
+  local?: Record<string, string>;
+  userId?: unknown;
+  mobile?: boolean;
+}) {
+  const appended: unknown[] = [];
+  const session: Record<string, string> = { ...(opts.session || {}) };
+  const local: Record<string, string> = { ...(opts.local || {}) };
+  const sessionStorage = {
+    getItem: (k: string) => session[k] ?? null,
+    setItem: (k: string, v: string) => { session[k] = v; },
+    removeItem: (k: string) => { delete session[k]; },
+  };
+  const localStorage = {
+    getItem: (k: string) => local[k] ?? null,
+    setItem: (k: string, v: string) => { local[k] = v; },
+    removeItem: (k: string) => { delete local[k]; },
+  };
+  const windowObj: Record<string, unknown> = {
+    matchMedia: (q: string) => ({
+      matches: !!opts.mobile && /max-width:\s*900px/.test(String(q)),
+      addEventListener() { /* noop */ },
+      addListener() { /* noop */ },
+      media: q,
+    }),
+    addEventListener() { /* noop */ },
+    removeEventListener() { /* noop */ },
+    location: { hash: '#/pipeline' },
+    sessionStorage,
+    localStorage,
+    BRHelpCatalog: {
+      splash: {
+        eyebrow: 'x', title: 't', lead: 'l', footnote: 'f',
+        ctaSkip: 's', ctaTour: 'c',
+        examples: [{ id: 'a', title: 'A', body: 'b' }],
+      },
+      menuTour: { steps: [{ href: '#/hoje', title: 'Hoje', body: 'x' }] },
+      screens: {
+        carteira: {
+          steps: [
+            { sel: 'pl-title', title: 'Carteira', body: 'b' },
+            { sel: 'pl-board', title: 'Kanban', body: 'b' },
+            { sel: 'pl-col-interessa', title: 'Interessa', body: 'b' },
+            { sel: 'pl-closed', title: 'Fechadas', body: 'b' },
+          ],
+        },
+      },
+    },
+  };
+  const documentStub = {
+    createElement() {
+      const style: Record<string, string> = {};
+      const el: Record<string, unknown> = {
+        id: '',
+        className: '',
+        innerHTML: '',
+        style,
+        offsetWidth: 340,
+        offsetHeight: 180,
+        onclick: null,
+        focus() { /* noop */ },
+        querySelector() { return el; },
+        querySelectorAll() { return []; },
+        remove() { /* noop */ },
+      };
+      return el;
+    },
+    body: { appendChild(el: unknown) { appended.push(el); } },
+    addEventListener() { /* noop */ },
+    removeEventListener() { /* noop */ },
+    querySelector() {
+      return {
+        getBoundingClientRect() { return { left: 0, top: 0, right: 10, bottom: 10, width: 10, height: 10 }; },
+        scrollIntoView() { /* noop */ },
+      };
+    },
+  };
+  const ctx = createContext({
+    window: windowObj,
+    document: documentStub,
+    console,
+    localStorage,
+    sessionStorage,
+    setTimeout,
+    clearTimeout,
+  });
+  (windowObj as { window?: unknown }).window = windowObj;
+  runInContext(readFileSync(join(root, 'public/guide.js'), 'utf8'), ctx, { filename: 'public/guide.js' });
+  const g = windowObj.BRGuide as GuideRuntime;
+  g.bind({ getUserId: () => (opts.userId === undefined ? 7 : opts.userId) });
+  return { g, appended, local, session };
+}
+
+test('parse: login seguinte marca autoDone e alias pipeline→carteira', () => {
+  const w = loadBrowserJs('public/guide.js');
+  const p = w.BRGuideProgress.parse('{"screens":{"pipeline":true,"hoje":true}}');
+  assert.equal(p.screens.carteira, true);
+  assert.equal(p.screens.hoje, true);
+  assert.equal(p.autoDone, false);
+  const done = w.BRGuideProgress.parse('{"autoDone":true}');
+  assert.equal(done.autoDone, true);
+});
+
+test('guia: login seguinte não abre o tour da Carteira', () => {
+  const { g, appended, local } = loadGuideRuntime({ userId: 7 });
+  g.afterView('carteira');
+  assert.equal(g.isRunning(), false);
+  assert.equal(appended.length, 0);
+  const stored = JSON.parse(local['br_guide:7'] || '{}');
+  assert.equal(stored.autoDone, true);
+  assert.equal(stored.screens?.carteira, undefined);
+});
+
+test('guia: primeiro login (br_onboard) abre o coach da Carteira', () => {
+  const { g, appended } = loadGuideRuntime({
+    session: { br_onboard: '1', br_guide_auto: '1' },
+    userId: 7,
+  });
+  void g.maybeScreenCoach('carteira');
+  assert.equal(g.isRunning(), true);
+  assert.ok(appended.length >= 1);
+  g.stop();
+});
+
+test('guia: Ajuda replay abre o tour mesmo após login seguinte', () => {
+  const { g, appended, local } = loadGuideRuntime({
+    userId: 7,
+    local: { 'br_guide:7': JSON.stringify({ autoDone: true, screens: { carteira: true } }) },
+  });
+  g.afterView('carteira');
+  assert.equal(appended.length, 0);
+  void g.replayScreen('carteira');
+  assert.equal(g.isRunning(), true);
+  assert.ok(appended.length >= 1);
+  const stored = JSON.parse(local['br_guide:7']);
+  assert.equal(stored.autoDone, true);
+  g.stop();
+});
+
+test('guia: sair pelo menu persiste o ecrã para não repetir no reload', () => {
+  const { g, local } = loadGuideRuntime({
+    session: { br_onboard: '1', br_guide_auto: '1' },
+    userId: 7,
+  });
+  void g.maybeScreenCoach('carteira');
+  assert.equal(g.isRunning(), true);
+  g.stop({ navigated: true });
+  const stored = JSON.parse(local['br_guide:7'] || '{}');
+  assert.equal(stored.screens.carteira, true);
+});
+
+test('app: login seguinte limpa br_onboard; o registo liga o auto-tour', () => {
+  const app = readFileSync(join(root, 'public/app.js'), 'utf8');
+  const login = app.slice(app.indexOf("'/api/auth/login'"), app.indexOf("'/api/auth/register'"));
+  const register = app.slice(app.indexOf("'/api/auth/register'"), app.indexOf('Banner de trial'));
+  assert.match(register, /sessionStorage\.setItem\('br_onboard', '1'\)/);
+  assert.match(register, /sessionStorage\.setItem\('br_guide_auto', '1'\)/);
+  assert.match(register, /sessionStorage\.removeItem\('br_guide_returning'\)/);
+  assert.match(login, /sessionStorage\.removeItem\('br_onboard'\)/);
+  assert.match(login, /sessionStorage\.removeItem\('br_guide_auto'\)/);
+  assert.match(login, /sessionStorage\.setItem\('br_guide_returning', '1'\)/);
 });
 
 test('catálogo: cada sel de ecrã existe em app.js', () => {
