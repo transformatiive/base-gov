@@ -1,6 +1,5 @@
 import { pool } from '../db.js';
 import { config } from '../config.js';
-import { putDocument } from '../storage.js';
 import {
   AnnouncementDetail,
   AnnouncementListItem,
@@ -10,6 +9,7 @@ import {
   HttpBaseGovClient,
   ListItem,
 } from './client.js';
+import { downloadPendingDocuments } from './documents.js';
 import { parseBaseDate, parseBasePrice } from './parse.js';
 import { reconcileProfileRuns, scheduleDueProfiles } from '../profiles.js';
 import { LOCAL_MATCH_LIMIT, pendingSearchOrderSql, searchOrigin, shouldLiveScrape } from '../profile-run-policy.js';
@@ -123,31 +123,6 @@ async function saveDetail(contractId: number, detail: ContractDetail): Promise<v
        ON CONFLICT (basegov_id) DO NOTHING`,
       [contractId, doc.id, doc.description ?? `documento-${doc.id}`]
     );
-  }
-}
-
-async function downloadPendingDocuments(client: BaseGovClient, contractId: number): Promise<void> {
-  const { rows } = await pool.query(
-    'SELECT id, basegov_id FROM documents WHERE contract_id = $1 AND download_ok = false',
-    [contractId]
-  );
-  for (const doc of rows) {
-    try {
-      const { content, contentType } = await client.downloadDocument(Number(doc.basegov_id));
-      // O binário vai para o volume; só fica em BYTEA se não houver volume.
-      const onVolume = await putDocument(doc.id, content);
-      await pool.query(
-        `UPDATE documents SET content = $2, content_type = $3, size_bytes = $4,
-           download_ok = true, download_error = NULL, downloaded_at = now()
-         WHERE id = $1`,
-        [doc.id, onVolume ? null : content, contentType, content.length]
-      );
-    } catch (err) {
-      // Falha de download não falha a pesquisa — fica registada no documento.
-      await pool.query('UPDATE documents SET download_error = $2 WHERE id = $1', [doc.id, String(err)]);
-      console.warn(`[worker] download do documento ${doc.basegov_id} falhou: ${err}`);
-    }
-    await sleep(config.scrapeDelayMs);
   }
 }
 
@@ -469,7 +444,6 @@ async function processSearch(
   client: BaseGovClient,
   searchId: number,
   term: string,
-  fetchDocuments: boolean,
   profileRunId: number | null,
 ): Promise<void> {
   // Se a pesquisa pertence a um perfil, os códigos CPV do perfil entram no match local.
@@ -506,22 +480,19 @@ async function processSearch(
         [searchId, contractId, scraped]
       );
 
-      // Detalhe do site: com o histórico dos dados abertos importado, só vale a pena
-      // ir ao site quando (a) o contrato é uma novidade sem cobertura de dados abertos,
-      // ou (b) a pesquisa pediu documentos PDF (que só existem no site).
+      // Detalhe do site: só para novidades sem cobertura de dados abertos.
+      // Os PDFs (caderno/relatório) descarregam-se sempre que há detalhe, e
+      // também on-demand na análise — já não é uma opção de perfil.
       const { rows } = await pool.query(
-        fetchDocuments
-          ? `SELECT 1 FROM contracts WHERE id = $1
-               AND (detail_scraped_at IS NULL OR detail_scraped_at < now() - interval '7 days')`
-          : `SELECT 1 FROM contracts WHERE id = $1
-               AND detail_scraped_at IS NULL AND raw_opendata_json IS NULL`,
+        `SELECT 1 FROM contracts WHERE id = $1
+           AND detail_scraped_at IS NULL AND raw_opendata_json IS NULL`,
         [contractId]
       );
       if (rows.length > 0) {
         await sleep(config.scrapeDelayMs);
         const detail = await client.getDetail(item.id);
         await saveDetail(contractId, detail);
-        if (fetchDocuments) await downloadPendingDocuments(client, contractId);
+        await downloadPendingDocuments(client, contractId);
       }
 
       scraped++;
@@ -674,10 +645,10 @@ async function tick(client: BaseGovClient): Promise<void> {
        WHERE id = (SELECT id FROM searches
                    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now())
                    ORDER BY ${pendingSearchOrderSql()} LIMIT 1 FOR UPDATE SKIP LOCKED)
-       RETURNING id, term, kind, profile_run_id, retries, fetch_documents`
+       RETURNING id, term, kind, profile_run_id, retries`
     );
     if (rows.length > 0) {
-      const { id, term, kind, profile_run_id, retries, fetch_documents } = rows[0];
+      const { id, term, kind, profile_run_id, retries } = rows[0];
       if (profile_run_id) {
         await pool.query(
           `UPDATE profile_runs SET status = 'running', started_at = COALESCE(started_at, now()) WHERE id = $1`,
@@ -690,7 +661,7 @@ async function tick(client: BaseGovClient): Promise<void> {
         if (kind === 'anuncios') {
           await processAnnouncementSearch(client, id, term, runId);
         } else {
-          await processSearch(client, id, term, fetch_documents === true, runId);
+          await processSearch(client, id, term, runId);
         }
         console.log(`[worker] pesquisa #${id} concluída`);
       } catch (err) {

@@ -19,6 +19,8 @@ import {
 } from './ai-checklist.js';
 import { cpvDigits } from './closeForecast.js';
 import { buildChatBody, cached, userWithCachedPrefix, type Content } from './ai-cache.js';
+import { ensureContractDocuments } from './scraper/documents.js';
+import { FIT_AI_BATCH_SIZE } from './fit-batch.js';
 
 export { cached, plain, userWithCachedPrefix, type Content } from './ai-cache.js';
 
@@ -440,7 +442,7 @@ async function persistFit(
 export async function fitScores(
   profileId: number,
   items: FitItem[],
-  opts?: { capped?: boolean },
+  opts?: { capped?: boolean; cacheOnly?: boolean },
 ): Promise<{ scores: Record<string, FitScore>; usage: AiUsage }> {
   const result: Record<string, FitScore> = {};
   const { rows: profRows } = await pool.query('SELECT company_id FROM profiles WHERE id = $1', [profileId]);
@@ -504,12 +506,12 @@ export async function fitScores(
 
   let usage: AiUsage = { tokens_in: 0, tokens_out: 0 };
   if (needAi.length === 0) return { scores: result, usage };
-  if (staleMode) return { scores: result, usage };
+  if (staleMode || opts?.cacheOnly) return { scores: result, usage };
   if (!aiEnabled()) return { scores: result, usage };
 
   const ctx = await profileContext(profileId);
   const extra = await companyExtras(profileId);
-  const batch = needAi.slice(0, 60);
+  const batch = needAi.slice(0, FIT_AI_BATCH_SIZE);
   const system = `És um analista comercial de contratação pública. ${ctx}
 ${extra.ctx}
 ${extra.fewShot}
@@ -521,7 +523,7 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
   ).join('\n');
 
   const model = config.aiModelFast;
-  const { content: raw, usage: u } = await chat(model, system, user, 4000, 'fit-scores');
+  const { content: raw, usage: u } = await chat(model, system, user, 1800, 'fit-scores');
   usage = u;
   const parsed = parseJson(raw) as { scores?: { key: string; fit: number; razao: string; motivos?: string[] }[] };
 
@@ -546,7 +548,45 @@ Responde APENAS com JSON: {"scores": [{"key": "...", "fit": 0-100, "razao": "má
   return { scores: result, usage };
 }
 
-/** Ficha de preparação para um CONTRATO: usa os documentos PDF guardados na BD. */
+export async function loadContractPdfText(
+  contractId: number,
+  procedureUrl?: string | null,
+): Promise<{ docsText: string; docsUsed: number }> {
+  await ensureContractDocuments(contractId);
+  const { rows: docs } = await pool.query(
+    `SELECT id, file_name, size_bytes FROM documents WHERE contract_id = $1 AND download_ok`,
+    [contractId],
+  );
+  const chosen = pickContractDocs(docs as { id: number; file_name: string; size_bytes: number | null }[], 5);
+  const extracted = await Promise.all(chosen.map(async (d) => {
+    try {
+      const buf = await getDocument(d.id);
+      if (!buf) return null;
+      const t = await pdfTextFromBuf(buf, 22_000);
+      return t ? { file_name: String(d.file_name), text: t } : null;
+    } catch {
+      return null;
+    }
+  }));
+  let docsText = '';
+  let docsUsed = 0;
+  for (const d of extracted) {
+    if (!d) continue;
+    docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${d.text}`;
+    docsUsed++;
+    if (docsText.length > 50_000) break;
+  }
+  if (!docsText && procedureUrl) {
+    const proc = await gatherAnnouncementDocs({ contracting_procedure_url: procedureUrl });
+    if (proc.procText) {
+      docsText = `\n\n===== PEÇAS DO PROCEDIMENTO (plataforma) =====\n${proc.procText}`;
+      docsUsed = proc.docsCount;
+    }
+  }
+  return { docsText, docsUsed };
+}
+
+/** Ficha de preparação para um CONTRATO: usa os documentos PDF do BASE (sempre, sem opção de perfil). */
 export async function analyzeContract(
   contractId: number,
   profileId: number,
@@ -578,42 +618,13 @@ export async function analyzeContract(
     }
   }
 
-  const [{ rows: docs }, ctx, extra] = await Promise.all([
-    pool.query(
-      `SELECT id, file_name, size_bytes FROM documents WHERE contract_id = $1 AND download_ok`,
-      [contractId]
-    ),
+  const [ctx, extra, pdfs] = await Promise.all([
     profileContext(profileId),
     companyExtras(profileId),
+    loadContractPdfText(contractId, c.contracting_procedure_url),
   ]);
-
-  const chosen = pickContractDocs(docs as { id: number; file_name: string; size_bytes: number | null }[], 5);
-  const extracted = await Promise.all(chosen.map(async (d) => {
-    try {
-      const buf = await getDocument(d.id);
-      if (!buf) return null;
-      const t = await pdfTextFromBuf(buf, 22_000);
-      return t ? { file_name: String(d.file_name), text: t } : null;
-    } catch {
-      return null;
-    }
-  }));
-  let docsText = '';
-  let docsUsed = 0;
-  for (const d of extracted) {
-    if (!d) continue;
-    docsText += `\n\n===== DOCUMENTO: ${d.file_name} =====\n${d.text}`;
-    docsUsed++;
-    if (docsText.length > 50_000) break;
-  }
-
-  if (!docsText && c.contracting_procedure_url) {
-    const proc = await gatherAnnouncementDocs({ contracting_procedure_url: c.contracting_procedure_url });
-    if (proc.procText) {
-      docsText = `\n\n===== PEÇAS DO PROCEDIMENTO (plataforma) =====\n${proc.procText}`;
-      docsUsed = proc.docsCount;
-    }
-  }
+  const docsText = pdfs.docsText;
+  const docsUsed = pdfs.docsUsed;
 
   const facts = await loadContractAnalysisFacts(contractId, c, ents);
   const entsLine = (ents as { role: string; name: string }[])

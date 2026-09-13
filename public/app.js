@@ -303,6 +303,7 @@ function usageActionFromApi(method, apiPath) {
   if (m === 'POST' && /\/api\/announcements\/\d+\/analyze$/.test(p)) return 'analise_anuncio';
   if (m === 'POST' && /\/api\/contracts\/\d+\/analyze$/.test(p)) return 'analise_contrato';
   if (m === 'POST' && /\/api\/announcements\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
+  if (m === 'POST' && /\/api\/contracts\/\d+\/proposals\/generate$/.test(p)) return 'proposta';
   if (m === 'POST' && /\/api\/announcements\/\d+\/close-forecast/.test(p)) return 'previsao_fecho';
   if (m === 'PUT' && p.startsWith('/api/pipeline/')) return 'carteira';
   if (m === 'POST' && p === '/api/billing/checkout') return 'checkout';
@@ -763,7 +764,7 @@ async function startFichaAi({ kind, id, force = false }) {
     const itemType = kind === 'contract' ? 'renovacao' : 'anuncio_aberto';
     let docNote = '';
     if (kind === 'contract' && r.docs_used === 0) {
-      docNote = '<p class="hint">Sem PDF do contrato na PrepBid. A análise usou dados estruturados (datas, preço, CPV, entidades) e adjudicações semelhantes, quando existem. Active «Descarregar documentos PDF» no perfil para incluir caderno e relatório de adjudicação.</p>';
+      docNote = '<p class="hint">Sem caderno nem relatório acessível nas fontes. A análise usou dados estruturados (datas, preço, CPV, entidades) e adjudicações semelhantes, quando existem.</p>';
     } else if (kind === 'announcement' && r.docs_used > 0) {
       docNote = `<p class="hint" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--brand-text)">Análise fundamentada em ${r.docs_used} documento(s) das peças do procedimento.</p>`;
     } else if (kind === 'announcement' && (r.docs_used === 0 || r.docs_used === -1)) {
@@ -773,7 +774,7 @@ async function startFichaAi({ kind, id, force = false }) {
       ? `<p style="margin-top:0.6rem"><button type="button" class="btn-secondary" id="ai-template-btn">${ico('doc')} Gerar dossier de resposta (IA)</button></p>
          <div id="ai-template-out"></div>`
       : '';
-    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, r.model, itemType, id, r.docs_used)}${docNote}
+    body.innerHTML = `${renderAiFicha(r.analysis, r.cached, itemType, id, r.docs_used)}${docNote}
       <p style="margin-top:0.8rem"><button type="button" class="btn-secondary" id="ai-rerun-btn">${ico('refresh')} Voltar a analisar</button></p>
       ${dossier}`;
     hydrateChecklist(body);
@@ -852,6 +853,45 @@ function fitCell(f, type, id) {
     : `<a class="fit-fb locked" href="#/planos" title="Feedback IA no plano Pro" onclick="event.stopPropagation()">🔒</a>`;
   const regra = ruleShow ? `<small class="regra">${esc(ruleShow)}${can('perfil_empresa') ? ` · <a href="#/conta" onclick="event.stopPropagation()">editar perfil</a>` : ''}</small>` : '';
   return `<span class="opp-fit" title="${esc(title)}">${f.fit}${stale}${regra}${fb}</span>`;
+}
+
+const FIT_AI_BATCH = 8;
+
+async function runAutoFitScores(el, q, pid, items, fitKey, toFitItem, mergeFits, reload) {
+  const status = () => el.querySelector('#fit-status');
+  const tried = ((window._fitTried ??= {})[q] ??= {});
+  const pending = () => items.filter((o) => o.days_left != null && Number(o.days_left) <= 365 && !window._fitCache?.[q]?.[fitKey(o)] && !tried[fitKey(o)]);
+  let left = pending();
+  if (left.length === 0) return;
+  try {
+    const cached = await api(`/api/profiles/${pid}/fit-scores`, {
+      method: 'POST',
+      body: JSON.stringify({ items: left.map(toFitItem), cache_only: true }),
+    });
+    mergeFits(cached.scores);
+    left = pending();
+    if (document.body.contains(el)) await reload();
+    while (left.length && document.body.contains(el) && window._fitAutoBusy === q) {
+      const st = status();
+      if (st) st.textContent = `Fit IA: a calcular ${left.length} oportunidade(s)…`;
+      const chunk = left.slice(0, FIT_AI_BATCH);
+      const r = await api(`/api/profiles/${pid}/fit-scores`, {
+        method: 'POST',
+        body: JSON.stringify({ items: chunk.map(toFitItem) }),
+      });
+      mergeFits(r.scores);
+      chunk.forEach((o) => { tried[fitKey(o)] = true; });
+      left = pending();
+      if (document.body.contains(el)) await reload();
+    }
+    const st = status();
+    if (st && left.length === 0) st.textContent = '';
+  } catch (err) {
+    const st = status();
+    if (st) st.textContent = `Fit IA falhou: ${err.message}`;
+  } finally {
+    if (window._fitAutoBusy === q) window._fitAutoBusy = null;
+  }
 }
 
 function bindFitFeedback(root) {
@@ -2080,7 +2120,6 @@ async function renderSearches() {
         <input type="text" name="term" placeholder="Termo de pesquisa (objeto do contrato) — ex.: software" required>
         <button type="submit">Pesquisar</button>
       </form>
-      <p class="muted" style="margin:0.5rem 0 0"><label><input type="checkbox" id="new-search-docs"> Descarregar documentos PDF do site BASE (mais lento; o histórico e os detalhes vêm dos dados abertos)</label></p>
       <div class="error" id="search-error"></div>
     </div>
     <div class="card">
@@ -2097,7 +2136,7 @@ async function renderSearches() {
     try {
       await api('/api/searches', {
         method: 'POST',
-        body: JSON.stringify({ term, fetch_documents: document.getElementById('new-search-docs')?.checked === true }),
+        body: JSON.stringify({ term }),
       });
       e.target.reset();
       await load();
@@ -2282,6 +2321,7 @@ async function renderContract(id) {
           <p class="small-print" style="margin-top:10px">Adendas/prorrogações registadas no BASE — sinal de contrato que costuma ser ajustado (e de adjudicatário actual a defender a posição).</p>`,
           } : null,
           { id: 'form', label: 'Formalidades', html: formalidadesPaneHtml(c.contracting_procedure_url) },
+          { id: 'proposta', label: 'Proposta', html: '<div id="proposal-panel"></div>' },
           adj ? {
             id: 'ent', label: 'Entidade',
             html: `<p style="font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.6">Consulte o histórico de contratos, valores e adjudicatários de <b>${esc(adj.name)}</b> para preparar a abordagem.</p>
@@ -2314,6 +2354,7 @@ async function renderContract(id) {
   bindPipelineChips(app);
   wireFichaPipeline('renovacao', c.id);
   startFichaAi({ kind: 'contract', id });
+  mountProposalPanel(document.getElementById('proposal-panel'), 'contract', id);
   notifyGuide('ficha');
 }
 
@@ -2357,7 +2398,6 @@ async function renderProfiles() {
             <select name="schedule"><option value="manual">Manual</option><option value="daily">Diário</option><option value="weekly">Semanal</option></select>
           </label>
           &nbsp; <label><input type="checkbox" name="ann" checked> Incluir anúncios (concursos abertos)</label>
-          &nbsp; <label><input type="checkbox" name="docs"> Descarregar documentos PDF do site</label>
         </p>
         <div class="error" id="profile-error"></div>
         <p><button type="submit">Criar e executar</button></p>
@@ -2418,7 +2458,6 @@ async function renderProfiles() {
           cpv_codes: cpvSelected.map((c) => c.code.split('-')[0]),
           schedule: fd.get('schedule'),
           include_announcements: fd.get('ann') === 'on',
-          fetch_documents: fd.get('docs') === 'on',
         }),
       });
       e.target.reset();
@@ -2512,16 +2551,14 @@ async function renderInsightTab(el, q, tab, p) {
         renderInsightTab(el, q, tab, p);
       } catch (err) { alert(err.message); } finally { aiModalClose(); }
     };
-    // Automático: oportunidades com data-chave nos próximos 12 meses (são poucas)
+    // Cache primeiro (instantâneo), depois lotes de 8 — um POST com 100 trava a coluna em «—».
     if (pid) {
       const missing = d.items.filter((o) => o.days_left != null && Number(o.days_left) <= 365 && !fits[fitKey(o)]);
       if (missing.length > 0 && window._fitAutoBusy !== q) {
         window._fitAutoBusy = q;
-        const status = el.querySelector('#fit-status');
-        if (status) status.textContent = `Fit IA: a calcular automaticamente ${missing.length} oportunidade(s)…`;
-        api(`/api/profiles/${pid}/fit-scores`, { method: 'POST', body: JSON.stringify({ items: missing.map(toFitItem) }) })
-          .then((r) => { mergeFits(r.scores); window._fitAutoBusy = null; if (document.body.contains(el)) renderInsightTab(el, q, tab, p); })
-          .catch((err) => { window._fitAutoBusy = null; if (status) status.textContent = `Fit IA falhou: ${err.message}`; });
+        const st = el.querySelector('#fit-status');
+        if (st) st.textContent = `Fit IA: a calcular ${missing.length} oportunidade(s)…`;
+        runAutoFitScores(el, q, pid, d.items, fitKey, toFitItem, mergeFits, () => renderInsightTab(el, q, tab, p));
       }
     }
   } else if (tab === 'renewals') {
@@ -3862,7 +3899,13 @@ function renderProposalVersions(items) {
   </tbody></table>`;
 }
 
-async function mountProposalPanel(host, id) {
+async function mountProposalPanel(host, kind, id) {
+  if (!host) return;
+  const base = kind === 'contract' ? `/api/contracts/${id}` : `/api/announcements/${id}`;
+  const extractLabel = kind === 'contract'
+    ? 'Extrair requisitos do caderno / relatório'
+    : 'Extrair requisitos do caderno';
+  const extractUpdate = 'Atualizar requisitos';
   if (!can('geracao_propostas')) {
     host.innerHTML = `<div class="d-card"><div class="t">Proposta</div><p class="muted" style="margin:0">Geração assistida de propostas (.docx) disponível no plano Business.</p></div>`;
     return;
@@ -3871,8 +3914,8 @@ async function mountProposalPanel(host, id) {
   let reqs, versions, profile;
   try {
     [reqs, versions, profile] = await Promise.all([
-      api(`/api/announcements/${id}/requirements`),
-      api(`/api/announcements/${id}/proposals`),
+      api(`${base}/requirements`),
+      api(`${base}/proposals`),
       api('/api/company/proposal-profile').catch(() => ({ missing: [] })),
     ]);
   } catch (err) {
@@ -3884,13 +3927,15 @@ async function mountProposalPanel(host, id) {
   let hasReqs = Boolean(reqs.extraction);
   host.innerHTML = `<div class="d-card proposal-card">
     <div class="t">Proposta (ciclo assistido)</div>
-    <p class="muted" style="margin:0 0 .8rem;font-size:12.5px;line-height:1.55">Extrai requisitos do caderno, gera um rascunho .docx, edita-o no Word, volta a carregar e vê o que ainda falta. A submissão no portal é sempre manual.</p>
+    <p class="muted" style="margin:0 0 .8rem;font-size:12.5px;line-height:1.55">${kind === 'contract'
+      ? 'Extrai requisitos do caderno e do relatório do contrato em renovação, gera um rascunho .docx, edita-o no Word, volta a carregar e vê o que ainda falta. A submissão no portal é sempre manual.'
+      : 'Extrai requisitos do caderno, gera um rascunho .docx, edita-o no Word, volta a carregar e vê o que ainda falta. A submissão no portal é sempre manual.'}</p>
     <div id="prop-reqs">
       ${reqs.extraction
         ? renderRequirementsList(reqs.checklist)
         : '<p class="muted">Ainda sem extração de requisitos.</p>'}
     </div>
-    <p style="margin:.7rem 0"><button class="btn-secondary" id="prop-extract">${ico('search')} ${reqs.extraction ? 'Atualizar requisitos' : 'Extrair requisitos do caderno'}</button></p>
+    <p style="margin:.7rem 0"><button class="btn-secondary" id="prop-extract">${ico('search')} ${reqs.extraction ? extractUpdate : extractLabel}</button></p>
     <div class="prop-gen">
       ${missing ? `<p class="hint">Perfil incompleto (${missing}). As lacunas ficam marcadas no documento. <a href="#/conta">Completar perfil</a></p>` : ''}
       <label>Preço a apresentar (€)</label>
@@ -3911,19 +3956,20 @@ async function mountProposalPanel(host, id) {
   extractBtn.onclick = async () => {
     extractBtn.disabled = true;
     aiModalOpen([
-      'A reunir o anúncio do DR e as peças do procedimento…',
+      kind === 'contract'
+        ? 'A reunir o caderno e o relatório de adjudicação…'
+        : 'A reunir o anúncio do DR e as peças do procedimento…',
       'A identificar requisitos de admissão e técnicos…',
       'A extrair critérios de adjudicação e documentos obrigatórios…',
     ]);
     try {
-      const r = await api(`/api/announcements/${id}/requirements`, {
+      const r = await api(`${base}/requirements`, {
         method: 'POST',
         body: JSON.stringify({ refresh: hasReqs }),
       });
       hasReqs = true;
       document.getElementById('prop-reqs').innerHTML = renderRequirementsList(r.checklist);
-      extractBtn.innerHTML = `${ico('search')} Atualizar requisitos`;
-      extractBtn.textContent = 'Atualizar requisitos';
+      extractBtn.innerHTML = `${ico('search')} ${extractUpdate}`;
     } catch (err) {
       document.getElementById('prop-out').innerHTML = `<p class="error">${esc(err.message)}</p>`;
     } finally {
@@ -3943,12 +3989,12 @@ async function mountProposalPanel(host, id) {
     ]);
     try {
       const bid = document.getElementById('prop-bid').value;
-      const r = await api(`/api/announcements/${id}/proposals/generate`, {
+      const r = await api(`${base}/proposals/generate`, {
         method: 'POST',
         body: JSON.stringify({ bid_price: bid === '' ? null : Number(bid) }),
       });
       await downloadBlob(r.download_url, r.file_name);
-      const list = await api(`/api/announcements/${id}/proposals`);
+      const list = await api(`${base}/proposals`);
       document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
       wireProposalDownloads();
       document.getElementById('prop-out').innerHTML = `<p class="hint">Rascunho v${r.version} gerado. Edita-o no Word e volta a carregá-lo para a reavaliação.</p>`;
@@ -3972,11 +4018,11 @@ async function mountProposalPanel(host, id) {
     ]);
     try {
       const content_base64 = await fileToB64(file);
-      const r = await api(`/api/announcements/${id}/proposals/upload`, {
+      const r = await api(`${base}/proposals/upload`, {
         method: 'POST',
         body: JSON.stringify({ filename: file.name, content_base64 }),
       });
-      const list = await api(`/api/announcements/${id}/proposals`);
+      const list = await api(`${base}/proposals`);
       document.getElementById('prop-versions').innerHTML = renderProposalVersions(list.items);
       wireProposalDownloads();
       document.getElementById('prop-out').innerHTML = renderGapReport(r.gap_report);
@@ -4071,11 +4117,11 @@ async function renderAnnouncement(id) {
   wireFichaPipeline('anuncio_aberto', a.id);
   startFichaAi({ kind: 'announcement', id });
   mountCloseForecast(document.getElementById('close-forecast'), id);
-  mountProposalPanel(document.getElementById('proposal-panel'), id);
+  mountProposalPanel(document.getElementById('proposal-panel'), 'announcement', id);
   notifyGuide('ficha');
 }
 
-function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
+function renderAiFicha(an, cached, itemType, itemId, docsUsed) {
   const rec = an.go_no_go?.recomendacao;
   const badgeGo = { go: ['AVANÇAR', 'var(--pb-green)', 'go'], condicional: ['COM RESERVAS', 'var(--pb-amber)', 'condicional'], 'no-go': ['NÃO AVANÇAR', 'var(--pb-garnet)', 'nogo'] }[rec] ?? ['?', 'var(--pb-ink-60)', 'condicional'];
   const hab = Array.isArray(an.habilitacao) ? an.habilitacao : null;
@@ -4121,7 +4167,7 @@ function renderAiFicha(an, cached, model, itemType, itemId, docsUsed) {
     <h3>O que a empresa ainda tem de fazer</h3>
     <p class="muted" style="font-size:12px;margin:.2rem 0 .4rem">Só o que não dá para fazer na PrepBid (contactos, certidões em falta, preço interno, referências próprias).</p>
     ${checkHtml}
-    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}${model ? ` · ${esc(model)}` : ''}</p>`;
+    <p class="muted">${cached ? 'Análise em cache' : 'Análise nova'}</p>`;
 }
 
 async function hydrateChecklist(root) {

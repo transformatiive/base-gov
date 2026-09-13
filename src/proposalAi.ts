@@ -1,6 +1,6 @@
 import { pool } from './db.js';
 import { config } from './config.js';
-import { chat, gatherAnnouncementDocs, parseJson, userWithCachedPrefix, type AiUsage } from './ai.js';
+import { chat, gatherAnnouncementDocs, loadContractPdfText, parseJson, userWithCachedPrefix, type AiUsage } from './ai.js';
 import {
   STANDARD_CHAPTERS,
   emptyRequirements,
@@ -85,6 +85,22 @@ function announcementBlock(a: Record<string, unknown>, pdfText: string | null, p
 ${pdfText ? `TEXTO DO ANÚNCIO PUBLICADO EM DIÁRIO DA REPÚBLICA:\n${pdfText}\n` : ''}${procText ? `PEÇAS DO PROCEDIMENTO (caderno de encargos / programa, ${docsCount} documento(s)):\n${procText}` : ''}${!pdfText && !procText ? 'Sem documentos acessíveis — extrai apenas com os dados estruturados e assinala a limitação em notes.' : ''}`;
 }
 
+const REQUIREMENTS_SYSTEM = `És um analista sénior de contratação pública portuguesa (CCP). Extrai uma CHECKLIST ESTRUTURADA de requisitos da proposta a partir das peças do procedimento (caderno / programa / relatório).
+Não inventes requisitos que não estejam no texto. Se um campo não estiver no documento, deixa a lista vazia ou o valor a null.
+Responde APENAS com JSON:
+{
+  "admissao": [{"id":"a1","title":"...","detail":"...","mandatory":true}],
+  "tecnicos": [{"id":"t1","title":"...","detail":"...","mandatory":true}],
+  "criterios": [{"id":"c1","title":"Preço","weight_pct":60,"detail":"..."}],
+  "documentos": [{"id":"d1","title":"DEUCP","detail":"...","mandatory":true,"legal":true}],
+  "formato": {"specified": false, "chapters": [], "page_limit": null, "notes": ""},
+  "prazos": {"submissao":"...","esclarecimentos":null,"execucao":"..."},
+  "legal_declarations": ["DEUCP", "declaração sob compromisso de honra"],
+  "notes": "limitações da extração, se as houver"
+}
+formato.specified=true SÓ se o caderno/programa exigir uma estrutura de capítulos ou limite de páginas.
+documentos.legal=true para declarações que exigem assinatura (DEUCP, honra) — a aplicação NÃO as redige, só aponta que são necessárias.`;
+
 export async function extractAnnouncementRequirements(announcementId: number): Promise<{
   extraction: RequirementsExtraction;
   cached: boolean;
@@ -114,26 +130,10 @@ export async function extractAnnouncementRequirements(announcementId: number): P
     [announcementId]
   );
 
-  const system = `És um analista sénior de contratação pública portuguesa (CCP). Extrai uma CHECKLIST ESTRUTURADA de requisitos da proposta a partir do anúncio e das peças do procedimento.
-Não inventes requisitos que não estejam no texto. Se um campo não estiver no documento, deixa a lista vazia ou o valor a null.
-Responde APENAS com JSON:
-{
-  "admissao": [{"id":"a1","title":"...","detail":"...","mandatory":true}],
-  "tecnicos": [{"id":"t1","title":"...","detail":"...","mandatory":true}],
-  "criterios": [{"id":"c1","title":"Preço","weight_pct":60,"detail":"..."}],
-  "documentos": [{"id":"d1","title":"DEUCP","detail":"...","mandatory":true,"legal":true}],
-  "formato": {"specified": false, "chapters": [], "page_limit": null, "notes": ""},
-  "prazos": {"submissao":"...","esclarecimentos":null,"execucao":"..."},
-  "legal_declarations": ["DEUCP", "declaração sob compromisso de honra"],
-  "notes": "limitações da extração, se as houver"
-}
-formato.specified=true SÓ se o caderno/programa exigir uma estrutura de capítulos ou limite de páginas.
-documentos.legal=true para declarações que exigem assinatura (DEUCP, honra) — a aplicação NÃO as redige, só aponta que são necessárias.`;
-
   const model = config.aiModelDeep;
   const { content, usage } = await chat(
     model,
-    system,
+    REQUIREMENTS_SYSTEM,
     userWithCachedPrefix(
       announcementBlock(a, pdfText, procText, docsCount),
       an.length ? `ANÁLISE PRÉVIA (usa como pista, mas confirma no texto):\n${JSON.stringify(an[0].analysis).slice(0, 5000)}` : '',
@@ -151,6 +151,74 @@ documentos.legal=true para declarações que exigem assinatura (DEUCP, honra) �
   return { extraction, cached: false, model, docs_used: docsCount, usage };
 }
 
+function contractBlock(c: Record<string, unknown>, docsText: string, docsUsed: number): string {
+  return `DADOS ESTRUTURADOS DO CONTRATO (renovação / próximo procedimento):
+- Objecto: ${c.object_brief_description ?? c.description}
+- Entidade adjudicante: ${c.contracting ?? 'n/d'}
+- Procedimento: ${c.contracting_procedure_type ?? 'n/d'}
+- Preço contratual: ${c.initial_contractual_price ?? 'n/d'}
+- CPV: ${c.cpvs ?? 'n/d'}
+- URL das peças: ${c.contracting_procedure_url ?? 'n/d'}
+
+${docsText ? `DOCUMENTOS (caderno / relatório / peças, ${docsUsed} documento(s)):\n${docsText}` : 'Sem documentos acessíveis — extrai apenas com os dados estruturados e assinala a limitação em notes.'}`;
+}
+
+export async function extractContractRequirements(contractId: number): Promise<{
+  extraction: RequirementsExtraction;
+  cached: boolean;
+  model: string;
+  docs_used: number;
+  usage: AiUsage;
+}> {
+  const { rows: hit } = await pool.query(
+    'SELECT extraction, model FROM contract_requirements WHERE contract_id = $1',
+    [contractId]
+  );
+  if (hit.length > 0) {
+    return {
+      extraction: hit[0].extraction as RequirementsExtraction,
+      cached: true,
+      model: hit[0].model,
+      docs_used: -1,
+      usage: { tokens_in: 0, tokens_out: 0 },
+    };
+  }
+  const { rows } = await pool.query(
+    `SELECT c.*,
+       (SELECT string_agg(e.name, '; ') FROM contract_entities ce JOIN entities e ON e.id = ce.entity_id
+         WHERE ce.contract_id = c.id AND ce.role = 'contracting') AS contracting
+     FROM contracts c WHERE c.id = $1`,
+    [contractId]
+  );
+  if (rows.length === 0) throw Object.assign(new Error('Contrato não encontrado'), { statusCode: 404 });
+  const c = rows[0];
+  const pdfs = await loadContractPdfText(contractId, c.contracting_procedure_url);
+  const { rows: an } = await pool.query(
+    'SELECT analysis FROM ai_contract_analyses WHERE contract_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [contractId]
+  );
+
+  const model = config.aiModelDeep;
+  const { content, usage } = await chat(
+    model,
+    REQUIREMENTS_SYSTEM,
+    userWithCachedPrefix(
+      contractBlock(c, pdfs.docsText, pdfs.docsUsed),
+      an.length ? `ANÁLISE PRÉVIA (usa como pista, mas confirma no texto):\n${JSON.stringify(an[0].analysis).slice(0, 5000)}` : '',
+    ),
+    4000,
+    'proposta-extract-contrato',
+  );
+  const extraction = normalizeExtraction(parseJson(content));
+  await pool.query(
+    `INSERT INTO contract_requirements (contract_id, extraction, model)
+     VALUES ($1,$2,$3)
+     ON CONFLICT (contract_id) DO UPDATE SET extraction = $2, model = $3, updated_at = now()`,
+    [contractId, JSON.stringify(extraction), model]
+  );
+  return { extraction, cached: false, model, docs_used: pdfs.docsUsed, usage };
+}
+
 function profileBlock(p: ProposalCompanyProfile): string {
   return `PERFIL DA EMPRESA (usa só estes factos; o que faltar vira [A COMPLETAR: …], nunca inventes):
 - Denominação: ${p.legal_name ?? 'n/d'}
@@ -164,7 +232,10 @@ function profileBlock(p: ProposalCompanyProfile): string {
 }
 
 export async function generateProposalSections(opts: {
-  announcement: Record<string, unknown>;
+  title: string;
+  entity: string | null;
+  price: unknown;
+  cpvs: unknown;
   extraction: RequirementsExtraction;
   profile: ProposalCompanyProfile;
   bidPrice: number | null;
@@ -190,11 +261,11 @@ As secções DEVEM seguir esta ordem e estes títulos: ${JSON.stringify(chapters
     system,
     userWithCachedPrefix(
       `${profileBlock(opts.profile)}\n\nREQUISITOS EXTRAÍDOS:\n${JSON.stringify(opts.extraction).slice(0, 12_000)}`,
-      `ANÚNCIO:
-- ${opts.announcement.contract_designation} · ${opts.announcement.contracting_entity}
-- Preço base: ${opts.announcement.base_price ?? 'n/d'}
+      `PROCEDIMENTO:
+- ${opts.title} · ${opts.entity ?? 'n/d'}
+- Preço de referência: ${opts.price ?? 'n/d'}
 - Preço a apresentar (se o utilizador o definiu): ${opts.bidPrice ?? 'não indicado — usa [A COMPLETAR: preço da proposta] na secção de Preço'}
-- CPV: ${opts.announcement.cpvs ?? 'n/d'}`,
+- CPV: ${opts.cpvs ?? 'n/d'}`,
     ),
     7000,
     'proposta-draft',
@@ -265,7 +336,7 @@ Responde APENAS com JSON:
       title: req.title,
       category: req.category,
       status: parseGapStatus(hit?.status),
-      note: asString(hit?.note) || (hit ? '' : 'Sem classificação devolvida pelo modelo — tratado como em falta.'),
+      note: asString(hit?.note) || (hit ? '' : 'Sem classificação devolvida — tratado como em falta.'),
       legal: req.legal,
     };
   });

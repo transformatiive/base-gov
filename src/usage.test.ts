@@ -79,6 +79,7 @@ test('parseUsageEvent valida kind, path e visitor; recusa javascript', () => {
 test('actionFromApi traduz POSTs da API em acções', () => {
   assert.equal(actionFromApi('POST', '/api/announcements/12/analyze'), 'analise_anuncio');
   assert.equal(actionFromApi('POST', '/api/announcements/12/proposals/generate'), 'proposta');
+  assert.equal(actionFromApi('POST', '/api/contracts/9/proposals/generate'), 'proposta');
   assert.equal(actionFromApi('PUT', '/api/pipeline/announcement/3'), 'carteira');
   assert.equal(actionFromApi('POST', '/api/billing/checkout'), 'checkout');
   assert.equal(actionFromApi('POST', '/api/profiles'), 'criar_perfil');
