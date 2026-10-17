@@ -611,7 +611,7 @@ async function tick(client: BaseGovClient): Promise<void> {
   if (running) return;
   running = true;
   try {
-    await scheduleDueProfiles();
+    if (config.scheduledJobsEnabled) await scheduleDueProfiles();
 
     // Retoma automática: pesquisas falhadas por erros transitórios (anti-bot 999,
     // timeouts, 5xx) voltam à fila após 15 min — sem intervenção manual.
@@ -694,6 +694,10 @@ async function tick(client: BaseGovClient): Promise<void> {
 export function startWorker(): void {
   const client = new HttpBaseGovClient();
   setInterval(() => void tick(client).catch((e) => console.error('[worker] tick error:', e)), 3000);
+  if (!config.scheduledJobsEnabled) {
+    console.log('[worker] iniciado sem colheita nem runs agendados (SCHEDULED_JOBS_ENABLED=false)');
+    return;
+  }
   const harvest = () =>
     void harvestRecentAnnouncements(client).catch((e) => console.error('[harvest] error:', e));
   void harvest();
