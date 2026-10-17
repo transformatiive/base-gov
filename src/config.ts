@@ -90,6 +90,12 @@ export const config = {
     supportEmail: process.env.SUPPORT_EMAIL || '', // Reply-To; inbox real (ex. info@transformatiive.com)
   },
 
+  // Rotinas automáticas em segundo plano (colheita de anúncios a cada 6 h,
+  // verificação dos dados abertos IMPIC, runs diários/semanais dos perfis,
+  // digest, lembretes e reenvios de email). SCHEDULED_JOBS_ENABLED=false
+  // desliga-as todas sem parar a app web nem as pesquisas pedidas à mão.
+  scheduledJobsEnabled: (process.env.SCHEDULED_JOBS_ENABLED || 'true').toLowerCase() !== 'false',
+
   // Digest segunda-feira a esta hora (Europa/Lisboa). Lembretes 7/2 dias no mesmo tick.
   digestHour: Math.min(23, Math.max(0, parseInt(process.env.DIGEST_HOUR || '8', 10) || 8)),
   reminderDays: (() => {

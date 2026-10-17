@@ -1,3 +1,4 @@
+import { config } from './config.js';
 import { Readable } from 'node:stream';
 import os from 'node:os';
 import path from 'node:path';
@@ -593,8 +594,12 @@ export function startOpendataWorker(): void {
           [String(e).slice(0, 500)],
         );
       });
-  void check().then(() => tick());
   setInterval(() => void tick().catch((e) => console.error('[opendata] tick error:', e)), 60_000);
+  if (!config.scheduledJobsEnabled) {
+    console.log('[opendata] worker iniciado sem verificação automática (SCHEDULED_JOBS_ENABLED=false)');
+    return;
+  }
+  void check().then(() => tick());
   setInterval(() => void check(), CHECK_INTERVAL_MS);
   console.log('[opendata] worker iniciado (verificação automática do ano corrente e do anterior)');
 }

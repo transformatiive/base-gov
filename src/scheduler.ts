@@ -203,6 +203,10 @@ async function retryFailed(): Promise<number> {
 }
 
 export function startScheduler(): void {
+  if (!config.scheduledJobsEnabled) {
+    console.log('[scheduler] desligado (SCHEDULED_JOBS_ENABLED=false)');
+    return;
+  }
   setInterval(() => {
     void runSchedulerTick().catch((e) => console.error('[scheduler]', e));
   }, 60_000);
